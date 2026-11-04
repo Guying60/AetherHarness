@@ -28,6 +28,40 @@ pnpm start         # 交互式 TUI
 
 运行环境变量：`AETHER_SIM_LATENCY_MS=0` 可关闭模拟的模型延迟（默认 55ms，见下文"诚实声明"）。
 
+### Windows / PowerShell 常见问题
+
+**`pnpm : 无法加载文件 …\pnpm.ps1，因为在此系统上禁止运行脚本`**
+
+这是 PowerShell 的脚本执行策略（默认禁止跑 `.ps1`），与项目无关。三种解法任选：
+
+```powershell
+# 1) 用 .cmd shim，最省事，不改系统设置
+pnpm.cmd run build
+pnpm.cmd run live
+
+# 2) 完全绕开 pnpm
+node_modules\.bin\tsc.cmd -p tsconfig.json
+node dist/src/cli.js --live
+
+# 3) 放开当前用户的执行策略（一次性，永久生效）
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+**`--live` 提示 "DEEPSEEK_API_KEY is not set"，但明明设置过**
+
+环境变量是**进程级**的：在 A 终端窗口 `$env:DEEPSEEK_API_KEY=...` 之后，B 窗口看不到它。
+在当前这个窗口重新设置即可，并建议先跑无头模式确认链路：
+
+```powershell
+$env:DEEPSEEK_API_KEY="sk-..."
+node dist/src/cli.js --live --headless
+```
+
+**想先确认端点能通、但不想浪费额度**
+
+用无效 key 打一次即可：返回 `HTTP 401` 说明地址、方法、鉴权头都对（返回 404 才是路径错了）。
+这也正是 `provider.ts` 的错误分类依据——401/403 立即失败、不重试。
+
 ---
 
 ## 这个版本做了什么
