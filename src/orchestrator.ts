@@ -35,6 +35,15 @@ import {
   createRateLimiterTasks,
   renderRateLimiter
 } from './scenarios/rate-limiter.js';
+import {
+  AppliedLlm,
+  LlmConfig,
+  LlmTelemetry,
+  applyLlm,
+  createProviderFromConfig,
+  isLlmConfigured,
+  resolveLlmConfig
+} from './agent/llm/index.js';
 
 export interface RunSnapshot {
   runId: string;
@@ -61,6 +70,11 @@ export interface OrchestratorOptions {
   onEvent?: EventListener;
   schedulerOptions?: ConstructorParameters<typeof DynamicScheduler>[1];
   maxConcurrentRuns?: number;
+  /**
+   * When provided (and configured), every agent with an LLM spec runs on the remote model
+   * with the deterministic brain as a fallback. Omit it to stay fully offline.
+   */
+  llm?: LlmConfig;
 }
 
 const DEFAULT_MAX_CONCURRENT_RUNS = 3;
@@ -82,6 +96,8 @@ export class Orchestrator {
   private counter = 0;
   private escalationsRaised = 0;
   private readonly maxConcurrentRuns: number;
+  private llmApplied?: AppliedLlm;
+  private llmLabel = 'offline · deterministic brains';
 
   constructor(options: OrchestratorOptions = {}) {
     this.maxConcurrentRuns = options.maxConcurrentRuns ?? DEFAULT_MAX_CONCURRENT_RUNS;
@@ -116,8 +132,23 @@ export class Orchestrator {
       optimizer: this.optimizer
     });
 
-    // --- team ---
-    for (const { profile, brain } of buildAgentTeam()) {
+    // --- team (optionally LLM-backed, with the deterministic brains as fallback) ---
+    const offlineTeam = buildAgentTeam();
+    let team = offlineTeam;
+
+    if (options.llm && isLlmConfigured(resolveLlmConfig(options.llm))) {
+      const config = resolveLlmConfig(options.llm);
+      const provider = createProviderFromConfig(config);
+      this.llmApplied = applyLlm(offlineTeam, provider, {
+        fallbackToOffline: config.fallbackToOffline ?? true,
+        onFallback: (error, primaryName, agentId) =>
+          this.emit('log', 'system', `LLM fallback (${agentId} · ${primaryName}) → offline brain: ${error.message}`, 'llm')
+      });
+      team = this.llmApplied.blueprints;
+      this.llmLabel = `${this.llmApplied.label}${config.fallbackToOffline === false ? ' (no fallback)' : ''}`;
+    }
+
+    for (const { profile, brain } of team) {
       this.agents.register(profile, { brain });
     }
 
@@ -216,6 +247,23 @@ Edge cases:
 
   public getPromptOptimizations() {
     return this.optimizer.getOptimizationHistory();
+  }
+
+  /** Which brain each agent is running, plus LLM usage/cost telemetry. */
+  public getLlmInfo(): {
+    label: string;
+    telemetry: LlmTelemetry | undefined;
+    brains: Array<{ agentId: string; role: string; brain: string }>;
+  } {
+    return {
+      label: this.llmLabel,
+      telemetry: this.llmApplied?.telemetry,
+      brains: this.agents.getAll().map(a => ({
+        agentId: a.profile.id,
+        role: a.profile.role,
+        brain: a.brainName
+      }))
+    };
   }
 
   private buildWorkflow(task: RateLimiterTask, maxIterationsOverride?: number): WorkflowDefinition {
@@ -467,6 +515,7 @@ Edge cases:
       tools: this.getToolReliability(),
       promptOptimizations: this.getPromptOptimizations().length,
       escalationsRaised: this.escalationsRaised,
+      llm: this.getLlmInfo(),
       runs: this.getRuns(),
       knowledgeChunks: this.knowledge.getChunkCount()
     };

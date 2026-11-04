@@ -59,7 +59,9 @@ export type LoopExecutor = (
   input: Record<string, any>,
   iteration: number,
   criticGuidance: string | undefined,
-  failedRules: RuleFailure[]
+  failedRules: RuleFailure[],
+  /** verification result of the previous iteration (undefined on the first) */
+  previousVerification?: VerificationResult
 ) => Promise<any>;
 
 /** Pull every attributable failure out of a verification result. */
@@ -136,18 +138,20 @@ export class SelfLoopEngine {
     let converged = false;
     let finalOutput: any = null;
     let finalVerification: VerificationResult = { passed: false, score: 0, ruleResults: [] };
+    let previousVerification: VerificationResult | undefined;
     let iterationInput: Record<string, any> = { ...seedInput };
 
     for (let iteration = 1; iteration <= config.maxIterations; iteration++) {
       const started = Date.now();
 
       // 1. DO
-      const output = await executor(iterationInput, iteration, guidance, accumulated);
+      const output = await executor(iterationInput, iteration, guidance, accumulated, previousVerification);
       finalOutput = output;
 
       // 2. CHECK
       const verification = await this.verificationEngine.verify(output, spec, iterationInput, { iteration });
       finalVerification = verification;
+      previousVerification = verification;
 
       const record: SelfLoopIterationRecord = {
         iteration,

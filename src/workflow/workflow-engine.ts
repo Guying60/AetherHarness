@@ -474,11 +474,12 @@ export class WorkflowEngine {
             cfg,
             spec,
             state.context,
-            async (loopInput, iteration, guidance, failedRules) => {
+            async (loopInput, iteration, guidance, failedRules, previousVerification) => {
               // expose the loop state to the target node's agent call
               state.context.__loopIteration = iteration;
               state.context.__failedRules = failedRules;
               if (guidance) state.context.diagnosticFeedback = guidance;
+              if (previousVerification) state.context.lastVerification = previousVerification;
               state.iterationCounts[node.id] = iteration;
 
               const targetRecord = await this.executeNode(targetNode, state, hooks, {

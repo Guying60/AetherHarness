@@ -6,6 +6,7 @@
  */
 import { Orchestrator } from './orchestrator.js';
 import { RunSnapshot } from './orchestrator.js';
+import { LlmConfig } from './agent/llm/index.js';
 import { paint, style, truncate } from './tui/ansi.js';
 
 function line(char = '─', width = 78): string {
@@ -43,8 +44,14 @@ function renderVerification(run: RunSnapshot): string[] {
   return out;
 }
 
-export async function runHeadless(): Promise<number> {
+export interface HeadlessOptions {
+  /** run the team on a remote model; omit for the offline deterministic brains */
+  llm?: LlmConfig;
+}
+
+export async function runHeadless(options: HeadlessOptions = {}): Promise<number> {
   const orchestrator = new Orchestrator({
+    llm: options.llm,
     onEvent: event => {
       if (event.kind === 'node.started') return;
       const tag = (event.tag ?? event.kind).padEnd(7);
@@ -60,7 +67,9 @@ export async function runHeadless(): Promise<number> {
   );
 
   // ------------------------------------------------------------------ team
+  const llmInfo = orchestrator.getLlmInfo();
   process.stdout.write(heading('1/5  agent team'));
+  process.stdout.write(`  ${paint('brain', style.dim)}  ${paint(llmInfo.label, llmInfo.telemetry ? style.cyan : style.gray)}\n`);
   for (const agent of orchestrator.getAgents()) {
     const caps = Object.entries(agent.profile.capabilities)
       .map(([k, v]) => `${k} ${(v * 100).toFixed(0)}%`)
@@ -69,6 +78,7 @@ export async function runHeadless(): Promise<number> {
       `  ${paint(agent.profile.name.padEnd(9), style.bold)} ${paint(agent.role.padEnd(20), style.dim)} ` +
         `${paint(`slots ${agent.profile.maxConcurrency}`, style.gray)}  ${paint(caps, style.gray)}\n`
     );
+    process.stdout.write(`  ${' '.repeat(9)} ${paint(`↳ ${agent.brainName}`, style.gray)}\n`);
   }
 
   // ------------------------------------------------------------------- rag
@@ -146,8 +156,23 @@ export async function runHeadless(): Promise<number> {
     `  ${paint('optimizer', style.dim)}  ${snap.promptOptimizations} prompt guardrail adjustment(s) applied to live agents\n`
   );
   process.stdout.write(
-    `  ${paint('tokens', style.dim)}     ${snap.agents.reduce((s, a) => s + a.tokens, 0)} estimated across ${snap.agents.length} agents\n`
+    `  ${paint('tokens', style.dim)}     ${snap.agents.reduce((s, a) => s + a.tokens, 0)} ` +
+      `${snap.llm.telemetry ? 'reported' : 'estimated'} across ${snap.agents.length} agents\n`
   );
+
+  if (snap.llm.telemetry) {
+    const t = snap.llm.telemetry;
+    process.stdout.write(
+      `  ${paint('llm', style.dim)}        ${snap.llm.label} · ${t.calls} call(s) · ` +
+        `${t.promptTokens} prompt + ${t.completionTokens} completion = ${t.totalTokens} tokens · ` +
+        `${t.fallbacks} fallback(s)` +
+        `${t.lastError ? ` · last error: ${truncate(t.lastError, 70)}` : ''}\n`
+    );
+  } else {
+    process.stdout.write(
+      `  ${paint('llm', style.dim)}        offline · deterministic brains (add --live to run on DeepSeek)\n`
+    );
+  }
   process.stdout.write(
     `  ${paint('human', style.dim)}      ${
       snap.escalationsRaised > 0

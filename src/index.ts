@@ -8,6 +8,7 @@
 export * from './types/index.js';
 
 export * from './agent/brain.js';
+export * from './agent/llm/index.js';
 export * from './agent/base-agent.js';
 export * from './agent/agent-registry.js';
 

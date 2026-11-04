@@ -12,16 +12,33 @@ import { ToolRegistry } from '../src/tools/tool-registry.js';
 import { createBuiltinTools, buildUnifiedDiff } from '../src/tools/builtin-tools.js';
 import { AgentRegistry } from '../src/agent/agent-registry.js';
 import { BaseAgent } from '../src/agent/base-agent.js';
-import { AgentBrain, BrainContext, BrainOutput } from '../src/agent/brain.js';
+import { AgentBrain, BrainContext, BrainOutput, DeterministicBrain } from '../src/agent/brain.js';
+import {
+  DeepSeekProvider,
+  FetchLike,
+  LlmError,
+  MockLlmProvider,
+  MockHandler,
+  redact
+} from '../src/agent/llm/provider.js';
+import { extractFencedCode, extractJson } from '../src/agent/llm/prompt.js';
+import { createTelemetry, FallbackBrain, LlmBrain } from '../src/agent/llm/llm-brain.js';
+import { auditSpec, developerSpec } from '../src/agent/llm/specs.js';
 import { KnowledgeBase } from '../src/knowledge/knowledge-base.js';
 import { WorkflowEngine } from '../src/workflow/workflow-engine.js';
 import { DynamicScheduler } from '../src/scheduler/dynamic-scheduler.js';
-import { VerificationEngine } from '../src/verification/verification-engine.js';
+import { VerificationEngine, auditFor } from '../src/verification/verification-engine.js';
 import { SelfLoopEngine } from '../src/selfloop/self-loop-engine.js';
 import { FeedbackOptimizer } from '../src/optimization/feedback-optimizer.js';
 import { Orchestrator } from '../src/orchestrator.js';
 import { AgentProfile, VerificationSpec, WorkflowDefinition } from '../src/types/index.js';
-import { BASE_FEATURES, FULLY_FIXED, renderRateLimiter, makeVerificationSpec } from '../src/scenarios/rate-limiter.js';
+import {
+  BASE_FEATURES,
+  FIX_BY_RULE,
+  FULLY_FIXED,
+  makeVerificationSpec,
+  renderRateLimiter
+} from '../src/scenarios/rate-limiter.js';
 
 // ---------------------------------------------------------------------------
 // runner
@@ -693,6 +710,291 @@ async function suiteEndToEnd(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// 10. LLM layer (mocked transport — never touches the network)
+// ---------------------------------------------------------------------------
+
+function brainContext(overrides: Partial<BrainContext> = {}): BrainContext {
+  return {
+    agent: agentProfile('llm-test-agent'),
+    request: { taskId: 'llm-task', agentId: 'llm-test-agent', input: { goal: 'implement a rate limiter' } },
+    failedRules: [],
+    iteration: 1,
+    memory: [],
+    ...overrides
+  };
+}
+
+/**
+ * A mock "model" that behaves like a competent one: it reads the ROLE marker, answers in
+ * the JSON envelope each spec declares, and derives repairs from the failing-rule block
+ * (never from the acceptance-test text, which also contains rule ids).
+ */
+function makeRoleHandler(): MockHandler {
+  return messages => {
+    const system = messages[0]?.content ?? '';
+    const user = messages[1]?.content ?? '';
+    const role = /ROLE:\s*([a-z_]+)/.exec(system)?.[1] ?? '';
+
+    if (role === 'analyst') {
+      return JSON.stringify({
+        featureName: 'Token Bucket RateLimiter',
+        acceptanceCriteria: [
+          'reject capacity <= 0 with RangeError',
+          'reject non-positive consumption with RangeError',
+          'return integer token counts',
+          'document the state invariants'
+        ],
+        securityConstraints: ['validate Number.isFinite(tokens)', 'no eval()']
+      });
+    }
+
+    if (role === 'architect') {
+      return JSON.stringify({
+        className: 'RateLimiter',
+        methods: ['constructor(capacity, refillRatePerSec)', 'consume(tokens)', 'getAvailableTokens()', 'reset()'],
+        invariants: ['0 <= tokens <= capacity', 'refill is monotone and lazy'],
+        timeResolution: 'lazy timestamp-based refill'
+      });
+    }
+
+    if (role === 'developer') {
+      const failingBlock = user.split('Currently failing rules')[1]?.split('Sandbox assertion errors')[0] ?? '';
+
+      // "if the previous attempt already satisfies the rules, return it unchanged"
+      if (!/[A-Z]{2,6}-\d{3}/.test(failingBlock)) {
+        const previous = user.split('Your previous attempt (complete file):')[1] ?? '';
+        const fenced = /```js\n([\s\S]*?)```/.exec(previous);
+        if (fenced && /\bclass RateLimiter\b/.test(fenced[1])) {
+          return JSON.stringify({ code: fenced[1], changes: [], notes: 'previous attempt already satisfies the rules' });
+        }
+      }
+
+      const features = { ...BASE_FEATURES };
+      for (const [id, flag] of Object.entries(FIX_BY_RULE)) {
+        if (new RegExp(`\\b${id}\\b`).test(failingBlock)) features[flag] = true;
+      }
+      return JSON.stringify({
+        code: renderRateLimiter(features),
+        changes: [`applied ${Object.values(features).filter(Boolean).length} repair(s)`],
+        notes: 'mock model rewrite'
+      });
+    }
+
+    if (role === 'critic') {
+      return JSON.stringify({
+        rootCause: 'precondition guards are missing, so degenerate capacity and token amounts are accepted',
+        directives: ['add constructor precondition guards', 'reject non-positive consumption'],
+        feedback: 'Add the missing precondition guards and re-run the suite; do not touch the algorithms that already pass.'
+      });
+    }
+
+    if (role === 'auditor') {
+      const persona = /You are (\w+),/.exec(system)?.[1] ?? '';
+      const auditRole = persona === 'Cipher' ? 'security_auditor' : 'code_reviewer';
+      const fenced = /```js\n([\s\S]*?)```/.exec(user);
+      const verdict = auditFor(auditRole)(fenced ? fenced[1] : '', {});
+      return JSON.stringify({
+        approved: verdict.approved,
+        comments: verdict.comments,
+        signals: verdict.signals.map(s => ({ id: s.ruleId, reason: s.message }))
+      });
+    }
+
+    return '{}';
+  };
+}
+
+async function suiteLlm(): Promise<void> {
+  describe('[10] LLM brains (mocked transport)');
+
+  // ---- response extraction
+  equal(extractJson<{ a: number }>('{"a":1}').a, 1, 'extractJson parses a bare JSON object');
+  equal(extractJson<{ a: number }>('```json\n{"a":2}\n```').a, 2, 'extractJson unwraps a json fence');
+  equal(extractJson<{ a: number }>('Sure! Here it is:\n{"a":3}\nHope that helps.').a, 3, 'extractJson finds JSON inside prose');
+  equal(extractJson<{ s: string; n: number }>('{"s":"}{ not a brace","n":4}').n, 4, 'extractJson ignores braces inside strings');
+  let noJson = false;
+  try {
+    extractJson('there is no json here at all');
+  } catch {
+    noJson = true;
+  }
+  check(noJson, 'extractJson throws when the response contains no JSON');
+  equal(extractFencedCode('```js\nconst a = 1;\n```'), 'const a = 1;', 'extractFencedCode returns a fenced block');
+  check(!redact('Bearer sk-abcdef1234567890').includes('sk-abcdef1234567890'), 'redact masks bearer credentials');
+
+  // ---- DeepSeek provider against a fake transport
+  let calls = 0;
+  let capturedUrl = '';
+  let capturedAuth = '';
+  let capturedBody: any = null;
+  const okFetch: FetchLike = async (url, init) => {
+    calls++;
+    capturedUrl = url;
+    capturedAuth = String(init?.headers?.authorization ?? '');
+    capturedBody = JSON.parse(String(init?.body ?? '{}'));
+    return {
+      ok: true,
+      status: 200,
+      text: async () =>
+        JSON.stringify({
+          model: 'deepseek-chat',
+          choices: [{ message: { content: '{"ok":true}' } }],
+          usage: { prompt_tokens: 11, completion_tokens: 7, total_tokens: 18 }
+        })
+    };
+  };
+
+  const provider = new DeepSeekProvider({ apiKey: 'test-key', fetchImpl: okFetch });
+  const response = await provider.chat([{ role: 'user', content: 'hi' }]);
+  equal(capturedUrl, 'https://api.deepseek.com/chat/completions', 'provider posts to /chat/completions');
+  equal(capturedAuth, 'Bearer test-key', 'provider sends the bearer token');
+  equal(capturedBody.model, 'deepseek-chat', 'provider forwards the model');
+  equal(capturedBody.response_format?.type, 'json_object', 'provider requests JSON mode');
+  equal(response.usage.totalTokens, 18, 'provider maps the usage counters');
+  equal(calls, 1, 'a successful call is not retried');
+
+  // retry once on a 5xx, then succeed
+  let attempts = 0;
+  const flakyFetch: FetchLike = async () => {
+    attempts++;
+    if (attempts === 1) return { ok: false, status: 503, text: async () => 'upstream unavailable' };
+    return {
+      ok: true,
+      status: 200,
+      text: async () =>
+        JSON.stringify({
+          choices: [{ message: { content: '{"ok":true}' } }],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }
+        })
+    };
+  };
+  const flaky = new DeepSeekProvider({ apiKey: 'k', fetchImpl: flakyFetch, maxRetries: 1 });
+  const flakyResponse = await flaky.chat([{ role: 'user', content: 'hi' }]);
+  equal(attempts, 2, 'a 503 is retried once');
+  equal(flakyResponse.usage.totalTokens, 2, 'the retried request succeeds');
+
+  // never retry an auth failure
+  let authAttempts = 0;
+  const deniedFetch: FetchLike = async () => {
+    authAttempts++;
+    return { ok: false, status: 401, text: async () => 'invalid api key' };
+  };
+  const denied = new DeepSeekProvider({ apiKey: 'k', fetchImpl: deniedFetch, maxRetries: 2 });
+  let authError: LlmError | undefined;
+  try {
+    await denied.chat([{ role: 'user', content: 'hi' }]);
+  } catch (err) {
+    authError = err as LlmError;
+  }
+  check(authError?.status === 401, 'a 401 surfaces as an LlmError');
+  equal(authAttempts, 1, 'an auth failure is not retried');
+
+  // abort a hung request
+  const hangingFetch: FetchLike = (_url, init) =>
+    new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => {
+        const err = new Error('aborted');
+        err.name = 'AbortError';
+        reject(err);
+      });
+    });
+  const hanging = new DeepSeekProvider({ apiKey: 'k', fetchImpl: hangingFetch, timeoutMs: 40, maxRetries: 0 });
+  let timeoutError: LlmError | undefined;
+  try {
+    await hanging.chat([{ role: 'user', content: 'hi' }]);
+  } catch (err) {
+    timeoutError = err as LlmError;
+  }
+  check(!!timeoutError && /timed out/.test(timeoutError.message), 'a hung request is aborted and reported as a timeout');
+
+  // ---- graceful degradation
+  const telemetry = createTelemetry();
+  let fallbackNotified = 0;
+  const failingBrain = new LlmBrain(
+    new MockLlmProvider(() => {
+      throw new Error('network down');
+    }),
+    developerSpec(),
+    telemetry
+  );
+  const fallbackBrain = new FallbackBrain(failingBrain, new DeterministicBrain(), telemetry, () => {
+    fallbackNotified++;
+  });
+  const degraded = await fallbackBrain.think(brainContext());
+  check(!!degraded.reasoning, 'the fallback brain still produces an answer');
+  equal(telemetry.fallbacks, 1, 'the fallback is counted');
+  equal(telemetry.failures, 1, 'the transport failure is counted');
+  equal(fallbackNotified, 1, 'the orchestrator is notified about the degradation');
+  check(fallbackBrain.name.includes('⇒'), 'the composed brain name exposes both halves');
+
+  // ---- spec validation
+  const securitySpec = auditSpec('security_auditor', 'Cipher');
+  const unknownSignal = securitySpec.parse(
+    JSON.stringify({ approved: true, comments: 'ok', signals: [{ id: 'MADE-UP-999', reason: 'noise' }] }),
+    brainContext()
+  );
+  equal(unknownSignal.output.signals.length, 0, 'unknown signal ids are filtered out');
+  check(unknownSignal.output.comments.includes('ignored unknown signal ids'), 'unknown signal ids are reported');
+  check(unknownSignal.output.approved === true, 'an unknown signal alone does not block an approval');
+
+  const inconsistent = securitySpec.parse(
+    JSON.stringify({ approved: true, comments: 'fine', signals: [{ id: 'SEC-001', reason: 'eval found' }] }),
+    brainContext()
+  );
+  check(inconsistent.output.approved === false, 'an approval that cites a defect is treated as a rejection');
+  equal(inconsistent.output.signals[0].ruleId, 'SEC-001', 'a valid signal id survives validation');
+
+  const devSpec = developerSpec();
+  const fromJson = devSpec.parse(
+    JSON.stringify({
+      code: 'class RateLimiter {\n  constructor(capacity) { this.tokens = capacity; }\n  consume(t) { return true; }\n}',
+      changes: [],
+      notes: ''
+    }),
+    brainContext()
+  );
+  check(typeof fromJson.output.code === 'string', 'developer parses the JSON envelope');
+  const fromFence = devSpec.parse(
+    'Here you go:\n```js\nclass RateLimiter { consume() { return true; } getAvailableTokens() { return 1; } reset() {} }\n```',
+    brainContext()
+  );
+  check(fromFence.output.code.includes('class RateLimiter'), 'developer tolerates a bare code block');
+  let devRejected = false;
+  try {
+    devSpec.parse('{"code":"x"}', brainContext());
+  } catch {
+    devRejected = true;
+  }
+  check(devRejected, 'an unusably short artifact is rejected so the fallback can take over');
+
+  // ---- end to end: the whole platform on an "LLM" team
+  const mockProvider = new MockLlmProvider(makeRoleHandler());
+  const llmOrchestrator = new Orchestrator({ llm: { provider: mockProvider } });
+  const llmRuns = await llmOrchestrator.runAll(llmOrchestrator.getTasks(), { concurrency: 3 });
+
+  const llmEasy = llmRuns.find(r => r.taskId === 'rl-easy')!;
+  const llmNormal = llmRuns.find(r => r.taskId === 'rl-normal')!;
+  const llmHard = llmRuns.find(r => r.taskId === 'rl-hard')!;
+
+  equal(llmEasy.status, 'completed', 'an LLM team ships the clean task');
+  equal(llmEasy.iterations, 1, 'the clean task is not needlessly regenerated');
+  equal(llmNormal.status, 'completed', 'an LLM team heals the defective task');
+  equal(llmNormal.iterations, 2, 'the LLM team converges in two iterations');
+  equal(llmHard.status, 'needs_human', 'an LLM team still escalates the unsatisfiable task');
+
+  const llmInfo = llmOrchestrator.getLlmInfo();
+  check((llmInfo.telemetry?.calls ?? 0) >= 8, `the model was actually called (${llmInfo.telemetry?.calls} calls)`);
+  check((llmInfo.telemetry?.totalTokens ?? 0) > 0, 'token usage is reported by the provider');
+  equal(llmInfo.telemetry?.fallbacks, 0, 'no turn had to fall back to the offline brain');
+  check(llmInfo.brains.some(b => b.brain.includes('⇒')), 'agents report the composed llm⇒offline brain');
+  check((llmNormal.artifact ?? '').includes('RangeError'), 'the LLM-produced artifact contains the repaired guard');
+
+  // an unconfigured --live must not blow up: it simply stays offline
+  const offlineOrchestrator = new Orchestrator({ llm: { apiKey: '' } });
+  equal(offlineOrchestrator.getLlmInfo().telemetry, undefined, 'an unconfigured LLM leaves the platform offline');
+}
+
+// ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
   const started = Date.now();
@@ -708,6 +1010,7 @@ async function main(): Promise<void> {
   await suiteVerification();
   await suiteSelfLoop();
   await suiteEndToEnd();
+  await suiteLlm();
 
   const elapsed = Date.now() - started;
   process.stdout.write('\n' + '='.repeat(64) + '\n');

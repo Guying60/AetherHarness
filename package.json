@@ -17,6 +17,7 @@
     "start": "tsc -p tsconfig.json && node dist/src/cli.js",
     "tui": "node dist/src/cli.js",
     "auto": "node dist/src/cli.js --auto",
+    "live": "node dist/src/cli.js --live",
     "preview": "node dist/src/cli.js --frames 3",
     "demo": "tsc -p tsconfig.json && node dist/src/demo.js",
     "headless": "node dist/src/demo.js",

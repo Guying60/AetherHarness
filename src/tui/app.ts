@@ -10,6 +10,7 @@
  * there is no separate presentation-side simulation.
  */
 import { Orchestrator, RunSnapshot } from '../orchestrator.js';
+import { LlmConfig } from '../agent/llm/index.js';
 import { OrchestratorEvent } from '../types/index.js';
 import { RateLimiterTask } from '../scenarios/rate-limiter.js';
 import {
@@ -54,6 +55,8 @@ export interface TuiOptions {
   auto?: boolean;
   /** never use the alternate screen (pipes, logs) */
   plain?: boolean;
+  /** run the agent team on a remote model (DeepSeek / OpenAI-compatible) */
+  llm?: LlmConfig;
 }
 
 const TAG_COLOUR: Record<string, string> = {
@@ -63,7 +66,8 @@ const TAG_COLOUR: Record<string, string> = {
   sched: style.magenta,
   rag: style.green,
   human: style.bgYellow,
-  verify: style.yellow
+  verify: style.yellow,
+  llm: style.cyan
 };
 
 export class TuiApp {
@@ -89,7 +93,8 @@ export class TuiApp {
     this.opts = opts;
     this.tty = !opts.plain && !!process.stdout.isTTY && opts.frames === undefined;
     this.orchestrator = new Orchestrator({
-      onEvent: event => this.handleEvent(event)
+      onEvent: event => this.handleEvent(event),
+      llm: opts.llm
     });
   }
 
@@ -644,6 +649,18 @@ export class TuiApp {
     );
     agentLines.push(`${paint('tokens', style.dim)} ${this.totalTokens()}  ${paint('kb', style.dim)} ${this.orchestrator.knowledge.getChunkCount()}`);
 
+    const llm = this.orchestrator.getLlmInfo();
+    const online = llm.telemetry !== undefined;
+    agentLines.push(
+      `${paint('brain', style.dim)} ${paint(truncate(llm.label, Math.max(6, leftWidth - 8)), online ? style.cyan : style.gray)}`
+    );
+    if (llm.telemetry) {
+      agentLines.push(
+        `${paint('llm', style.dim)} ${llm.telemetry.calls}c · ${this.compact(llm.telemetry.totalTokens)}tok` +
+          `${llm.telemetry.fallbacks > 0 ? paint(` · fb ${llm.telemetry.fallbacks}`, style.yellow) : ''}`
+      );
+    }
+
     while (agentLines.length < mainH - 2) agentLines.push('');
     const leftBox = box(agentLines.slice(0, mainH - 2), leftWidth, { title: 'agents · load' });
 
@@ -812,6 +829,10 @@ export class TuiApp {
   private totalTokens(): string {
     const total = this.orchestrator.getAgents().reduce((s, a) => s + a.profile.totalTokensUsed, 0);
     return total > 1000 ? `${(total / 1000).toFixed(1)}k` : String(total);
+  }
+
+  private compact(value: number): string {
+    return value > 1000 ? `${(value / 1000).toFixed(1)}k` : String(value);
   }
 }
 

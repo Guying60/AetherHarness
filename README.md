@@ -21,9 +21,10 @@ pnpm start         # 交互式 TUI
 |:---|:---|
 | `pnpm start` | 交互式终端 UI（备用屏幕，↑↓/⏎/a/q） |
 | `pnpm run auto` | 自动播放：跑完 3 个任务并自动处理升级卡片（无需键盘） |
+| `pnpm run live` | 用 **DeepSeek API** 驱动整个智能体团队（需 `DEEPSEEK_API_KEY`） |
 | `pnpm run preview` | 渲染 3 帧到 stdout 后退出（非 TTY 环境预览布局） |
 | `pnpm run demo` | 无头纯文本端到端报告（录制/CI 用） |
-| `pnpm test` | 96 项断言，逐条对应一个已修复缺陷或一条引擎契约 |
+| `pnpm test` | 138 项断言，逐条对应一个已修复缺陷或一条引擎契约 |
 
 运行环境变量：`AETHER_SIM_LATENCY_MS=0` 可关闭模拟的模型延迟（默认 55ms，见下文"诚实声明"）。
 
@@ -42,7 +43,7 @@ Orchestrator
  ├─ KnowledgeBase      混合检索（CJK bigram + 哈希向量）
  ├─ Scheduler          优先级老化 + 能力派发 + 依赖门控 + 重试/故障转移
  ├─ WorkflowEngine     DAG 校验（DFS 环检测）/ 7 类节点 / 超时 / 逐节点检查点
- │   └─ AgentRegistry → BaseAgent → AgentBrain（可替换的认知插槽）
+ │   └─ AgentRegistry → BaseAgent → AgentBrain  ← 离线 Scripted ｜ LlmBrain(DeepSeek) + Fallback
  │        └─ ToolRegistry → code_sandbox / test_runner / static_analyzer / git_patch_manager
  ├─ SelfLoopEngine     PDCA：结构化失败 → Critic 归因 → 反馈驱动重建
  ├─ VerificationEngine Tier-1 规则 / Tier-2 沙箱断言 / Tier-3 红蓝审计
@@ -58,6 +59,49 @@ requirement(agent) → architecture(agent) → complexity gate(condition)
                └─ critic(agent)             ← 根因归因
   → static scan(tool) → git patch(tool)
 ```
+
+---
+
+## 接真实模型（DeepSeek / 任意 OpenAI 兼容端点）
+
+`AgentBrain` 是引擎唯一认识的认知接口。离线时它是确定性的脚本大脑；`--live` 时换成
+`LlmBrain`，而工作流 / 调度 / 验证 / 自愈循环**一行都不用改**。
+
+```bash
+# PowerShell
+$env:DEEPSEEK_API_KEY="sk-..."
+pnpm run build
+pnpm run live                       # 交互式 TUI，6 个 Agent 全部走模型
+node dist/src/cli.js --live --headless   # 或纯文本报告
+```
+
+| 配置 | 默认 | 说明 |
+|:---|:---|:---|
+| `DEEPSEEK_API_KEY` | — | 必填。未设置时 `--live` 打印提示并**自动退回离线**，不会崩 |
+| `DEEPSEEK_BASE_URL` / `--base-url` | `https://api.deepseek.com` | 换成任意 OpenAI 兼容端点（vLLM / OneAPI / Azure…） |
+| `DEEPSEEK_MODEL` / `--model` | `deepseek-chat` | `deepseek-reasoner` 也可 |
+| `--temperature` | 0.2 | 代码生成偏确定性 |
+| `--no-fallback` | 关 | 关闭"失败即降级到离线大脑"，改为把错误抛出 |
+
+### 工程上做了哪些防护
+
+真实模型的输出不可控，所以 `LlmBrain` 不是"转发请求"那么薄：
+
+1. **分层 JSON 抽取**：精确解析 → ```json 围栏 → 扫描第一个平衡的 `{...}`（正确跳过字符串内的花括号）；`{}` 这种由 `reset() {}` 产生的假阳性会被忽略。
+2. **模型不守 JSON 也能用**：developer 解析器在 JSON 里找不到 `code` 时，退而接受一个干净的 ```js 代码块。
+3. **输出校验，不合格就降级**：解析失败 / 产物过短 / 缺关键字段 → 抛错 → `FallbackBrain` 立刻切回离线大脑，单次抖动不会让整条 run 失败。
+4. **审核信号受白名单约束**：Tier-3 的 LLM 审计员只能引用那 7 个信号 id（每个都对应一个修复策略）。模型编造的 id 会被过滤并在评论里注明；"approve 的同时又 citing 缺陷"这种自相矛盾的回答按**驳回**处理。
+5. **验收测试永不交给模型写**：`testSuiteCode` 始终取领域模块里的规范测试集。让模型同时写代码和自己的考题，自愈循环就会"对着被削弱的 oracle 收敛"。
+6. **传输层**：429/5xx/网络/超时 → 指数退避重试（默认 2 次）；401/403 立即失败不浪费额度；单请求硬超时 45s；错误信息**脱敏**（`sk-***`）。
+7. **用量记账**：`usage.prompt_tokens / completion_tokens` 直接进 telemetry，TUI 与无头报告打印真实调用数与 token 数（不再是估算）。
+
+### 一次 `--live` 运行的判定逻辑
+
+模型拿到的不是"请写个限流器"，而是**上一轮的结构化失败**：失败的规则 id、沙箱断言的原文、Critic 的归因、以及必须逐字通过的验收测试。收敛判定仍然在本地确定性沙箱里完成——**模型说它对不算数，测试通过才算数**。
+
+不收敛也没关系：预算耗尽 → 最小注意力升级卡片 → 人决定重试 / 接受 / 中止。
+
+模型可能一轮就过，也可能一直过不了。这正是平台存在的理由，而不是需要隐藏的事实。
 
 ---
 
@@ -110,19 +154,21 @@ requirement(agent) → architecture(agent) → complexity gate(condition)
 上一版文档里的 `94% 成功率 / 98.5% 漏洞拦截 / 0.12 次打扰 / 1.42 轮收敛` **在仓库里没有任何
 可复现的评测脚本支撑**。v2.0 不再声称这些数字。可复现的只有：
 
-- `pnpm test` 的 96 项断言（含 14 条针对 v1.0 缺陷的回归）；
-- `pnpm run demo` 打印的本次运行遥测：dispatches / retries / aging promotions / 每工具调用次数与成功率 / 每 Agent token 估算。
+- `pnpm test` 的 138 项断言（含 14 条针对 v1.0 缺陷的回归、42 条 LLM 层与降级路径的断言）；
+- `pnpm run demo` 打印的本次运行遥测：dispatches / retries / aging promotions / 每工具调用次数与成功率 / 每 Agent token 数。
 
 明确的边界：
 
-1. **没有接真实 LLM。** `AgentBrain` 是认知插槽，当前实现是确定性的离线 `Scripted` 大脑
-   （`RateLimiter` 的修复策略空间）。接 DeepSeek/OpenAI 只需实现一个 `AgentBrain`，引擎无需改动。
+1. **默认不联网。** 不用 `--live` 时，6 个 Agent 跑的是确定性离线大脑（`RateLimiter` 的修复策略空间），
+   这样 CI 与演示都不依赖任何 API。加 `--live` 才换成 DeepSeek；两者共用同一套引擎与验证器。
+   离线大脑的"智能"是写死的策略空间，不是推理——这一点不要混淆。
 2. **`node:vm` 不是安全边界。** 它提供故障隔离与时间隔离（能中断死循环）、不向沙箱注入宿主对象，
    但无法防御真正的恶意逃逸。生产环境需要独立进程或容器。
-3. **token 数是估算**（`length / 4`），不是真实计量，UI 里标注 `estimated`。
+3. **token 数**：离线模式是按字符估算（标注 `estimated`），`--live` 模式是 API 返回的真实用量（标注 `reported`）。
 4. **55ms 的模型延迟是模拟值**，只为让调度器的排队行为可观察；`AETHER_SIM_LATENCY_MS=0` 可关闭。
+   使用 `--live` 时该模拟延迟仍然生效（它模拟的是"一次认知往返"，与真实网络延迟叠加）。
 5. **没有 Web 面板。** v1.0 的方案书里画了 `WebPanel` 与 REST/WS 接口，二者都不存在。
-   v2.0 交付的是 TUI；`Orchestrator` 已经通过 `subscribe()` 暴露结构化事件流，接 HTTP/SSE 前端时无需改引擎。
+   v2.0 交付的是 TUI；`Orchestrator` 已通过 `subscribe()` 暴露结构化事件流，接 HTTP/SSE 前端时无需改引擎。
 6. `PROPOSAL.md` / `SLIDES_OUTLINE.md` / `DEMO_SCRIPT.md` 是 v1.0 的竞赛材料，描述的是目标设计，
    其中包含上文提到的不可复现数字。**以本 README、代码与测试为准。**
 
@@ -133,7 +179,12 @@ requirement(agent) → architecture(agent) → complexity gate(condition)
 ```
 src/
   types/index.ts                    领域模型与契约（每个字段都被引擎消费）
-  agent/brain.ts                    AgentBrain 接口 + 确定性兜底大脑
+  agent/brain.ts                    AgentBrain 接口 + 确定性离线大脑
+  agent/llm/provider.ts             DeepSeek / OpenAI 兼容客户端（重试、超时、脱敏、用量）
+  agent/llm/prompt.ts               分层 JSON 抽取与提示词工具
+  agent/llm/llm-brain.ts            LlmBrain + FallbackBrain + 用量遥测
+  agent/llm/specs.ts                6 个角色的提示词与响应校验（含审计信号白名单）
+  agent/llm/index.ts                配置解析与 applyLlm（把团队换成 LLM 团队）
   agent/base-agent.ts               画像 / 滑动记忆 / 工具授权 / 名额
   agent/agent-registry.ts           注册、深拷贝版本历史、能力×负载匹配
   knowledge/knowledge-base.ts       CJK 双字 + 哈希向量混合检索
@@ -145,10 +196,10 @@ src/
   selfloop/self-loop-engine.ts      PDCA 循环、失败累积、升级卡片
   optimization/feedback-optimizer.ts 幂等提示词自愈 + 工具可靠性
   scenarios/rate-limiter.ts         业务域：修复策略空间、规则、DAG
-  orchestrator.ts                   门面：并发多任务、事件总线、升级处理
+  orchestrator.ts                   门面：并发多任务、事件总线、升级处理、LLM 装配
   tui/ansi.ts · keys.ts · app.ts    零依赖终端 UI
   cli.ts · demo.ts                  入口：TUI / 无头
-tests/run-tests.ts                  96 项断言
+tests/run-tests.ts                  138 项断言
 ```
 
 ## 许可证
