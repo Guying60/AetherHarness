@@ -57,6 +57,8 @@ export interface TuiOptions {
   plain?: boolean;
   /** run the agent team on a remote model (DeepSeek / OpenAI-compatible) */
   llm?: LlmConfig;
+  /** set when --live was requested but the platform stayed offline (shown in the header) */
+  llmWarning?: string;
 }
 
 const TAG_COLOUR: Record<string, string> = {
@@ -594,6 +596,24 @@ export class TuiApp {
       })
       .join('');
 
+    // The brain label lives in the header on purpose: it must never be clipped away,
+    // because "am I actually talking to the model?" is the first question a user asks.
+    const llm = this.orchestrator.getLlmInfo();
+    const online = llm.telemetry !== undefined;
+    const modeText = this.opts.llmWarning
+      ? `offline · ${this.opts.llmWarning}`
+      : online
+        ? llm.label
+        : 'offline · deterministic';
+    const modeColour = this.opts.llmWarning ? style.yellow : online ? style.cyan : style.gray;
+    const modeExtra =
+      llm.telemetry && llm.telemetry.calls > 0
+        ? paint(
+            ` (${llm.telemetry.calls} calls · ${this.compact(llm.telemetry.totalTokens)} tok · ${llm.telemetry.fallbacks} fallback)`,
+            style.dim
+          )
+        : '';
+
     const header = box(
       [
         `${paint(snapshot.title, style.bold)}  ${paint(badge.text, badge.colour)}  ${paint(
@@ -601,7 +621,7 @@ export class TuiApp {
           style.dim
         )}  ${paint('runs:', style.dim)} ${tabs}`,
         `${paint('task', style.dim)} ${snapshot.taskId}  ${paint('workflow', style.dim)} ${snapshot.workflow.id}` +
-          `  ${paint('philosophy', style.dim)} quiet autonomy · structured escalation`
+          `  ${paint('brain', style.dim)} ${paint(modeText, modeColour)}${modeExtra}`
       ],
       width,
       { title: 'AetherHarness · live orchestration', titleColor: style.cyan, badge: snapshot.status }
@@ -647,19 +667,12 @@ export class TuiApp {
       `${paint('aging↑', style.dim)} ${sched.agingPromotions}  ${paint('max wait', style.dim)} ${sched.maxObservedWaitMs}ms  ` +
         `${paint('disp', style.dim)} ${sched.dispatches}`
     );
-    agentLines.push(`${paint('tokens', style.dim)} ${this.totalTokens()}  ${paint('kb', style.dim)} ${this.orchestrator.knowledge.getChunkCount()}`);
-
-    const llm = this.orchestrator.getLlmInfo();
-    const online = llm.telemetry !== undefined;
     agentLines.push(
-      `${paint('brain', style.dim)} ${paint(truncate(llm.label, Math.max(6, leftWidth - 8)), online ? style.cyan : style.gray)}`
+      `${paint('tokens', style.dim)} ${this.totalTokens()}  ${paint('kb', style.dim)} ${this.orchestrator.knowledge.getChunkCount()}` +
+        `  ${paint('llm', style.dim)} ${
+          llm.telemetry ? `${llm.telemetry.calls}c/${llm.telemetry.fallbacks}fb` : paint('off', style.gray)
+        }`
     );
-    if (llm.telemetry) {
-      agentLines.push(
-        `${paint('llm', style.dim)} ${llm.telemetry.calls}c · ${this.compact(llm.telemetry.totalTokens)}tok` +
-          `${llm.telemetry.fallbacks > 0 ? paint(` · fb ${llm.telemetry.fallbacks}`, style.yellow) : ''}`
-      );
-    }
 
     while (agentLines.length < mainH - 2) agentLines.push('');
     const leftBox = box(agentLines.slice(0, mainH - 2), leftWidth, { title: 'agents · load' });

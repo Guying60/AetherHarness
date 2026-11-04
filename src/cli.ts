@@ -154,6 +154,7 @@ async function main(): Promise<void> {
   }
 
   const llm = buildLlmConfig(args);
+  const llmWarning = args.live && !llm ? 'DEEPSEEK_API_KEY not set' : undefined;
 
   if (llm) {
     const config = resolveLlmConfig(llm);
@@ -169,7 +170,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const app = new TuiApp({ auto: args.auto, plain: args.plain, frames: args.frames, llm });
+  const app = new TuiApp({ auto: args.auto, plain: args.plain, frames: args.frames, llm, llmWarning });
   await app.start();
 }
 
