@@ -157,7 +157,7 @@ export async function runHeadless(options: HeadlessOptions = {}): Promise<number
   );
   process.stdout.write(
     `  ${paint('tokens', style.dim)}     ${snap.agents.reduce((s, a) => s + a.tokens, 0)} ` +
-      `${snap.llm.telemetry ? 'reported' : 'estimated'} across ${snap.agents.length} agents\n`
+      `${snap.llm.telemetry ? 'accumulated (API usage + estimates for fallback turns)' : 'estimated'} across ${snap.agents.length} agents\n`
   );
 
   if (snap.llm.telemetry) {

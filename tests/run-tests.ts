@@ -36,6 +36,7 @@ import {
   BASE_FEATURES,
   FIX_BY_RULE,
   FULLY_FIXED,
+  asCode,
   makeVerificationSpec,
   renderRateLimiter
 } from '../src/scenarios/rate-limiter.js';
@@ -636,6 +637,40 @@ async function suiteSelfLoop(): Promise<void> {
   check(!!escalated.humanEscalation, 'a structured escalation card is produced');
   check(escalated.humanEscalation!.options.length === 3, 'the card offers exactly three options');
   check(escalated.humanEscalation!.reason.includes('DIST-001') || escalated.humanEscalation!.reason.includes('not converge'), 'the card explains why');
+
+  // REGRESSION GUARD: a late revision that scores worse must not be the one delivered.
+  const regressSpec = makeVerificationSpec({ auditors: [], requireCluster: true });
+  const regressing = await loop.runLoop(
+    {
+      maxIterations: 2,
+      targetNodeId: 'develop',
+      criticAgentId: 'critic',
+      verificationNodeId: 'verify',
+      convergenceThreshold: 0.9
+    },
+    regressSpec,
+    { goal: 'distributed rate limiter' },
+    async (_input, iteration) => ({
+      // iteration 1 is the good one (only DIST-001 blocks); iteration 2 throws the guards away
+      code: renderRateLimiter(iteration === 1 ? FULLY_FIXED : BASE_FEATURES)
+    })
+  );
+  equal(regressing.converged, false, 'the blocking rule still prevents convergence');
+  equal(regressing.regression, true, 'the loop notices that a later revision regressed');
+  equal(regressing.history[1].regression, true, 'the regressing iteration is flagged');
+  equal(regressing.bestIteration, 1, 'the best iteration is tracked');
+  check(
+    asCode(regressing.finalOutput).includes('RangeError'),
+    'the delivered artifact is the best one, not the last one'
+  );
+  check(
+    (regressing.finalVerification.score ?? 0) > (regressing.history[1].verification.score ?? 0),
+    'the delivered verification is the best score, not the latest'
+  );
+  check(
+    (regressing.humanEscalation?.reason ?? '').includes('regressed'),
+    'the escalation explains that the best artifact is attached'
+  );
 
   // REGRESSION (P1): prompt refinement must be idempotent.
   const optimizer = new FeedbackOptimizer(agentRegistry, toolRegistry);

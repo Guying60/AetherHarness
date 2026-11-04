@@ -34,6 +34,9 @@ export interface SelfLoopIterationRecord {
   durationMs: number;
   score: number;
   passed: boolean;
+  /** this revision scored lower than the best one seen so far */
+  regression?: boolean;
+  bestScoreSoFar?: number;
 }
 
 export interface SelfLoopExecutionResult {
@@ -41,6 +44,10 @@ export interface SelfLoopExecutionResult {
   totalIterations: number;
   finalOutput: any;
   finalVerification: VerificationResult;
+  /** which iteration produced the delivered artifact */
+  bestIteration?: number;
+  /** a later revision scored worse than an earlier one */
+  regression?: boolean;
   history: SelfLoopIterationRecord[];
   humanEscalation?: HumanEscalationRequest;
   accumulatedFailures: RuleFailure[];
@@ -148,6 +155,16 @@ export class SelfLoopEngine {
      */
     const unresolvedRuleIds = new Set<string>();
 
+    /**
+     * A rewriting executor (an LLM, especially) can *regress*: it produces a worse
+     * artifact than an earlier iteration. The loop therefore remembers the best-scoring
+     * artifact and delivers that one, and it tells the executor when it regressed.
+     */
+    let bestOutput: any = undefined;
+    let bestVerification: VerificationResult | undefined;
+    let bestIteration = 0;
+    let sawRegression = false;
+
     for (let iteration = 1; iteration <= config.maxIterations; iteration++) {
       const started = Date.now();
 
@@ -167,6 +184,15 @@ export class SelfLoopEngine {
       finalVerification = verification;
       previousVerification = verification;
 
+      const bestBefore = bestVerification;
+      const regressed = bestBefore !== undefined && verification.score < bestBefore.score;
+      if (regressed) sawRegression = true;
+      if (!bestBefore || verification.score > bestBefore.score) {
+        bestOutput = output;
+        bestVerification = verification;
+        bestIteration = iteration;
+      }
+
       const record: SelfLoopIterationRecord = {
         iteration,
         output,
@@ -176,7 +202,9 @@ export class SelfLoopEngine {
         criticFeedback: undefined,
         durationMs: Date.now() - started,
         score: verification.score,
-        passed: verification.passed
+        passed: verification.passed,
+        regression: regressed,
+        bestScoreSoFar: bestVerification?.score
       };
 
       // 3. EVAL
@@ -233,13 +261,24 @@ export class SelfLoopEngine {
       iterationInput = {
         ...iterationInput,
         previousAttempt: output,
-        diagnosticFeedback: guidance
+        diagnosticFeedback: guidance,
+        regressionWarning: regressed
+          ? `The revision in iteration ${iteration} scored LOWER (${verification.score.toFixed(2)}) than the best so far ` +
+            `(${(bestBefore?.score ?? 0).toFixed(2)}, iteration ${bestIteration}). Discard whatever caused the regression ` +
+            `and keep the logic that already passed.`
+          : undefined
       };
 
       history.push(record);
       options.onVerify?.(record);
       options.onIteration?.(record);
     }
+
+    // Deliver the BEST artifact, not the most recent one: a late regression must never
+    // silently downgrade what we hand to a reviewer.
+    const deliveredOutput = converged ? finalOutput : (bestOutput !== undefined ? bestOutput : finalOutput);
+    const deliveredVerification = converged ? finalVerification : (bestVerification ?? finalVerification);
+    const deliveredIteration = converged ? history.length : bestIteration;
 
     let humanEscalation: HumanEscalationRequest | undefined;
     if (!converged) {
@@ -260,8 +299,11 @@ export class SelfLoopEngine {
         nodeId: config.targetNodeId,
         reason:
           `Self-Loop did not converge after ${config.maxIterations} iteration(s). ` +
-          `Last score ${(finalVerification.score * 100).toFixed(1)}%. ` +
-          `Still blocking: ${(finalVerification.blockingReasons ?? []).slice(0, 3).join(' | ') || 'unknown'}.` +
+          `Best score ${(deliveredVerification.score * 100).toFixed(1)}% (iteration ${deliveredIteration}). ` +
+          `Still blocking: ${(deliveredVerification.blockingReasons ?? []).slice(0, 3).join(' | ') || 'unknown'}.` +
+          (sawRegression
+            ? ` The last revision regressed, so the best artifact is attached rather than the most recent one.`
+            : '') +
           (unresolved.length > 0
             ? ` The agent reported that it cannot satisfy ${unresolved.join(', ')} — more iterations will not change that.`
             : ' The last iterations were still making progress, so a larger budget may converge.'),
@@ -270,9 +312,11 @@ export class SelfLoopEngine {
         recommendedOptionIndex,
         options,
         contextSnapshot: {
-          lastScore: finalVerification.score,
-          blockingReasons: finalVerification.blockingReasons ?? [],
-          failedRuleIds: finalVerification.failedRuleIds ?? [],
+          bestScore: deliveredVerification.score,
+          bestIteration: deliveredIteration,
+          regression: sawRegression,
+          blockingReasons: deliveredVerification.blockingReasons ?? [],
+          failedRuleIds: deliveredVerification.failedRuleIds ?? [],
           unresolvedRuleIds: unresolved
         },
         createdAt: Date.now()
@@ -282,8 +326,10 @@ export class SelfLoopEngine {
     return {
       converged,
       totalIterations: history.length,
-      finalOutput,
-      finalVerification,
+      finalOutput: deliveredOutput,
+      finalVerification: deliveredVerification,
+      bestIteration: deliveredIteration,
+      regression: sawRegression,
       history,
       humanEscalation,
       accumulatedFailures: accumulated

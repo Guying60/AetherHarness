@@ -198,6 +198,18 @@ export function developerSpec(): LlmBrainSpec {
       const sandboxDetail =
         sandbox && !sandbox.passed ? String(sandbox.output ?? '') : '(all assertions passed last round, or not run yet)';
 
+      // Tell the model what already works. Without this it rewrites the whole file blind
+      // and happily deletes guards that already passed — the classic LLM regression.
+      const previousRules = Array.isArray(data.lastVerification?.ruleResults)
+        ? (data.lastVerification.ruleResults as Array<{ passed?: boolean; ruleId?: string; ruleName?: string }>)
+        : [];
+      const passedLines = [
+        ...previousRules.filter(r => r.passed === true).map(r => String(r.ruleId ?? r.ruleName)),
+        ...(typeof sandbox?.passedCount === 'number'
+          ? [`the sandbox already passed ${sandbox.passedCount}/${sandbox.totalCount ?? '?'} assertions`]
+          : [])
+      ];
+
       return [
         'Task:',
         String(data.goal ?? 'Implement a token bucket rate limiter.'),
@@ -216,11 +228,17 @@ export function developerSpec(): LlmBrainSpec {
         `Currently failing rules (${ctx.failedRules.length}) — fix all of them:`,
         formatRuleFailures(ctx.failedRules),
         '',
+        'Already passing — do NOT break these:',
+        bulletList(passedLines),
+        '',
         'Sandbox assertion errors from the previous attempt:',
         sandboxDetail,
         '',
         'Critic guidance from the previous iteration:',
         ctx.criticGuidance ? truncateText(ctx.criticGuidance, 1200) : '(none — this is the first attempt)',
+        ...(data.regressionWarning
+          ? ['', 'REGRESSION WARNING:', truncateText(String(data.regressionWarning), 600)]
+          : []),
         '',
         'Your previous attempt (complete file):',
         '```js',
@@ -249,18 +267,35 @@ export function developerSpec(): LlmBrainSpec {
       }
 
       if (parsed) {
-        code = typeof parsed.code === 'string' ? parsed.code : '';
+        // models rename the field constantly; accept the plausible spellings
+        const candidate =
+          typeof parsed.code === 'string'
+            ? parsed.code
+            : typeof parsed.implementation === 'string'
+              ? parsed.implementation
+              : typeof parsed.source === 'string'
+                ? parsed.source
+                : typeof parsed.file === 'string'
+                  ? parsed.file
+                  : typeof parsed.content === 'string'
+                    ? parsed.content
+                    : '';
+        code = candidate;
         changes = toStringArray(parsed.changes);
         notes = typeof parsed.notes === 'string' ? parsed.notes : '';
       }
 
-      if (code.trim().length === 0) {
-        // tolerate a model that ignored the JSON envelope but produced a clean code block
-        code = extractFencedCode(content) ?? '';
+      if (code.trim().length < 40) {
+        // the envelope may be malformed, or the model may have answered with prose + a fence
+        const fenced = extractFencedCode(content);
+        if (fenced) code = fenced;
       }
 
       if (code.trim().length < 40) {
-        throw new Error('developer response contained no usable `code` field');
+        const head = content.replace(/\s+/g, ' ').trim().slice(0, 100);
+        throw new Error(
+          `developer response contained no usable code (${content.length} chars, starts with "${head}")`
+        );
       }
 
       const reasoningParts = [
