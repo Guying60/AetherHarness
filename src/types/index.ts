@@ -320,6 +320,8 @@ export interface HumanEscalationRequest {
   reason: string;
   question: string;
   recommendedAction: string;
+  /** index into `options` that the platform recommends; the TUI pre-selects it */
+  recommendedOptionIndex?: number;
   options: string[];
   contextSnapshot: Record<string, any>;
   createdAt: number;

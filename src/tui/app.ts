@@ -261,7 +261,8 @@ export class TuiApp {
     } else if (key.char === 'a') {
       void this.startAll();
     } else if (key.char === 'e' && this.currentRun()?.snapshot.escalation) {
-      this.modal = { runId: this.currentRun()!.snapshot.runId, selected: 0 };
+      const escalation = this.currentRun()!.snapshot.escalation!;
+      this.modal = { runId: this.currentRun()!.snapshot.runId, selected: escalation.recommendedOptionIndex ?? 0 };
     }
   }
 
@@ -320,7 +321,7 @@ export class TuiApp {
     if (escalated) {
       const index = this.order.indexOf(escalated.runId);
       if (index >= 0) this.activeRun = index;
-      this.modal = { runId: escalated.runId, selected: 0 };
+      this.modal = { runId: escalated.runId, selected: escalated.escalation?.recommendedOptionIndex ?? 0 };
     }
   }
 
@@ -379,10 +380,16 @@ export class TuiApp {
   private async resolveEscalation(runId: string, option: number): Promise<void> {
     const result = await this.orchestrator.resolveEscalation(runId, option);
     this.dirty = true;
+
     if (result && result.runId !== runId) {
       // "retry" produced a fresh run — focus it
       this.attachSnapshot(result);
       this.activeRun = this.order.indexOf(result.runId);
+
+      // ...and if that retry escalated too, open its card instead of making the user hunt for it
+      if (result.escalation) {
+        this.modal = { runId: result.runId, selected: result.escalation.recommendedOptionIndex ?? 0 };
+      }
     } else if (result) {
       const ui = this.runUi.get(runId);
       if (ui) ui.snapshot = result;
@@ -627,10 +634,19 @@ export class TuiApp {
       { title: 'AetherHarness · live orchestration', titleColor: style.cyan, badge: snapshot.status }
     );
 
-    const logH = Math.max(5, Math.min(11, Math.floor(height / 4)));
-    const verifyH = snapshot.escalation ? 0 : 6;
+    // Layout budget. The escalation card is the most important screen in the product,
+    // so it gets a guaranteed height instead of inheriting the (smaller) log panel's.
+    const headerH = header.length;
     const footerH = 1;
-    const mainH = Math.max(8, height - header.length - verifyH - logH - footerH);
+    const escalated = !!snapshot.escalation;
+    const verifyH = escalated ? 0 : 6;
+    const logH = Math.max(5, Math.min(11, Math.floor(height / 4)));
+    const CARD_MAX_H = 14; // banner + 4 fields + 3 options + hints, plus borders
+    const cardH = escalated
+      ? Math.max(9, Math.min(CARD_MAX_H, height - headerH - 8 - footerH))
+      : 0;
+    const bottomH = escalated ? cardH : logH;
+    const mainH = Math.max(8, height - headerH - verifyH - bottomH - footerH);
 
     // ---- agents column
     const leftWidth = Math.min(38, Math.max(30, Math.floor(width * 0.32)));
@@ -779,7 +795,7 @@ export class TuiApp {
     // ---- log panel or escalation card
     let bottom: string[];
     if (snapshot.escalation) {
-      bottom = this.renderEscalationCard(snapshot, ui, width, Math.max(10, verifyH + logH));
+      bottom = this.renderEscalationCard(snapshot, ui, width, cardH);
     } else {
       const logLines = ui.logs
         .slice(-(logH - 2))
@@ -815,8 +831,9 @@ export class TuiApp {
     lines.push(`${paint('suggest ', style.dim)} ${paint(truncate(esc.recommendedAction, width - 12), style.green)}`);
     lines.push('');
     esc.options.forEach((option, i) => {
-      const marker = i === selected ? paint('▶', style.cyan, style.bold) : i === 0 ? paint('▷', style.dim) : ' ';
-      const label = `[${i + 1}] ${option}`;
+      const recommended = i === esc.recommendedOptionIndex;
+      const marker = i === selected ? paint('▶', style.cyan, style.bold) : recommended ? paint('▷', style.cyan) : ' ';
+      const label = `[${i + 1}] ${option}${recommended ? paint('  ← recommended', style.green) : ''}`;
       lines.push(`${marker} ${i === selected ? paint(label, style.inverse) : label}`);
     });
     lines.push('');
@@ -829,7 +846,14 @@ export class TuiApp {
       )
     );
 
-    while (lines.length < height - 2) lines.push('');
+    // On a short terminal the card must degrade by dropping blank rows, never by
+    // hiding one of the three decisions.
+    while (lines.length > height - 2) {
+      const blank = lines.lastIndexOf('');
+      if (blank < 0) break;
+      lines.splice(blank, 1);
+    }
+
     return box(lines.slice(0, height - 2), width, {
       title: 'human-in-the-loop gateway',
       titleColor: style.yellow,

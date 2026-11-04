@@ -140,6 +140,13 @@ export class SelfLoopEngine {
     let finalVerification: VerificationResult = { passed: false, score: 0, ruleResults: [] };
     let previousVerification: VerificationResult | undefined;
     let iterationInput: Record<string, any> = { ...seedInput };
+    /**
+     * Rule ids the executor itself declared it cannot satisfy (e.g. a requirement that
+     * needs infrastructure the agent has no access to). This is domain knowledge the
+     * engine cannot derive, and it is what decides whether "more budget" is a sane
+     * recommendation or just a way to burn tokens.
+     */
+    const unresolvedRuleIds = new Set<string>();
 
     for (let iteration = 1; iteration <= config.maxIterations; iteration++) {
       const started = Date.now();
@@ -147,6 +154,13 @@ export class SelfLoopEngine {
       // 1. DO
       const output = await executor(iterationInput, iteration, guidance, accumulated, previousVerification);
       finalOutput = output;
+
+      const declaredUnresolved = (output as { unresolved?: unknown } | null)?.unresolved;
+      if (Array.isArray(declaredUnresolved)) {
+        for (const id of declaredUnresolved) {
+          if (typeof id === 'string' && id.length > 0) unresolvedRuleIds.add(id);
+        }
+      }
 
       // 2. CHECK
       const verification = await this.verificationEngine.verify(output, spec, iterationInput, { iteration });
@@ -229,6 +243,17 @@ export class SelfLoopEngine {
 
     let humanEscalation: HumanEscalationRequest | undefined;
     if (!converged) {
+      const unresolved = Array.from(unresolvedRuleIds);
+      const options = [
+        'Retry with a doubled iteration budget',
+        'Accept current draft and open a patch for human review',
+        'Abort the task and roll back to the last checkpoint'
+      ];
+
+      // If the agent itself said "I cannot satisfy X", recommending another round would
+      // just burn tokens to re-prove it. Recommend acceptance instead.
+      const recommendedOptionIndex = unresolved.length > 0 ? 1 : 0;
+
       humanEscalation = {
         id: `escalation-${Date.now().toString(36)}`,
         workflowExecutionId,
@@ -236,18 +261,19 @@ export class SelfLoopEngine {
         reason:
           `Self-Loop did not converge after ${config.maxIterations} iteration(s). ` +
           `Last score ${(finalVerification.score * 100).toFixed(1)}%. ` +
-          `Still blocking: ${(finalVerification.blockingReasons ?? []).slice(0, 3).join(' | ') || 'unknown'}.`,
+          `Still blocking: ${(finalVerification.blockingReasons ?? []).slice(0, 3).join(' | ') || 'unknown'}.` +
+          (unresolved.length > 0
+            ? ` The agent reported that it cannot satisfy ${unresolved.join(', ')} — more iterations will not change that.`
+            : ' The last iterations were still making progress, so a larger budget may converge.'),
         question: 'The agent could not satisfy every acceptance rule within the iteration budget. How should we proceed?',
-        recommendedAction: 'Accept the current draft and escalate to a human reviewer',
-        options: [
-          'Retry with a doubled iteration budget',
-          'Accept current draft and open a patch for human review',
-          'Abort the task and roll back to the last checkpoint'
-        ],
+        recommendedAction: options[recommendedOptionIndex],
+        recommendedOptionIndex,
+        options,
         contextSnapshot: {
           lastScore: finalVerification.score,
           blockingReasons: finalVerification.blockingReasons ?? [],
-          failedRuleIds: finalVerification.failedRuleIds ?? []
+          failedRuleIds: finalVerification.failedRuleIds ?? [],
+          unresolvedRuleIds: unresolved
         },
         createdAt: Date.now()
       };

@@ -682,6 +682,16 @@ async function suiteEndToEnd(): Promise<void> {
 
   equal(hard.status, 'needs_human', 'the unsatisfiable task escalates to a human');
   check(!!hard.escalation, 'the escalation request is attached to the run');
+  equal(hard.escalation?.recommendedOptionIndex, 1, 'the card recommends acceptance when the agent reports an unresolved rule');
+  check(
+    (hard.escalation?.reason ?? '').includes('cannot satisfy DIST-001'),
+    'the card names the rule the agent declared unsatisfiable'
+  );
+  equal(
+    (hard.escalation?.contextSnapshot as any)?.unresolvedRuleIds?.[0],
+    'DIST-001',
+    'the unresolved rule ids travel with the escalation'
+  );
 
   // the modules that used to be dead code are now on the critical path
   const snap = orchestrator.getSnapshot();

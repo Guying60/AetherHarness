@@ -375,7 +375,7 @@ class DeveloperBrain implements AgentBrain {
     await latency();
     const seed = (ctx.request.input.seedFeatures as RateLimiterFeatures) ?? BASE_FEATURES;
     const features: RateLimiterFeatures = { ...seed };    const applied: string[] = [];
-    const unfixable: string[] = [];
+    const unresolved: string[] = [];
 
     for (const failure of ctx.failedRules) {
       const id = failure.id;
@@ -386,8 +386,8 @@ class DeveloperBrain implements AgentBrain {
           features[strategy] = true;
           applied.push(`${id} → ${strategy}`);
         }
-      } else if (!unfixable.includes(id)) {
-        unfixable.push(id);
+      } else if (!unresolved.includes(id)) {
+        unresolved.push(id);
       }
     }
 
@@ -398,15 +398,17 @@ class DeveloperBrain implements AgentBrain {
     const scan = await ctx.callTool?.('static_analyzer', { code });
     if (scan) toolCalls.push(scan);
 
-    const confidence = unfixable.length === 0 ? 0.93 : 0.55;
+    const confidence = unresolved.length === 0 ? 0.93 : 0.55;
 
     return {
-      output: { code, features, appliedFixes: applied, unfixable },
+      // `unresolved` is a contract with the self-loop: rule ids this agent states it
+      // cannot satisfy at all, which decides whether "more budget" is even worth offering
+      output: { code, features, appliedFixes: applied, unresolved },
       reasoning:
         `Iteration ${ctx.iteration}: emitted ${code.split('\n').length} lines with ` +
         `${applied.length} feedback-driven repair(s)` +
         (applied.length ? ` [${applied.join('; ')}]` : '') +
-        (unfixable.length ? `; no strategy for ${unfixable.join(', ')} → convergence is not reachable.` : '.') +
+        (unresolved.length ? `; no strategy for ${unresolved.join(', ')} → convergence is not reachable.` : '.') +
         ` Static analyzer: ${scan?.success ? `${scan.output?.issueCount ?? 0} issue(s)` : 'unavailable'}.`,
       confidence,
       toolCalls,
