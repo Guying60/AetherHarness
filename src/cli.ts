@@ -189,9 +189,9 @@ async function main(): Promise<void> {
     const server = new WebServer({ port: args.port, llm });
     const info = await server.start();
     process.stdout.write(
-      `\n${style.cyan}⚡ AetherHarness Web Dashboard listening at ${style.bold}${info.url}${style.reset}\n` +
-        `   Interactive multi-agent orchestration, dynamic scheduling & self-loop UI\n` +
-        `   Press Ctrl+C to stop.\n\n`
+      `\n${style.cyan}⚡ AetherHarness Web 控制台已启动，访问地址：${style.bold}${info.url}${style.reset}\n` +
+        `   多智能体协同编排、动态调度、PDCA 自愈与三层可信验证可视化平台\n` +
+        `   按 Ctrl+C 可停止服务。\n\n`
     );
 
     const shutdown = async () => {

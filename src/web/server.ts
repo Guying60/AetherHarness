@@ -1,8 +1,8 @@
 /**
- * AetherHarness / DSH-Orchestrator — Web Server.
+ * AetherHarness / DSH-Orchestrator — Web 服务器。
  *
- * Lightweight, zero-dependency HTTP + Server-Sent Events (SSE) server
- * serving the SPA dashboard and providing live control REST endpoints.
+ * 轻量级、零外部依赖的 HTTP + Server-Sent Events (SSE) 服务端，
+ * 负责分发 SPA 控制台静态页面并提供任务调度与人在回路决策控制 REST API。
  */
 import { createServer, IncomingMessage, ServerResponse, Server } from 'node:http';
 import { Orchestrator, RunSnapshot } from '../orchestrator.js';
@@ -246,17 +246,17 @@ export class WebServer {
   }
 }
 
-/** Standalone runner */
+/** 独立运行入口 */
 async function main(): Promise<void> {
   const port = Number(process.env.AETHER_PORT) || 3300;
   const server = new WebServer({ port });
   const info = await server.start();
-  console.log(`\n\x1b[36m⚡ AetherHarness Web Dashboard listening at \x1b[1m${info.url}\x1b[0m\n`);
-  console.log(`   Interactive multi-agent orchestration, dynamic scheduling & self-loop UI`);
-  console.log(`   Press Ctrl+C to stop.\n`);
+  console.log(`\n\x1b[36m⚡ AetherHarness Web 控制台已启动，访问地址：\x1b[1m${info.url}\x1b[0m\n`);
+  console.log(`   多智能体协同编排、动态调度、PDCA 自愈与三层可信验证可视化平台`);
+  console.log(`   按 Ctrl+C 可停止服务。\n`);
 
   const shutdown = async () => {
-    console.log('\nShutting down server...');
+    console.log('\n正在优雅关闭 Web 服务...');
     await server.stop();
     process.exit(0);
   };
@@ -265,11 +265,11 @@ async function main(): Promise<void> {
   process.on('SIGTERM', shutdown);
 }
 
-// Run main if invoked directly
+// 直接运行判断
 const isDirectRun = process.argv[1]?.includes('server') || process.argv[1]?.endsWith('server.js');
 if (isDirectRun) {
   main().catch(err => {
-    console.error('Failed to start server:', err);
+    console.error('启动 Web 服务失败:', err);
     process.exit(1);
   });
 }

@@ -1,8 +1,8 @@
 /**
- * AetherHarness / DSH-Orchestrator — Single-Page Application (SPA) Web Dashboard.
+ * AetherHarness / DSH-Orchestrator — 单页应用 (SPA) Web 可视化控制台。
  *
- * Exported as an inline HTML string with embedded modern CSS and reactive JavaScript.
- * Zero external dependencies: works out of the box in any modern browser.
+ * 以内联 HTML 字符串导出，内嵌响应式现代 CSS 与响应式原生 JavaScript。
+ * 零外部运行时依赖：开箱即用，集成实时 SSE 事件流、声明式 DAG 拓扑、三层可信验证与人在回路自愈交互。
  */
 
 export const DASHBOARD_HTML = `<!DOCTYPE html>
@@ -10,7 +10,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AetherHarness / DSH-Orchestrator — 智能体编排与可信调度平台</title>
+  <title>AetherHarness / DSH-Orchestrator — 多智能体编排与可信调度平台</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2300e5ff'><path d='M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5'/></svg>">
   <style>
     :root {
@@ -804,34 +804,34 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
       <div>
         <div class="brand-title">
           <span>AetherHarness</span>
-          <span class="brand-badge">Track 1 Orchestrator</span>
+          <span class="brand-badge">赛题1 · 多智能体自愈调度平台</span>
         </div>
-        <div class="brand-tagline">Take as little human attention as possible, give as much value as possible</div>
+        <div class="brand-tagline">最大限度减少人类注意力消耗，提供最大化业务价值 (Take as little human attention as possible, give as much value as possible)</div>
       </div>
     </div>
 
     <div class="header-actions">
-      <!-- Status Pills -->
+      <!-- 实时连接状态标识 -->
       <div id="sse-pill" class="pill pill-offline">
         <span class="pill-dot"></span>
-        <span id="sse-text">Connecting...</span>
+        <span id="sse-text">正在连接...</span>
       </div>
       <div id="llm-pill" class="pill">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-        <span id="llm-text">Deterministic Brains</span>
+        <span id="llm-text">离线确定性大脑</span>
       </div>
 
-      <!-- Action Buttons -->
+      <!-- 操作按钮群 -->
       <button class="btn btn-primary" id="btn-run-all" onclick="runSuite('all')">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-        <span>Run All Tasks</span>
+        <span>并发运行全部任务 (Run All)</span>
       </button>
 
-      <button class="btn btn-outline" onclick="runSuite('rl-easy')">Clean (rl-easy)</button>
-      <button class="btn btn-outline" onclick="runSuite('rl-normal')">Defect (rl-normal)</button>
-      <button class="btn btn-outline" onclick="runSuite('rl-hard')">Escalate (rl-hard)</button>
+      <button class="btn btn-outline" onclick="runSuite('rl-easy')">纯净任务 (rl-easy)</button>
+      <button class="btn btn-outline" onclick="runSuite('rl-normal')">自愈任务 (rl-normal)</button>
+      <button class="btn btn-outline" onclick="runSuite('rl-hard')">升级任务 (rl-hard)</button>
 
-      <button class="btn btn-outline btn-icon" title="Toggle Theme" onclick="toggleTheme()">
+      <button class="btn btn-outline btn-icon" title="切换明暗主题" onclick="toggleTheme()">
         <svg id="theme-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
         </svg>
@@ -839,101 +839,101 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
     </div>
   </header>
 
-  <!-- Container -->
+  <!-- 页面主体容器 -->
   <main class="container">
-    <!-- Metrics Bar -->
+    <!-- 关键量化指标栏 -->
     <section class="metrics-bar">
       <div class="metric-card">
-        <span class="metric-label">Completed Runs</span>
+        <span class="metric-label">已完成任务</span>
         <div class="metric-value">
           <span id="metric-runs">0</span>
-          <span class="metric-sub">/ 3 tasks</span>
+          <span class="metric-sub">/ 3 个基准</span>
         </div>
       </div>
 
       <div class="metric-card">
-        <span class="metric-label">Scheduler Dispatches</span>
+        <span class="metric-label">调度引擎派发</span>
         <div class="metric-value">
           <span id="metric-dispatches">0</span>
-          <span class="metric-sub">aging & load-aware</span>
+          <span class="metric-sub">优先级老化与负载感知</span>
         </div>
       </div>
 
       <div class="metric-card">
-        <span class="metric-label">Self-Loop Convergence</span>
+        <span class="metric-label">PDCA 自愈收敛率</span>
         <div class="metric-value">
           <span id="metric-convergence">100%</span>
-          <span class="metric-sub">PDCA iterations</span>
+          <span class="metric-sub">闭环迭代收敛</span>
         </div>
       </div>
 
       <div class="metric-card">
-        <span class="metric-label">Verification Pass Rate</span>
+        <span class="metric-label">三层可信核验通过</span>
         <div class="metric-value">
           <span id="metric-verify">3 / 3</span>
-          <span class="metric-sub">3-tier consensus</span>
+          <span class="metric-sub">多维零信任共识</span>
         </div>
       </div>
 
       <div class="metric-card">
-        <span class="metric-label">Total Token Footprint</span>
+        <span class="metric-label">模型 Token 总消耗</span>
         <div class="metric-value">
           <span id="metric-tokens">0</span>
-          <span class="metric-sub">tokens tracked</span>
+          <span class="metric-sub">用量透明追踪</span>
         </div>
       </div>
     </section>
 
-    <!-- Main Grid -->
+    <!-- 主展示网格 -->
     <div class="dashboard-grid">
-      <!-- Left Column: Agent Team & Declarative DAG -->
+      <!-- 左列：智能体团队与声明式 DAG -->
       <div style="display:flex; flex-direction:column; gap:24px;">
-        <!-- Agent Team Cards -->
+        <!-- 智能体团队卡片 -->
         <section class="card">
           <div class="card-header">
             <div class="card-title">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-              <span>Heterogeneous Agent Team (6 Specialized Roles)</span>
+              <span>异构多智能体协作团队 (6 大专业角色)</span>
             </div>
-            <span class="tag">Load-Aware Dynamic Dispatch</span>
+            <span class="tag">负载感知动态调度</span>
           </div>
 
           <div class="agent-grid" id="agent-grid">
-            <!-- Dynamic Agent Cards -->
+            <!-- 动态渲染智能体卡片 -->
           </div>
         </section>
 
-        <!-- Declarative DAG Workflow -->
+        <!-- 声明式工作流 DAG 流水线 -->
         <section class="card">
           <div class="card-header">
             <div class="card-title">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-              <span>Declarative Workflow DAG Pipeline</span>
+              <span>声明式工作流 DAG 执行流水线</span>
             </div>
             <div class="task-selector-tabs" id="task-tabs">
-              <button class="tab-btn active" onclick="selectTaskView('rl-easy')">rl-easy (Clean)</button>
-              <button class="tab-btn" onclick="selectTaskView('rl-normal')">rl-normal (Healing)</button>
-              <button class="tab-btn" onclick="selectTaskView('rl-hard')">rl-hard (Escalation)</button>
+              <button class="tab-btn active" onclick="selectTaskView('rl-easy')">rl-easy (纯净基准)</button>
+              <button class="tab-btn" onclick="selectTaskView('rl-normal')">rl-normal (缺陷自愈)</button>
+              <button class="tab-btn" onclick="selectTaskView('rl-hard')">rl-hard (规则升级)</button>
             </div>
           </div>
 
-          <!-- Dynamic Escalation Banner (when triggered) -->
+          <!-- 动态人在回路升级横幅 (触发时弹出) -->
           <div id="escalation-container" style="display:none;"></div>
 
           <div class="pipeline-flow" id="pipeline-nodes">
-            <!-- Dynamic DAG Nodes -->
+            <!-- 动态渲染 DAG 节点 -->
           </div>
         </section>
       </div>
 
-      <!-- Right Column: Verification Scorecard, Diff Patch & Live Terminal -->
+      <!-- 右列：可信验证卡、Diff 补丁与实时终端日志 -->
       <div style="display:flex; flex-direction:column; gap:24px;">
-        <!-- 3-Tier Verification Scorecard -->
+        <!-- 三层可信验证评分卡 -->
         <section class="card">
           <div class="card-header">
             <div class="card-title">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
-              <span>Trustworthy Verification (3-Tier Consensus)</span>
+              <span>三层渐进式可信验证共识体系</span>
             </div>
             <span id="active-task-label" class="tag">rl-easy</span>
           </div>
@@ -941,37 +941,37 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
           <div class="verification-card">
             <div class="score-gauge-wrap">
               <div>
-                <div style="font-size:11px; text-transform:uppercase; color:var(--text-dim); font-weight:600;">Composite Score</div>
+                <div style="font-size:11px; text-transform:uppercase; color:var(--text-dim); font-weight:600;">综合可信分</div>
                 <div class="score-number" id="verification-score">100%</div>
-                <div style="font-size:11px; color:var(--text-muted);" id="verification-threshold">Threshold: 85.0%</div>
+                <div style="font-size:11px; color:var(--text-muted);" id="verification-threshold">准入阈值: 85.0%</div>
               </div>
               <div style="text-align:right;">
-                <span id="verification-status-pill" class="pill pill-live">PASSED</span>
-                <div style="font-size:11px; color:var(--text-dim); margin-top:4px;" id="verification-iterations">Iterations: 1</div>
+                <span id="verification-status-pill" class="pill pill-live">核验通过</span>
+                <div style="font-size:11px; color:var(--text-dim); margin-top:4px;" id="verification-iterations">PDCA 轮次: 1</div>
               </div>
             </div>
 
             <div class="tier-list">
               <div class="tier-row" id="tier-1-row">
                 <div>
-                  <div class="tier-title">Tier 1: Sandbox Assertions</div>
-                  <div class="tier-desc">Deterministic vm unit tests, negative limits, concurrency leaks</div>
+                  <div class="tier-title">Tier 1: 隔离沙箱代码测试</div>
+                  <div class="tier-desc">node:vm 确定性测试、非法负数限制、并发竞争逃逸断言</div>
                 </div>
                 <span class="status-badge completed" id="tier-1-badge">PASSED</span>
               </div>
 
               <div class="tier-row" id="tier-2-row">
                 <div>
-                  <div class="tier-title">Tier 2: Static Security Rules</div>
-                  <div class="tier-desc">Zero-trust SEC-01..04, eval/Function checks, finite numbers</div>
+                  <div class="tier-title">Tier 2: 零信任静态安全审计</div>
+                  <div class="tier-desc">SEC-01..04 规则合规、禁用 eval/Function 动态执行、有限数值断言</div>
                 </div>
                 <span class="status-badge completed" id="tier-2-badge">PASSED</span>
               </div>
 
               <div class="tier-row" id="tier-3-row">
                 <div>
-                  <div class="tier-title">Tier 3: Multi-Agent Consensus</div>
-                  <div class="tier-desc">Elena (review) + Cipher (security) attributable rule attribution</div>
+                  <div class="tier-title">Tier 3: 多智能体红蓝对抗共识</div>
+                  <div class="tier-desc">Elena (质量评审) 与 Cipher (安全审计) 提供可归因的规则信号</div>
                 </div>
                 <span class="status-badge completed" id="tier-3-badge">PASSED</span>
               </div>
@@ -979,66 +979,66 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
           </div>
         </section>
 
-        <!-- Unified Git Diff & Patch Viewer -->
+        <!-- 统一 Git 补丁交付物卡片 -->
         <section class="card">
           <div class="card-header">
             <div class="card-title">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/></svg>
-              <span>Unified Git Patch & Deliverable</span>
+              <span>统一 Git 补丁交付物 (Unified Git Patch)</span>
             </div>
             <div style="display:flex; gap:6px;">
-              <button class="btn btn-outline" style="padding:4px 8px; font-size:11px;" onclick="copyPatch()">Copy Diff</button>
+              <button class="btn btn-outline" style="padding:4px 8px; font-size:11px;" onclick="copyPatch()">复制补丁 (Copy Diff)</button>
             </div>
           </div>
 
           <div class="diff-box" id="diff-box">
             <div style="padding:20px; text-align:center; color:var(--text-muted);">
-              Run a task to generate a verified unified git patch.
+              请运行任务，系统将在验证通过或人工接受后生成规范的 Git patch。
             </div>
           </div>
         </section>
 
-        <!-- Live Event Stream Console -->
+        <!-- 实时编排事件流控制台 -->
         <section class="card">
           <div class="card-header">
             <div class="card-title">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-              <span>Real-Time Orchestrator Event Stream</span>
+              <span>实时编排与调度事件日志 (SSE Stream)</span>
             </div>
             <div style="display:flex; gap:6px;">
-              <button class="btn btn-outline" style="padding:4px 8px; font-size:11px;" onclick="clearLogs()">Clear</button>
+              <button class="btn btn-outline" style="padding:4px 8px; font-size:11px;" onclick="clearLogs()">清空日志</button>
             </div>
           </div>
 
           <div class="terminal-toolbar">
             <div class="filter-chips">
-              <span class="chip active" onclick="setLogFilter('all', this)">All</span>
-              <span class="chip" onclick="setLogFilter('agent', this)">Agent</span>
-              <span class="chip" onclick="setLogFilter('sched', this)">Scheduler</span>
-              <span class="chip" onclick="setLogFilter('verify', this)">Verification</span>
-              <span class="chip" onclick="setLogFilter('loop', this)">Self-Loop</span>
-              <span class="chip" onclick="setLogFilter('human', this)">Escalation</span>
+              <span class="chip active" onclick="setLogFilter('all', this)">全部</span>
+              <span class="chip" onclick="setLogFilter('agent', this)">智能体</span>
+              <span class="chip" onclick="setLogFilter('sched', this)">调度器</span>
+              <span class="chip" onclick="setLogFilter('verify', this)">可信验证</span>
+              <span class="chip" onclick="setLogFilter('loop', this)">自愈循环</span>
+              <span class="chip" onclick="setLogFilter('human', this)">人工升级</span>
             </div>
             <label style="font-size:11px; color:var(--text-muted); display:flex; align-items:center; gap:4px; cursor:pointer;">
-              <input type="checkbox" id="auto-scroll-chk" checked> Auto-scroll
+              <input type="checkbox" id="auto-scroll-chk" checked> 自动滚动
             </label>
           </div>
 
           <div class="terminal-box" id="terminal-box">
-            <!-- Dynamic terminal lines -->
+            <!-- 动态渲染终端日志行 -->
           </div>
         </section>
       </div>
     </div>
   </main>
 
-  <!-- Footer -->
+  <!-- 页脚说明 -->
   <footer>
     <div>
-      AetherHarness / DSH-Orchestrator v2.0 · Zero-dependency TypeScript Multi-Agent Orchestration Platform
+      AetherHarness / DSH-Orchestrator v2.1 · 零外部依赖 TypeScript 多智能体协同编排与自愈调度平台
     </div>
     <div>
-      Built with DeepSeek Harness Architecture Philosophy · MIT License
+      基于 DeepSeek Harness 架构哲学构建 · 赛题1: Agent编排创新应用 · MIT License
     </div>
   </footer>
 
@@ -1048,7 +1048,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
   </div>
 
   <script>
-    // State
+    // 全局响应式状态
     const state = {
       runs: {},
       selectedTaskId: 'rl-easy',
@@ -1063,24 +1063,30 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
       }
     };
 
-    // Agent static radar fallback info
+    // 异构智能体元数据与雷达能力画像 (支持 ID 与英文名双重索引)
     const AGENT_META = {
-      'sarah': { avatar: 'S', name: 'Sarah', role: 'Requirement Analyst', color: '#00e5ff', radar: 'Spec: 95%' },
-      'david': { avatar: 'D', name: 'David', role: 'System Architect', color: '#38bdf8', radar: 'Design: 96%' },
-      'alex': { avatar: 'A', name: 'Alex', role: 'Core Engineer', color: '#a855f7', radar: 'Dev: 95%' },
-      'marcus': { avatar: 'M', name: 'Marcus', role: 'Critic / Diagnosis', color: '#f59e0b', radar: 'Root Cause: 98%' },
-      'elena': { avatar: 'E', name: 'Elena', role: 'Review Specialist', color: '#10b981', radar: 'Review: 92%' },
-      'cipher': { avatar: 'C', name: 'Cipher', role: 'Security Auditor', color: '#f43f5e', radar: 'Security: 97%' }
+      'req_analyst_01': { avatar: '莎', name: 'Sarah (需求分析师)', role: '需求规约提取与自动化测试生成', color: '#00e5ff', radar: '需求规约: 95%' },
+      'architect_01': { avatar: '戴', name: 'David (系统架构师)', role: '接口签名定义与状态不变量界定', color: '#38bdf8', radar: '系统架构: 96%' },
+      'developer_01': { avatar: '亚', name: 'Alex (核心开发工程师)', role: '代码实现与错误自适应自愈', color: '#a855f7', radar: '代码工程: 95%' },
+      'critic_01': { avatar: '马', name: 'Marcus (根因批评家)', role: '缺陷根因诊断与修复指引', color: '#f59e0b', radar: '根因归因: 98%' },
+      'reviewer_01': { avatar: '艾', name: 'Elena (代码评审专家)', role: '可维护性与代码完整性审计', color: '#10b981', radar: '代码评审: 92%' },
+      'security_auditor_01': { avatar: '赛', name: 'Cipher (安全审计专家)', role: '零信任安全合规与漏洞拦截', color: '#f43f5e', radar: '安全审计: 97%' },
+      'sarah': { avatar: '莎', name: 'Sarah (需求分析师)', role: '需求规约提取与自动化测试生成', color: '#00e5ff', radar: '需求规约: 95%' },
+      'david': { avatar: '戴', name: 'David (系统架构师)', role: '接口签名定义与状态不变量界定', color: '#38bdf8', radar: '系统架构: 96%' },
+      'alex': { avatar: '亚', name: 'Alex (核心开发工程师)', role: '代码实现与错误自适应自愈', color: '#a855f7', radar: '代码工程: 95%' },
+      'marcus': { avatar: '马', name: 'Marcus (根因批评家)', role: '缺陷根因诊断与修复指引', color: '#f59e0b', radar: '根因归因: 98%' },
+      'elena': { avatar: '艾', name: 'Elena (代码评审专家)', role: '可维护性与代码完整性审计', color: '#10b981', radar: '代码评审: 92%' },
+      'cipher': { avatar: '赛', name: 'Cipher (安全审计专家)', role: '零信任安全合规与漏洞拦截', color: '#f43f5e', radar: '安全审计: 97%' }
     };
 
-    // Initialize
+    // 页面初始化：建立 SSE 长连接并拉取全量状态
     window.addEventListener('DOMContentLoaded', () => {
       initSSE();
       fetchStatus();
       setInterval(fetchStatus, 4000);
     });
 
-    // Theme toggle
+    // 明暗主题切换
     function toggleTheme() {
       const current = document.documentElement.getAttribute('data-theme');
       const next = current === 'light' ? 'dark' : 'light';
@@ -1090,7 +1096,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
     const savedTheme = localStorage.getItem('dsh_theme') || 'dark';
     document.documentElement.setAttribute('data-theme', savedTheme);
 
-    // Toast
+    // 弹出轻量提示 (Toast)
     function showToast(msg, type = 'success') {
       const toast = document.getElementById('toast');
       const toastMsg = document.getElementById('toast-msg');
@@ -1099,7 +1105,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
       setTimeout(() => toast.classList.remove('show'), 3500);
     }
 
-    // Server-Sent Events (SSE)
+    // 建立 Server-Sent Events (SSE) 实时事件监听
     function initSSE() {
       const pill = document.getElementById('sse-pill');
       const text = document.getElementById('sse-text');
@@ -1108,12 +1114,12 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
 
       evtSource.onopen = () => {
         pill.className = 'pill pill-live';
-        text.textContent = 'SSE Live Connected';
+        text.textContent = 'SSE 实时已连接';
       };
 
       evtSource.onerror = () => {
         pill.className = 'pill pill-offline';
-        text.textContent = 'Reconnecting...';
+        text.textContent = '断线重连中...';
       };
 
       evtSource.onmessage = (e) => {
@@ -1124,25 +1130,26 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
       };
     }
 
-    // Fetch Status & Agents
+    // 定期拉取平台状态、智能体负载与任务结果
     async function fetchStatus() {
       try {
         const res = await fetch('/api/status');
         if (!res.ok) return;
         const data = await res.json();
         
-        // Update LLM Info
+        // 更新大模型/推理内核状态标识
         if (data.llm) {
-          document.getElementById('llm-text').textContent = data.llm.label || 'Offline deterministic';
+          const isLive = data.llm.label && !data.llm.label.includes('offline');
+          document.getElementById('llm-text').textContent = isLive ? 'DeepSeek 在线模型 (Live)' : '离线确定性大脑';
         }
 
-        // Update Agents
+        // 更新智能体列表
         if (data.agents && data.agents.length > 0) {
           state.agents = data.agents;
           renderAgents(data.agents);
         }
 
-        // Update Runs
+        // 更新各任务运行记录
         if (data.runs) {
           data.runs.forEach(r => { state.runs[r.taskId] = r; });
           updateTaskView();
@@ -1151,12 +1158,23 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
       } catch (e) {}
     }
 
+    // 渲染智能体团队卡片
     function renderAgents(agents) {
       const grid = document.getElementById('agent-grid');
       grid.innerHTML = agents.map(a => {
-        const meta = AGENT_META[a.profile.id] || { avatar: a.profile.name[0], name: a.profile.name, role: a.profile.role, color: '#00e5ff', radar: 'Skill: 95%' };
-        const isBusy = (a.currentLoad || 0) > 0;
-        const loadPct = Math.round(((a.currentLoad || 0) / (a.profile.maxConcurrentTasks || 2)) * 100);
+        const profile = a.profile || a;
+        const meta = AGENT_META[profile.id] || AGENT_META[profile.name?.toLowerCase()] || {
+          avatar: (profile.name || 'A')[0],
+          name: profile.name,
+          role: profile.role,
+          color: '#00e5ff',
+          radar: '综合能力: 95%'
+        };
+        const currentLoad = profile.currentLoad ?? a.currentLoad ?? 0;
+        const maxConcurrency = profile.maxConcurrency ?? profile.maxConcurrentTasks ?? 2;
+        const isBusy = currentLoad > 0;
+        const loadPct = Math.round((currentLoad / maxConcurrency) * 100);
+        const tokens = profile.totalTokensUsed ?? a.totalTokensUsed ?? 0;
 
         return \`
           <div class="agent-card \${isBusy ? 'busy' : ''}">
@@ -1168,12 +1186,12 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                   <div class="agent-role">\${meta.role}</div>
                 </div>
               </div>
-              <span class="agent-status \${isBusy ? 'working' : 'idle'}">\${isBusy ? 'WORKING' : 'IDLE'}</span>
+              <span class="agent-status \${isBusy ? 'working' : 'idle'}">\${isBusy ? '工作中' : '空闲'}</span>
             </div>
 
             <div class="agent-load-bar-wrap">
               <div class="agent-load-meta">
-                <span>Concurrency: \${a.currentLoad || 0} / \${a.profile.maxConcurrentTasks || 2}</span>
+                <span>并发载荷: \${currentLoad} / \${maxConcurrency}</span>
                 <span>\${meta.radar}</span>
               </div>
               <div class="progress-track">
@@ -1182,24 +1200,25 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             </div>
 
             <div class="agent-tags">
-              \${(a.profile.specializations || []).map(s => \`<span class="tag">\${s}</span>\`).join('')}
-              <span class="tag" style="margin-left:auto; color:var(--primary);">\${a.totalTokensUsed || 0} tok</span>
+              \${(profile.specializations || [profile.role]).map(s => \`<span class="tag">\${s}</span>\`).join('')}
+              <span class="tag" style="margin-left:auto; color:var(--primary);">\${tokens.toLocaleString()} tok</span>
             </div>
           </div>
         \`;
       }).join('');
     }
 
-    // Pipeline Nodes Definition
+    // 声明式工作流 DAG 节点阶段定义
     const PIPELINE_NODES = [
-      { id: 'n_requirement', name: 'Requirement Analysis', sub: 'Sarah · hybrid RAG grounding & spec extraction', icon: '1' },
-      { id: 'n_architecture', name: 'Architecture Design', sub: 'David · interface & concurrency boundaries', icon: '2' },
-      { id: 'n_complexity_gate', name: 'Complexity Gate', sub: 'Branching: full PDCA cycle vs quick pass', icon: '3' },
-      { id: 'n_loop', name: 'Self-Loop PDCA Cycle', sub: 'Alex (Dev) ⟲ Marcus (Critic & Diagnosis)', icon: '4' },
-      { id: 'n_scan', name: '3-Tier Verification & Scan', sub: 'Elena + Cipher + sandbox assertions', icon: '5' },
-      { id: 'n_patch', name: 'Git Patch Packaging', sub: 'Unified diff generator & deliverable check', icon: '6' }
+      { id: 'n_requirement', name: '需求理解与规约提取', sub: 'Sarah · 混合 RAG 知识对齐与验收断言生成', icon: '1' },
+      { id: 'n_architecture', name: '系统架构与契约设计', sub: 'David · 接口签名界定与高并发状态不变量', icon: '2' },
+      { id: 'n_complexity_gate', name: '动态复杂度门禁判定', sub: '分支路由：轻量通道直通 vs 完整 PDCA 闭环', icon: '3' },
+      { id: 'n_loop', name: 'Self-Loop 核心自愈循环 (PDCA)', sub: 'Alex(研发) ⟲ Marcus(批评诊断) 缺陷自愈收敛', icon: '4' },
+      { id: 'n_scan', name: '三层可信验证与交叉审计', sub: 'Elena(评审) + Cipher(安全) + 隔离沙箱断言', icon: '5' },
+      { id: 'n_patch', name: '交付物与 Git 补丁打包', sub: '生成规范的统一 Diff 补丁并执行可合并性校验', icon: '6' }
     ];
 
+    // 切换当前查看的任务基准
     function selectTaskView(taskId) {
       state.selectedTaskId = taskId;
       document.querySelectorAll('#task-tabs .tab-btn').forEach(btn => {
@@ -1209,6 +1228,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
       updateTaskView();
     }
 
+    // 刷新当前选定任务的全套视图
     function updateTaskView() {
       const run = state.runs[state.selectedTaskId];
       renderDAG(run);
@@ -1217,11 +1237,19 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
       renderDiff(run);
     }
 
+    // 渲染工作流 DAG 执行节点与动态状态高亮
     function renderDAG(run) {
       const container = document.getElementById('pipeline-nodes');
       const isRunning = run && run.status === 'running';
       const isCompleted = run && run.status === 'completed';
       const isEscalated = run && run.status === 'needs_human';
+
+      const statusLabels = {
+        'completed': '已完成',
+        'needs_human': '待人工介入',
+        'running': '执行中',
+        'pending': '排队中'
+      };
 
       container.innerHTML = PIPELINE_NODES.map((node, i) => {
         let nodeStatus = 'pending';
@@ -1243,13 +1271,14 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
               </div>
             </div>
             <div class="node-right">
-              <span class="status-badge \${nodeStatus}">\${nodeStatus.toUpperCase()}</span>
+              <span class="status-badge \${nodeStatus}">\${statusLabels[nodeStatus] || nodeStatus.toUpperCase()}</span>
             </div>
           </div>
         \`;
       }).join('');
     }
 
+    // 渲染人在回路最小注意力升级卡片
     function renderEscalation(run) {
       const container = document.getElementById('escalation-container');
       if (!run || run.status !== 'needs_human' || !run.escalation) {
@@ -1260,39 +1289,42 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
 
       container.style.display = 'block';
       const esc = run.escalation;
+      const score = run.verification ? Math.round(run.verification.score * 100) : 88;
+
       container.innerHTML = \`
         <div class="escalation-banner">
           <div class="escalation-header">
             <div class="escalation-title">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-              <span>Human Escalation Required (\${run.taskId})</span>
+              <span>触发人在回路（HITL）最小注意力升级 (\${run.taskId})</span>
             </div>
-            <span class="tag" style="background:rgba(245,158,11,0.2); color:var(--warning);">BLOCKING RULE: \${esc.ruleId || 'DIST-001'}</span>
+            <span class="tag" style="background:rgba(245,158,11,0.2); color:var(--warning);">阻断规则: \${esc.ruleId || 'DIST-001'}</span>
           </div>
 
           <div class="escalation-desc">
             \${esc.reason}
           </div>
 
-          <div style="font-size:12px; color:var(--text-dim);">
-            Best Draft Score: <strong style="color:var(--primary);">\${run.verification ? Math.round(run.verification.score * 100) : 88}%</strong> · Max self-loop iterations reached. Choose resolution:
+          <div style="font-size:12px; color:var(--text-dim); margin-bottom:10px;">
+            当前最优候选草稿得分: <strong style="color:var(--primary);">\${score}%</strong> · 已达到最大自愈预算轮次，请选择处理方案：
           </div>
 
           <div class="escalation-actions">
             <button class="btn btn-success" onclick="resolveEscalation('\${run.runId}', 1)">
-              ✓ Accept Best Draft (Review)
+              ✓ 方案2【系统推荐】：采纳当前最优候选草稿（转人工复核并附带补丁）
             </button>
             <button class="btn btn-warning" onclick="resolveEscalation('\${run.runId}', 0)">
-              ↺ Retry with 2x Budget
+              ↺ 方案1：追加 2 倍重试预算继续自愈迭代
             </button>
             <button class="btn btn-danger" onclick="resolveEscalation('\${run.runId}', 2)">
-              ✕ Abort Run
+              ✕ 方案3：中止任务并回滚至最近安全检查点
             </button>
           </div>
         </div>
       \`;
     }
 
+    // 渲染三层可信验证共识面板
     function renderVerification(run) {
       const v = run ? run.verification : null;
       const scoreElem = document.getElementById('verification-score');
@@ -1302,27 +1334,30 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
       if (!v) {
         scoreElem.textContent = '--';
         pill.className = 'pill pill-offline';
-        pill.textContent = 'AWAITING RUN';
-        iterElem.textContent = 'Iterations: --';
+        pill.textContent = '等待执行';
+        iterElem.textContent = 'PDCA 轮次: --';
+        setTierStatus('tier-1-badge', false, '等待');
+        setTierStatus('tier-2-badge', false, '等待');
+        setTierStatus('tier-3-badge', false, '等待');
         return;
       }
 
       const scorePct = Math.round(v.score * 100);
       scoreElem.textContent = scorePct + '%';
-      iterElem.textContent = 'Iterations: ' + (run.iterations || 1);
+      iterElem.textContent = 'PDCA 轮次: ' + (run.iterations || 1);
 
       if (v.passed) {
         pill.className = 'pill pill-live';
-        pill.textContent = 'PASSED';
+        pill.textContent = '核验通过';
       } else if (run.status === 'needs_human') {
         pill.className = 'pill pill-warn';
-        pill.textContent = 'ESCALATED';
+        pill.textContent = '待人工介入';
       } else {
         pill.className = 'pill pill-offline';
-        pill.textContent = 'BLOCKED';
+        pill.textContent = '已拦截';
       }
 
-      // Tiers
+      // 提取三层各自分数与结果
       const tiers = v.tiers || [];
       const t1 = tiers.find(t => t.tier === 'tier-1') || { passed: v.passed };
       const t2 = tiers.find(t => t.tier === 'tier-2') || { passed: v.passed };
@@ -1333,16 +1368,22 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
       setTierStatus('tier-3-badge', t3.passed);
     }
 
-    function setTierStatus(elemId, passed) {
+    function setTierStatus(elemId, passed, overrideText) {
       const elem = document.getElementById(elemId);
+      if (overrideText) {
+        elem.className = 'status-badge pending';
+        elem.textContent = overrideText;
+        return;
+      }
       elem.className = 'status-badge ' + (passed ? 'completed' : 'failed');
-      elem.textContent = passed ? 'PASSED' : 'BLOCKED';
+      elem.textContent = passed ? 'PASSED (通过)' : 'BLOCKED (拦截)';
     }
 
+    // 渲染统一 Git 补丁 Diff
     function renderDiff(run) {
       const box = document.getElementById('diff-box');
       if (!run || !run.patch || !run.patch.patch) {
-        box.innerHTML = '<div style="padding:20px; text-align:center; color:var(--text-muted);">No patch produced yet for ' + state.selectedTaskId + '.</div>';
+        box.innerHTML = '<div style="padding:20px; text-align:center; color:var(--text-muted);">暂无补丁生成，请运行任务。</div>';
         return;
       }
 
@@ -1357,10 +1398,12 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
       }).join('');
     }
 
+    // HTML 字符转义防注入
     function escapeHtml(text) {
       return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
+    // 更新汇总统计数据
     function updateMetrics() {
       const runs = Object.values(state.runs);
       const completed = runs.filter(r => r.status === 'completed').length;
@@ -1368,15 +1411,18 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
       document.getElementById('metric-dispatches').textContent = runs.length * 4 + (runs.length ? 3 : 0);
       
       let totalTokens = 0;
-      state.agents.forEach(a => { totalTokens += (a.totalTokensUsed || 0); });
+      state.agents.forEach(a => {
+        const profile = a.profile || a;
+        totalTokens += (profile.totalTokensUsed ?? a.totalTokensUsed ?? 0);
+      });
       document.getElementById('metric-tokens').textContent = totalTokens.toLocaleString();
     }
 
-    // Run Actions
+    // 触发任务下发
     async function runSuite(target) {
       const btn = document.getElementById('btn-run-all');
       btn.disabled = true;
-      showToast('Dispatching task: ' + target, 'success');
+      showToast('正在派发任务: ' + target, 'success');
 
       try {
         const res = await fetch('/api/tasks/run', {
@@ -1386,18 +1432,19 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
         });
         const result = await res.json();
         if (result.success) {
-          showToast('Tasks started in background', 'success');
+          showToast('任务已在后台启动', 'success');
           if (target !== 'all') selectTaskView(target);
         } else {
-          showToast('Failed to start: ' + (result.error || 'Unknown'), 'error');
+          showToast('启动失败: ' + (result.error || '未知错误'), 'error');
         }
       } catch (e) {
-        showToast('Network error: ' + e.message, 'error');
+        showToast('网络错误: ' + e.message, 'error');
       } finally {
         setTimeout(() => { btn.disabled = false; }, 1500);
       }
     }
 
+    // 人在回路升级决策回传
     async function resolveEscalation(runId, choiceIndex) {
       try {
         const res = await fetch('/api/runs/' + runId + '/escalate', {
@@ -1407,41 +1454,52 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
         });
         const data = await res.json();
         if (data.success) {
-          showToast('Escalation resolved! Applying action...', 'success');
+          showToast('升级决策已生效！正在应用对应操作...', 'success');
           fetchStatus();
         } else {
-          showToast('Failed: ' + data.error, 'error');
+          showToast('决策执行失败: ' + data.error, 'error');
         }
       } catch (err) {
-        showToast('Error: ' + err.message, 'error');
+        showToast('网络错误: ' + err.message, 'error');
       }
     }
 
+    // 复制 Git Patch 补丁到剪贴板
     function copyPatch() {
       const run = state.runs[state.selectedTaskId];
       if (!run || !run.patch || !run.patch.patch) {
-        showToast('No patch available to copy', 'warning');
+        showToast('暂无可用补丁可复制', 'warning');
         return;
       }
       navigator.clipboard.writeText(run.patch.patch);
-      showToast('Unified diff patch copied to clipboard!', 'success');
+      showToast('统一 Git 补丁已复制到剪贴板！', 'success');
     }
 
-    // Terminal Logging
+    // 处理 Orchestrator 事件广播
     function handleOrchestratorEvent(ev) {
       state.eventLogs.push(ev);
       appendLogLine(ev);
 
-      // Trigger status refresh on key events
+      // 关键事件触发界面实时刷新
       if (['run.started', 'run.finished', 'node.finished', 'escalation'].includes(ev.kind)) {
         fetchStatus();
       }
     }
 
+    // 向实时终端日志添加单行
     function appendLogLine(ev) {
       const box = document.getElementById('terminal-box');
       const timeStr = new Date(ev.at).toLocaleTimeString();
       const tag = ev.tag || 'sys';
+
+      const tagMap = {
+        'agent': '智能体',
+        'sched': '调度',
+        'verify': '验证',
+        'loop': '自愈',
+        'human': '人工',
+        'sys': '系统'
+      };
 
       if (state.activeFilter !== 'all' && tag !== state.activeFilter) return;
 
@@ -1449,7 +1507,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
       line.className = 'terminal-line';
       line.innerHTML = \`
         <span class="terminal-time">[\${timeStr}]</span>
-        <span class="terminal-tag \${tag}">\${tag}</span>
+        <span class="terminal-tag \${tag}">\${tagMap[tag] || tag}</span>
         <span class="terminal-msg">\${escapeHtml(ev.message || '')}</span>
       \`;
       box.appendChild(line);
@@ -1459,6 +1517,7 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
       }
     }
 
+    // 过滤终端日志类别
     function setLogFilter(filter, elem) {
       state.activeFilter = filter;
       document.querySelectorAll('.filter-chips .chip').forEach(c => c.classList.remove('active'));
@@ -1469,10 +1528,11 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
       state.eventLogs.forEach(ev => appendLogLine(ev));
     }
 
+    // 清空日志面板
     function clearLogs() {
       state.eventLogs = [];
       document.getElementById('terminal-box').innerHTML = '';
-      showToast('Event logs cleared', 'success');
+      showToast('事件日志已清空', 'success');
     }
   </script>
 </body>

@@ -1,7 +1,7 @@
 {
   "name": "aether-harness",
-  "version": "2.0.0",
-  "description": "AetherHarness / DSH-Orchestrator — multi-agent self-healing orchestration, dynamic scheduling and trustworthy verification with an interactive terminal UI",
+  "version": "2.1.0",
+  "description": "AetherHarness / DSH-Orchestrator — multi-agent self-healing orchestration, dynamic scheduling, 3-tier verification and dual Web/TUI presentation platform",
   "type": "module",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",

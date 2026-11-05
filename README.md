@@ -163,7 +163,25 @@ node dist/src/cli.js --live --headless   # 或纯文本报告
 
 ---
 
-## TUI
+## 可视化呈现：双呈现层（Web 控制台 + 交互式 TUI）
+
+平台提供两套互补的可视化窗口，均具备实时观测与人在回路（HITL）决策能力：
+
+### 1. Web 可视化控制台 (Web Dashboard)
+
+```bash
+pnpm run web       # 启动零依赖 Web 控制台（浏览器打开 http://127.0.0.1:3300）
+```
+
+- **全中文响应式 SPA 界面**：支持一键切换暗黑/明亮科技主题；
+- **异构多智能体团队监控**：实时展示 6 大专业角色的并发载荷进度条、能力画像雷达与 Token 用量；
+- **声明式工作流 DAG 流水线**：多任务选项卡（纯净基准、缺陷自愈、超限升级），动态高亮显示执行节点状态与耗时；
+- **三层渐进式可信验证共识卡**：仪表盘展示综合可信分、准入阈值（85.0%）、PDCA 迭代轮次，以及 Tier-1/2/3 的各层判定；
+- **统一 Git 补丁交付物**：实时渲染高亮 Unified Diff，支持一键复制补丁；
+- **实时 SSE 编排事件流**：多类别筛选（全部、智能体、调度器、验证、自愈、人工），支持自动滚屏；
+- **人在回路最小注意力升级卡片**：遇到不可收敛任务时，界面弹出结构化决策卡片（追加预算 / 采纳最优草稿 / 中止回滚），一键交互。
+
+### 2. 交互式终端 UI (TUI)
 
 ```
 ┌─ AetherHarness · live orchestration ─────────────── running ─┐
@@ -187,9 +205,9 @@ node dist/src/cli.js --live --headless   # 或纯文本报告
 ## 诚实声明（这是本版本最重要的一节）
 
 上一版文档里的 `94% 成功率 / 98.5% 漏洞拦截 / 0.12 次打扰 / 1.42 轮收敛` **在仓库里没有任何
-可复现的评测脚本支撑**。v2.0 不再声称这些数字。可复现的只有：
+可复现的评测脚本支撑**。v2.1 不再声称这些数字。可复现的只有：
 
-- `pnpm test` 的 138 项断言（含 14 条针对 v1.0 缺陷的回归、42 条 LLM 层与降级路径的断言）；
+- `pnpm test` 的 **172 项端到端及契约断言**（含 14 条针对 v1.0 缺陷的回归、42 条 LLM 层与降级路径断言、以及 23 条 Web 控制台与 API 接口契约断言）；
 - `pnpm run demo` 打印的本次运行遥测：dispatches / retries / aging promotions / 每工具调用次数与成功率 / 每 Agent token 数。
 
 明确的边界：
@@ -202,10 +220,8 @@ node dist/src/cli.js --live --headless   # 或纯文本报告
 3. **token 数**：离线模式是按字符估算（标注 `estimated`），`--live` 模式是 API 返回的真实用量（标注 `reported`）。
 4. **55ms 的模型延迟是模拟值**，只为让调度器的排队行为可观察；`AETHER_SIM_LATENCY_MS=0` 可关闭。
    使用 `--live` 时该模拟延迟仍然生效（它模拟的是"一次认知往返"，与真实网络延迟叠加）。
-5. **没有 Web 面板。** v1.0 的方案书里画了 `WebPanel` 与 REST/WS 接口，二者都不存在。
-   v2.0 交付的是 TUI；`Orchestrator` 已通过 `subscribe()` 暴露结构化事件流，接 HTTP/SSE 前端时无需改引擎。
-6. `PROPOSAL.md` / `SLIDES_OUTLINE.md` / `DEMO_SCRIPT.md` 是 v1.0 的竞赛材料，描述的是目标设计，
-   其中包含上文提到的不可复现数字。**以本 README、代码与测试为准。**
+5. **双呈现层落地**。已实现零外部依赖的轻量 Web 服务器与响应式 SPA 控制台（`src/web/server.ts` + `client.ts`），通过 HTTP/SSE 与内部 `Orchestrator` 闭环交互，全面打通多智能体编排的可视化展示与人在回路决策。
+6. `PROPOSAL.md` / `SLIDES_OUTLINE.md` / `DEMO_SCRIPT.md` 是竞赛材料，描述的是整体设计方案。**以本 README、代码与测试为准。**
 
 ---
 
@@ -232,9 +248,10 @@ src/
   optimization/feedback-optimizer.ts 幂等提示词自愈 + 工具可靠性
   scenarios/rate-limiter.ts         业务域：修复策略空间、规则、DAG
   orchestrator.ts                   门面：并发多任务、事件总线、升级处理、LLM 装配
+  web/server.ts · client.ts         零依赖 Web 仪表盘与 SSE 实时服务端
   tui/ansi.ts · keys.ts · app.ts    零依赖终端 UI
-  cli.ts · demo.ts                  入口：TUI / 无头
-tests/run-tests.ts                  138 项断言
+  cli.ts · demo.ts                  入口：Web / TUI / 无头
+tests/run-tests.ts                  172 项断言
 ```
 
 ## 许可证
