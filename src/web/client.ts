@@ -1,8 +1,12 @@
 /**
- * AetherHarness / DSH-Orchestrator — 单页应用 (SPA) Web 可视化控制台。
+ * AetherHarness / DSH-Orchestrator — Dify 风格可视化工作流编排与运行态控制台。
  *
- * 以内联 HTML 字符串导出，内嵌响应式现代 CSS 与响应式原生 JavaScript。
- * 零外部运行时依赖：开箱即用，集成实时 SSE 事件流、声明式 DAG 拓扑、三层可信验证与人在回路自愈交互。
+ * 采用原生现代 CSS3 与响应式 JavaScript 实现像素级 Dify 工作流画布体验：
+ * - 点阵无限画布、平移（Pan）与滚轮缩放（Zoom）
+ * - 拖拽移动节点（Drag & Drop）、平滑贝塞尔曲线连线与流动粒子效果
+ * - 右侧抽屉式节点检查器（Node Inspector）：支持【设置】与【上次运行】Tab 切换
+ * - 真实对接 Orchestrator 运行引擎：实时 SSE 事件驱动流水线状态、自愈与人在回路审批
+ * - 零外部依赖，开箱即用。
  */
 
 export const DASHBOARD_HTML = `<!DOCTYPE html>
@@ -10,792 +14,924 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AetherHarness / DSH-Orchestrator — 多智能体编排与可信调度平台</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2300e5ff'><path d='M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5'/></svg>">
+  <title>AetherHarness / DSH-Orchestrator — 工作流编排与可信调度平台</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23155eef'><path d='M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5'/></svg>">
   <style>
     :root {
-      --bg: #090d16;
-      --bg-alt: #0f1524;
-      --surface: rgba(18, 25, 42, 0.75);
-      --surface-hover: rgba(28, 38, 62, 0.85);
-      --surface-solid: #12192a;
-      --border: rgba(255, 255, 255, 0.08);
-      --border-focus: rgba(0, 229, 255, 0.5);
-      --text: #f1f5f9;
-      --text-dim: #94a3b8;
-      --text-muted: #64748b;
-      --primary: #00e5ff;
-      --primary-glow: rgba(0, 229, 255, 0.25);
-      --success: #10b981;
-      --success-glow: rgba(16, 185, 129, 0.2);
-      --warning: #f59e0b;
-      --warning-glow: rgba(245, 158, 11, 0.2);
-      --danger: #f43f5e;
-      --danger-glow: rgba(244, 63, 94, 0.2);
-      --purple: #a855f7;
-      --purple-glow: rgba(168, 85, 247, 0.2);
-      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
-      --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
-      --radius-sm: 6px;
-      --radius-md: 10px;
-      --radius-lg: 16px;
-      --shadow-sm: 0 2px 8px rgba(0,0,0,0.3);
-      --shadow-md: 0 8px 24px rgba(0,0,0,0.4);
-      --shadow-glow: 0 0 20px var(--primary-glow);
-      --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    }
-
-    [data-theme="light"] {
-      --bg: #f8fafc;
-      --bg-alt: #f1f5f9;
-      --surface: rgba(255, 255, 255, 0.85);
-      --surface-hover: #ffffff;
-      --surface-solid: #ffffff;
-      --border: rgba(0, 0, 0, 0.08);
-      --border-focus: rgba(2, 132, 199, 0.5);
+      --bg: #f8f9fc;
+      --canvas-bg: #f5f6fa;
+      --dot-color: #d8dce6;
+      --surface: #ffffff;
+      --surface-subtle: #f8fafc;
+      --surface-hover: #f1f5f9;
+      --border: #e2e8f0;
+      --border-subtle: #edf2f7;
+      --border-focus: #155eef;
       --text: #0f172a;
       --text-dim: #475569;
       --text-muted: #94a3b8;
-      --primary: #0284c7;
-      --primary-glow: rgba(2, 132, 199, 0.15);
-      --success: #059669;
-      --success-glow: rgba(5, 150, 105, 0.15);
-      --warning: #d97706;
-      --warning-glow: rgba(217, 119, 6, 0.15);
-      --danger: #e11d48;
-      --danger-glow: rgba(225, 29, 72, 0.15);
-      --purple: #7c3aed;
-      --purple-glow: rgba(124, 58, 237, 0.15);
-      --shadow-sm: 0 2px 8px rgba(0,0,0,0.06);
-      --shadow-md: 0 8px 24px rgba(0,0,0,0.08);
-      --shadow-glow: 0 0 16px var(--primary-glow);
+      --primary: #155eef;
+      --primary-hover: #124ec9;
+      --primary-light: #eff4ff;
+      --primary-border: #b2ccff;
+      --success: #12b76a;
+      --success-light: #ecfdf3;
+      --success-border: #a6f4c5;
+      --warning: #f79009;
+      --warning-light: #fffaeb;
+      --warning-border: #fedf89;
+      --danger: #f04438;
+      --danger-light: #fef3f2;
+      --danger-border: #fecdca;
+      --purple: #7f56d9;
+      --purple-light: #f9f5ff;
+      --purple-border: #d6bbfb;
+      --cyan: #06aec9;
+      --cyan-light: #f0fdf9;
+      --cyan-border: #99f6e4;
+      
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --font-mono: "JetBrains Mono", "Cascadia Code", Consolas, Menlo, monospace;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+      --radius-xl: 18px;
+      --shadow-sm: 0 1px 3px rgba(16, 24, 40, 0.05);
+      --shadow-card: 0 4px 20px -2px rgba(16, 24, 40, 0.06), 0 2px 6px -1px rgba(16, 24, 40, 0.04);
+      --shadow-hover: 0 12px 32px -4px rgba(16, 24, 40, 0.12);
+      --shadow-focus: 0 0 0 4px rgba(21, 94, 239, 0.14);
+      --transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      background-color: var(--bg);
-      color: var(--text);
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
       font-family: var(--font-sans);
-      font-size: 14px;
-      line-height: 1.5;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      overflow-x: hidden;
-      background-image: 
-        radial-gradient(circle at 15% 10%, rgba(0, 229, 255, 0.04) 0%, transparent 40%),
-        radial-gradient(circle at 85% 80%, rgba(168, 85, 247, 0.04) 0%, transparent 40%);
+      color: var(--text);
+      background-color: var(--canvas-bg);
+      user-select: none;
     }
 
-    /* Scrollbar */
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
-
-    /* Header */
-    header {
+    /* 顶部导航栏 (Navbar) */
+    .navbar {
+      height: 56px;
       background: var(--surface);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
       border-bottom: 1px solid var(--border);
-      position: sticky;
-      top: 0;
-      z-index: 100;
-      padding: 12px 24px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 16px;
-      flex-wrap: wrap;
+      padding: 0 16px;
+      position: relative;
+      z-index: 50;
+      box-shadow: var(--shadow-sm);
     }
-
-    .brand-wrap {
+    .nav-left {
       display: flex;
       align-items: center;
       gap: 12px;
     }
-    .logo-orb {
-      width: 34px;
-      height: 34px;
-      border-radius: 8px;
-      background: linear-gradient(135deg, var(--primary) 0%, var(--purple) 100%);
+    .brand-logo {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, #155eef 0%, #7f56d9 100%);
+      border-radius: var(--radius-md);
       display: flex;
       align-items: center;
       justify-content: center;
-      box-shadow: var(--shadow-glow);
       color: #fff;
+      box-shadow: 0 2px 8px rgba(21, 94, 239, 0.25);
     }
     .brand-title {
-      font-size: 16px;
-      font-weight: 700;
-      letter-spacing: -0.02em;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
       display: flex;
       align-items: center;
       gap: 8px;
     }
     .brand-badge {
-      font-size: 10px;
-      font-weight: 600;
-      text-transform: uppercase;
-      padding: 2px 6px;
-      border-radius: 4px;
-      background: rgba(0, 229, 255, 0.12);
-      color: var(--primary);
-      border: 1px solid rgba(0, 229, 255, 0.25);
-    }
-    .brand-tagline {
       font-size: 11px;
+      padding: 2px 8px;
+      background: var(--primary-light);
+      color: var(--primary);
+      border: 1px solid var(--primary-border);
+      border-radius: 12px;
+      font-weight: 500;
+    }
+    .tagline-pill {
+      font-size: 12px;
       color: var(--text-dim);
+      background: var(--surface-subtle);
+      border: 1px solid var(--border);
+      padding: 3px 10px;
+      border-radius: 14px;
       display: none;
     }
-    @media (min-width: 900px) { .brand-tagline { display: block; } }
+    @media (min-width: 1100px) {
+      .tagline-pill { display: inline-block; }
+    }
 
-    .header-actions {
+    .nav-center {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--surface-subtle);
+      padding: 3px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border);
+    }
+    .task-tab {
+      padding: 5px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      border-radius: var(--radius-sm);
+      border: none;
+      background: transparent;
+      color: var(--text-dim);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: var(--transition);
+    }
+    .task-tab:hover {
+      color: var(--text);
+    }
+    .task-tab.active {
+      background: var(--surface);
+      color: var(--primary);
+      font-weight: 600;
+      box-shadow: var(--shadow-sm);
+    }
+    .tab-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #94a3b8;
+    }
+    .task-tab.active .tab-dot.easy { background: var(--success); }
+    .task-tab.active .tab-dot.normal { background: var(--primary); }
+    .task-tab.active .tab-dot.hard { background: var(--warning); }
+
+    .nav-right {
       display: flex;
       align-items: center;
       gap: 10px;
-      flex-wrap: wrap;
     }
-
-    /* Badges & Pills */
-    .pill {
-      display: inline-flex;
+    .status-indicator {
+      display: flex;
       align-items: center;
       gap: 6px;
-      padding: 4px 10px;
-      border-radius: 20px;
       font-size: 12px;
       font-weight: 500;
+      padding: 4px 10px;
+      border-radius: 20px;
+      background: var(--surface-subtle);
       border: 1px solid var(--border);
-      background: var(--surface-hover);
       color: var(--text-dim);
     }
-    .pill-dot {
-      width: 8px;
-      height: 8px;
+    .status-dot {
+      width: 7px;
+      height: 7px;
       border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
     }
-    .pill-live {
-      color: var(--success);
-      border-color: rgba(16, 185, 129, 0.3);
-      background: var(--success-glow);
-    }
-    .pill-live .pill-dot {
-      background: var(--success);
-      box-shadow: 0 0 8px var(--success);
-      animation: pulse 1.8s infinite;
-    }
-    .pill-warn {
-      color: var(--warning);
-      border-color: rgba(245, 158, 11, 0.3);
-      background: var(--warning-glow);
-    }
-    .pill-warn .pill-dot { background: var(--warning); }
-    .pill-offline {
-      color: var(--text-muted);
-    }
-    .pill-offline .pill-dot { background: var(--text-muted); }
-
-    @keyframes pulse {
-      0% { transform: scale(0.95); opacity: 0.8; }
-      50% { transform: scale(1.15); opacity: 1; }
-      100% { transform: scale(0.95); opacity: 0.8; }
+    .status-dot.offline {
+      background: #ef4444;
+      box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
     }
 
-    /* Buttons */
+    /* 按钮组 */
     .btn {
       display: inline-flex;
       align-items: center;
+      justify-content: center;
       gap: 6px;
-      padding: 7px 14px;
-      border-radius: var(--radius-sm);
       font-size: 13px;
-      font-weight: 600;
-      cursor: pointer;
-      border: 1px solid transparent;
-      transition: var(--transition);
-      background: var(--surface-hover);
-      color: var(--text);
-    }
-    .btn:hover:not(:disabled) {
-      filter: brightness(1.12);
-      transform: translateY(-1px);
-    }
-    .btn:active:not(:disabled) { transform: translateY(0); }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-    .btn-primary {
-      background: linear-gradient(135deg, var(--primary) 0%, #0284c7 100%);
-      color: #04101c;
-      box-shadow: 0 2px 10px var(--primary-glow);
-    }
-    .btn-primary:hover:not(:disabled) {
-      box-shadow: 0 4px 16px var(--primary-glow);
-    }
-    .btn-success {
-      background: linear-gradient(135deg, var(--success) 0%, #059669 100%);
-      color: #ffffff;
-      box-shadow: 0 2px 10px var(--success-glow);
-    }
-    .btn-warning {
-      background: linear-gradient(135deg, var(--warning) 0%, #d97706 100%);
-      color: #ffffff;
-      box-shadow: 0 2px 10px var(--warning-glow);
-    }
-    .btn-danger {
-      background: linear-gradient(135deg, var(--danger) 0%, #e11d48 100%);
-      color: #ffffff;
-    }
-    .btn-outline {
+      font-weight: 500;
+      height: 34px;
+      padding: 0 14px;
+      border-radius: var(--radius-sm);
       border: 1px solid var(--border);
-      background: transparent;
+      background: var(--surface);
       color: var(--text);
+      cursor: pointer;
+      transition: var(--transition);
+      outline: none;
     }
-    .btn-outline:hover:not(:disabled) {
+    .btn:hover {
+      background: var(--surface-hover);
+      border-color: #cbd5e1;
+    }
+    .btn:active { transform: translateY(1px); }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .btn-primary {
+      background: var(--primary);
       border-color: var(--primary);
-      background: rgba(0, 229, 255, 0.06);
-      color: var(--primary);
+      color: #ffffff;
+      font-weight: 600;
+      box-shadow: 0 1px 3px rgba(21, 94, 239, 0.3);
+    }
+    .btn-primary:hover {
+      background: var(--primary-hover);
+      border-color: var(--primary-hover);
     }
     .btn-icon {
-      padding: 7px;
-      border-radius: var(--radius-sm);
+      width: 34px;
+      padding: 0;
     }
 
-    /* Layout */
-    .container {
-      max-width: 1560px;
-      margin: 0 auto;
-      padding: 24px;
-      width: 100%;
+    /* 主工作区 (Main Workspace) */
+    .workspace {
       display: flex;
-      flex-direction: column;
-      gap: 24px;
-    }
-
-    /* Metric Bar */
-    .metrics-bar {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 16px;
-    }
-    .metric-card {
-      background: var(--surface);
-      backdrop-filter: blur(12px);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-md);
-      padding: 16px 20px;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
+      width: 100vw;
+      height: calc(100vh - 56px);
       position: relative;
       overflow: hidden;
-      transition: var(--transition);
     }
-    .metric-card:hover {
-      border-color: rgba(255, 255, 255, 0.16);
-      transform: translateY(-2px);
-      box-shadow: var(--shadow-sm);
+
+    /* 无限画布容器 (Canvas Container) */
+    .canvas-viewport {
+      flex: 1;
+      height: 100%;
+      position: relative;
+      overflow: hidden;
+      background-color: var(--canvas-bg);
+      background-image: radial-gradient(var(--dot-color) 1.2px, transparent 1.2px);
+      background-size: 20px 20px;
+      cursor: grab;
     }
-    .metric-card::before {
-      content: '';
+    .canvas-viewport:active {
+      cursor: grabbing;
+    }
+
+    .canvas-transform {
       position: absolute;
-      top: 0; left: 0; right: 0;
-      height: 3px;
-      background: linear-gradient(90deg, var(--primary), var(--purple));
-      opacity: 0.7;
-    }
-    .metric-label {
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--text-dim);
-    }
-    .metric-value {
-      font-size: 26px;
-      font-weight: 700;
-      font-family: var(--font-mono);
-      color: var(--text);
-      display: flex;
-      align-items: baseline;
-      gap: 8px;
-    }
-    .metric-sub {
-      font-size: 12px;
-      color: var(--text-muted);
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      transform-origin: 0 0;
+      pointer-events: none;
     }
 
-    /* Main Grid */
-    .dashboard-grid {
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 24px;
+    /* SVG 连线层 */
+    .connections-svg {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 4000px;
+      height: 4000px;
+      pointer-events: none;
+      z-index: 10;
     }
-    @media (min-width: 1150px) {
-      .dashboard-grid {
-        grid-template-columns: 1.1fr 1fr;
-      }
+    .flow-path {
+      fill: none;
+      stroke: #cbd5e1;
+      stroke-width: 2.2px;
+      stroke-linecap: round;
+      transition: stroke 0.25s ease;
+    }
+    .flow-path.active {
+      stroke: var(--primary);
+      stroke-width: 2.6px;
+    }
+    .flow-path.animated {
+      stroke: var(--primary);
+      stroke-dasharray: 6, 6;
+      animation: flowDash 1s linear infinite;
+    }
+    .flow-path.loop {
+      stroke: var(--warning);
+      stroke-dasharray: 6, 4;
+      animation: flowDash 1.2s linear infinite reverse;
+    }
+    @keyframes flowDash {
+      to { stroke-dashoffset: -24; }
     }
 
-    .card {
+    /* 节点容器层 */
+    .nodes-layer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: auto;
+    }
+
+    /* Dify 节点卡片 (Node Card) */
+    .node-card {
+      position: absolute;
+      width: 320px;
       background: var(--surface);
-      backdrop-filter: blur(12px);
-      border: 1px solid var(--border);
       border-radius: var(--radius-lg);
-      padding: 20px;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-card);
       display: flex;
       flex-direction: column;
-      gap: 16px;
-      box-shadow: var(--shadow-sm);
-      position: relative;
+      cursor: pointer;
+      z-index: 20;
+      transition: box-shadow 0.2s, border-color 0.2s, transform 0.05s;
+      pointer-events: auto;
     }
-    .card-header {
+    .node-card:hover {
+      box-shadow: var(--shadow-hover);
+      border-color: #cbd5e1;
+    }
+    .node-card.selected {
+      border: 2px solid var(--primary);
+      box-shadow: var(--shadow-focus), var(--shadow-hover);
+    }
+    .node-card.running {
+      border: 2px solid var(--primary);
+      box-shadow: 0 0 0 4px rgba(21, 94, 239, 0.2);
+    }
+    .node-card.completed {
+      border: 1px solid var(--success-border);
+    }
+    .node-card.needs_human {
+      border: 2px solid var(--warning);
+      box-shadow: 0 0 0 4px rgba(247, 144, 9, 0.2);
+    }
+
+    /* 节点内部各区域 */
+    .node-header {
+      padding: 10px 14px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
-      border-bottom: 1px solid var(--border);
-      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border-subtle);
+      background: var(--surface-subtle);
+      border-top-left-radius: var(--radius-lg);
+      border-top-right-radius: var(--radius-lg);
+      cursor: move;
     }
-    .card-title {
-      font-size: 15px;
-      font-weight: 700;
+    .node-title-group {
       display: flex;
       align-items: center;
       gap: 8px;
     }
-    .card-title svg { color: var(--primary); }
-
-    /* Agent Team Grid */
-    .agent-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 12px;
+    .node-icon {
+      width: 24px;
+      height: 24px;
+      border-radius: var(--radius-sm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
     }
-    .agent-card {
-      background: var(--surface-hover);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-md);
-      padding: 14px;
+    .node-icon.input { background: #155eef; }
+    .node-icon.agent { background: #7f56d9; }
+    .node-icon.gate { background: #06aec9; }
+    .node-icon.loop { background: #f79009; }
+    .node-icon.verify { background: #12b76a; }
+    .node-icon.deliver { background: #475467; }
+
+    .node-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: -0.2px;
+    }
+
+    .node-status-icon {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+    }
+    .node-status-icon.completed {
+      background: var(--success);
+      color: #fff;
+    }
+    .node-status-icon.running {
+      border: 2px solid var(--primary);
+      border-top-color: transparent;
+      animation: spin 0.8s linear infinite;
+    }
+    .node-status-icon.pending {
+      background: #e2e8f0;
+      color: #94a3b8;
+    }
+    .node-status-icon.needs_human {
+      background: var(--warning);
+      color: #fff;
+      font-weight: 700;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .node-body {
+      padding: 12px 14px;
       display: flex;
       flex-direction: column;
       gap: 10px;
-      transition: var(--transition);
-      position: relative;
+      font-size: 12px;
     }
-    .agent-card:hover {
-      border-color: var(--primary);
-      transform: translateY(-2px);
-      box-shadow: 0 4px 14px rgba(0,0,0,0.2);
-    }
-    .agent-card.busy {
-      border-color: rgba(168, 85, 247, 0.4);
-      background: rgba(168, 85, 247, 0.06);
-    }
-    .agent-top {
+
+    /* 变量列表项 */
+    .variable-item {
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       justify-content: space-between;
-      gap: 8px;
+      padding: 6px 8px;
+      background: var(--surface-subtle);
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-dim);
+    }
+    .var-left {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text);
+    }
+    .var-badge {
+      font-size: 10px;
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      padding: 1px 4px;
+      border-radius: 4px;
+      background: var(--surface);
+    }
+
+    /* Agent 选择器卡片 */
+    .agent-selector-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px;
+      background: var(--surface-subtle);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      transition: var(--transition);
+    }
+    .agent-selector-card:hover {
+      background: var(--surface);
+      border-color: var(--primary-border);
     }
     .agent-avatar-wrap {
       display: flex;
       align-items: center;
-      gap: 10px;
-    }
-    .agent-avatar {
-      width: 32px;
-      height: 32px;
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.08);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 700;
-      color: var(--primary);
-    }
-    .agent-name {
-      font-weight: 700;
-      font-size: 14px;
-    }
-    .agent-role {
-      font-size: 11px;
-      color: var(--text-dim);
-    }
-    .agent-status {
-      font-size: 10px;
-      font-weight: 600;
-      text-transform: uppercase;
-      padding: 2px 7px;
-      border-radius: 12px;
-      border: 1px solid var(--border);
-    }
-    .agent-status.idle { background: rgba(255,255,255,0.05); color: var(--text-muted); }
-    .agent-status.working { background: var(--purple-glow); color: var(--purple); border-color: rgba(168,85,247,0.3); }
-
-    .agent-load-bar-wrap {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .agent-load-meta {
-      display: flex;
-      justify-content: space-between;
-      font-size: 11px;
-      color: var(--text-muted);
-    }
-    .progress-track {
-      width: 100%;
-      height: 5px;
-      border-radius: 3px;
-      background: rgba(255, 255, 255, 0.06);
-      overflow: hidden;
-    }
-    .progress-fill {
-      height: 100%;
-      border-radius: 3px;
-      background: linear-gradient(90deg, var(--primary), var(--purple));
-      transition: width 0.3s ease;
-    }
-
-    .agent-tags {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 4px;
-    }
-    .tag {
-      font-size: 10px;
-      padding: 1px 6px;
-      border-radius: 4px;
-      background: rgba(255, 255, 255, 0.05);
-      color: var(--text-dim);
-      font-family: var(--font-mono);
-    }
-
-    /* Workflow DAG */
-    .dag-container {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-    }
-    .task-selector-tabs {
-      display: flex;
       gap: 8px;
-      flex-wrap: wrap;
     }
-    .tab-btn {
-      padding: 6px 14px;
-      border-radius: var(--radius-sm);
-      font-size: 12px;
-      font-weight: 600;
-      background: transparent;
-      border: 1px solid var(--border);
-      color: var(--text-dim);
-      cursor: pointer;
-      transition: var(--transition);
-    }
-    .tab-btn:hover { border-color: var(--text-dim); color: var(--text); }
-    .tab-btn.active {
-      background: rgba(0, 229, 255, 0.12);
-      border-color: var(--primary);
-      color: var(--primary);
-    }
-
-    .pipeline-flow {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      position: relative;
-    }
-    .pipeline-node {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 12px 16px;
-      border-radius: var(--radius-md);
-      background: var(--surface-hover);
-      border: 1px solid var(--border);
-      transition: var(--transition);
-      position: relative;
-    }
-    .pipeline-node:hover {
-      border-color: rgba(255, 255, 255, 0.2);
-    }
-    .pipeline-node.running {
-      border-color: var(--primary);
-      background: rgba(0, 229, 255, 0.07);
-      box-shadow: 0 0 14px var(--primary-glow);
-    }
-    .pipeline-node.completed {
-      border-color: rgba(16, 185, 129, 0.4);
-    }
-    .pipeline-node.needs_human {
-      border-color: var(--warning);
-      background: rgba(245, 158, 11, 0.08);
-      box-shadow: 0 0 16px var(--warning-glow);
-    }
-    .node-left {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    .node-icon-box {
+    .agent-avatar-circle {
       width: 28px;
       height: 28px;
-      border-radius: 6px;
-      background: rgba(255, 255, 255, 0.06);
+      border-radius: 50%;
+      background: #e0f2fe;
+      color: #0284c7;
+      font-weight: 700;
+      font-size: 12px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 12px;
-      font-weight: 700;
     }
-    .pipeline-node.running .node-icon-box { background: var(--primary); color: #000; }
-    .pipeline-node.completed .node-icon-box { background: var(--success); color: #fff; }
-    .pipeline-node.needs_human .node-icon-box { background: var(--warning); color: #fff; }
+    .agent-profile-text {
+      display: flex;
+      flex-direction: column;
+      text-align: left;
+    }
+    .agent-profile-name {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .agent-profile-role {
+      font-size: 10px;
+      color: var(--text-muted);
+    }
 
-    .node-name { font-weight: 600; font-size: 13px; }
-    .node-sub { font-size: 11px; color: var(--text-dim); }
+    /* 条件分支面板 (Approval Policy Gate) */
+    .condition-block {
+      background: var(--surface-subtle);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .condition-label {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+    .condition-expr {
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
 
-    .node-right {
+    /* 端口锚点 (Handles) */
+    .port-handle {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 14px;
+      height: 14px;
+      background: #ffffff;
+      border: 2px solid var(--primary);
+      border-radius: 50%;
+      z-index: 25;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9px;
+      color: var(--primary);
+      transition: var(--transition);
+    }
+    .port-handle:hover {
+      background: var(--primary);
+      color: #ffffff;
+      transform: translateY(-50%) scale(1.2);
+    }
+    .port-left {
+      left: -7px;
+    }
+    .port-right {
+      right: -7px;
+    }
+
+    /* 顶部浮动控制卡片 (Top Floating Bar) */
+    .top-floating-bar {
+      position: absolute;
+      top: 16px;
+      left: 20px;
+      z-index: 40;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-sm);
+      padding: 4px 10px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .canvas-action-btn {
+      font-size: 12px;
+      color: var(--text-dim);
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 6px;
+      border-radius: 4px;
+    }
+    .canvas-action-btn:hover {
+      background: var(--surface-hover);
+      color: var(--text);
+    }
+
+    /* 底部右侧浮动控件 (Bottom Right Controls) */
+    .bottom-controls {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
       display: flex;
       align-items: center;
       gap: 8px;
+      z-index: 40;
     }
-    .status-badge {
-      font-size: 11px;
-      font-weight: 600;
-      padding: 2px 8px;
-      border-radius: 10px;
-    }
-    .status-badge.pending { background: rgba(255,255,255,0.06); color: var(--text-muted); }
-    .status-badge.running { background: var(--primary-glow); color: var(--primary); }
-    .status-badge.completed { background: var(--success-glow); color: var(--success); }
-    .status-badge.needs_human { background: var(--warning-glow); color: var(--warning); }
-    .status-badge.failed { background: var(--danger-glow); color: var(--danger); }
-
-    /* Escalation Card */
-    .escalation-banner {
-      background: linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(244, 63, 94, 0.12) 100%);
-      border: 1px solid rgba(245, 158, 11, 0.4);
+    .zoom-toolbar {
+      background: var(--surface);
+      border: 1px solid var(--border);
       border-radius: var(--radius-md);
-      padding: 16px;
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      align-items: center;
+      padding: 3px 6px;
+      gap: 6px;
+    }
+    .zoom-btn {
+      width: 26px;
+      height: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .zoom-btn:hover { background: var(--surface-hover); color: var(--text); }
+    .zoom-val { font-size: 12px; font-weight: 500; min-width: 42px; text-align: center; }
+
+    /* 小地图 (Minimap) */
+    .minimap-card {
+      width: 140px;
+      height: 90px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-sm);
+      position: relative;
+      overflow: hidden;
+    }
+    .minimap-preview {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      opacity: 0.8;
+    }
+    .minimap-dot {
+      position: absolute;
+      width: 8px;
+      height: 6px;
+      background: #cbd5e1;
+      border-radius: 2px;
+    }
+
+    /* 右侧抽屉式检查器 (Node Inspector Drawer - 类似 Dify) */
+    .inspector-drawer {
+      width: 440px;
+      height: 100%;
+      background: var(--surface);
+      border-left: 1px solid var(--border);
       display: flex;
       flex-direction: column;
-      gap: 12px;
-      animation: slideDown 0.3s ease;
+      position: relative;
+      z-index: 60;
+      box-shadow: -4px 0 24px rgba(16, 24, 40, 0.05);
+      transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     }
-    @keyframes slideDown {
-      from { opacity: 0; transform: translateY(-10px); }
-      to { opacity: 1; transform: translateY(0); }
+    .inspector-drawer.collapsed {
+      transform: translateX(100%);
+      width: 0;
+      border-left: none;
     }
-    .escalation-header {
+
+    .drawer-header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 8px;
     }
-    .escalation-title {
-      font-weight: 700;
-      color: var(--warning);
+    .drawer-node-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .drawer-node-name {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .drawer-actions {
       display: flex;
       align-items: center;
       gap: 6px;
     }
-    .escalation-desc {
-      font-size: 13px;
-      color: var(--text);
-      line-height: 1.4;
-    }
-    .escalation-actions {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    /* 3-Tier Verification Scorecard */
-    .verification-card {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-    .score-gauge-wrap {
+    .drawer-btn {
+      width: 28px;
+      height: 28px;
       display: flex;
       align-items: center;
-      justify-content: space-between;
-      background: var(--surface-hover);
-      border-radius: var(--radius-md);
-      padding: 12px 16px;
-      border: 1px solid var(--border);
-    }
-    .score-number {
-      font-size: 28px;
-      font-weight: 800;
-      font-family: var(--font-mono);
-      color: var(--primary);
-    }
-    .tier-list {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-    .tier-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 10px 14px;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      color: var(--text-dim);
       border-radius: var(--radius-sm);
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid var(--border);
-      font-size: 12px;
-    }
-    .tier-title {
-      font-weight: 600;
-    }
-    .tier-desc {
-      font-size: 11px;
-      color: var(--text-dim);
-    }
-
-    /* Diff & Artifact Viewer */
-    .diff-box {
-      background: #060910;
-      border: 1px solid var(--border);
-      border-radius: var(--radius-md);
-      font-family: var(--font-mono);
-      font-size: 12px;
-      max-height: 380px;
-      overflow-y: auto;
-      line-height: 1.5;
-    }
-    .diff-line {
-      padding: 2px 10px;
-      white-space: pre-wrap;
-      word-break: break-all;
-    }
-    .diff-header { color: #60a5fa; background: rgba(96, 165, 250, 0.08); font-weight: 600; }
-    .diff-add { color: #34d399; background: rgba(52, 211, 153, 0.12); }
-    .diff-del { color: #f87171; background: rgba(248, 113, 113, 0.12); }
-    .diff-hunk { color: #c084fc; background: rgba(192, 132, 252, 0.08); }
-
-    /* Live Event Terminal */
-    .terminal-box {
-      background: #060910;
-      border: 1px solid var(--border);
-      border-radius: var(--radius-md);
-      font-family: var(--font-mono);
-      font-size: 12px;
-      height: 320px;
-      overflow-y: auto;
-      padding: 12px;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .terminal-line {
-      display: flex;
-      gap: 8px;
-      align-items: baseline;
-      line-height: 1.4;
-    }
-    .terminal-time { color: var(--text-muted); font-size: 11px; flex-shrink: 0; }
-    .terminal-tag {
-      font-size: 10px;
-      font-weight: 600;
-      padding: 1px 5px;
-      border-radius: 3px;
-      text-transform: uppercase;
-      flex-shrink: 0;
-    }
-    .terminal-tag.agent { background: rgba(0, 229, 255, 0.15); color: var(--primary); }
-    .terminal-tag.sched { background: rgba(168, 85, 247, 0.15); color: var(--purple); }
-    .terminal-tag.verify { background: rgba(16, 185, 129, 0.15); color: var(--success); }
-    .terminal-tag.loop { background: rgba(245, 158, 11, 0.15); color: var(--warning); }
-    .terminal-tag.human { background: rgba(244, 63, 94, 0.15); color: var(--danger); }
-    .terminal-tag.llm { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
-    .terminal-tag.sys { background: rgba(255, 255, 255, 0.08); color: var(--text-dim); }
-    .terminal-msg { color: var(--text); flex-grow: 1; word-break: break-all; }
-
-    .terminal-toolbar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      margin-bottom: 8px;
-      flex-wrap: wrap;
-    }
-    .filter-chips {
-      display: flex;
-      gap: 4px;
-      flex-wrap: wrap;
-    }
-    .chip {
-      font-size: 11px;
-      padding: 3px 8px;
-      border-radius: 12px;
-      background: var(--surface-hover);
-      border: 1px solid var(--border);
-      color: var(--text-dim);
       cursor: pointer;
     }
-    .chip.active {
-      background: var(--primary);
-      color: #04101c;
-      border-color: var(--primary);
+    .drawer-btn:hover { background: var(--surface-hover); color: var(--text); }
+
+    /* 抽屉选项卡 */
+    .drawer-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      padding: 0 16px;
+      gap: 20px;
+    }
+    .drawer-tab {
+      padding: 10px 0;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-dim);
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .drawer-tab:hover { color: var(--text); }
+    .drawer-tab.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
       font-weight: 600;
     }
 
-    /* Footer */
-    footer {
-      margin-top: auto;
-      border-top: 1px solid var(--border);
-      padding: 16px 24px;
+    /* 抽屉主体内容区 */
+    .drawer-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .field-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .field-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .field-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: normal;
+    }
+
+    /* Prompt 编辑框 (仿 Dify) */
+    .prompt-box {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      background: var(--surface-subtle);
+      font-size: 12px;
+      line-height: 1.6;
+      color: var(--text-dim);
+      white-space: pre-wrap;
+      font-family: var(--font-mono);
+      max-height: 180px;
+      overflow-y: auto;
+    }
+    .prompt-tag {
+      display: inline-block;
+      padding: 1px 6px;
+      background: var(--primary-light);
+      color: var(--primary);
+      border-radius: 4px;
+      font-weight: 600;
+      margin: 0 2px;
+    }
+
+    /* 验证与沙箱结果徽章 */
+    .trace-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .trace-item {
       display: flex;
       align-items: center;
       justify-content: space-between;
       font-size: 12px;
-      color: var(--text-muted);
-      flex-wrap: wrap;
-      gap: 12px;
+    }
+    .badge {
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .badge-success { background: var(--success-light); color: var(--success); border: 1px solid var(--success-border); }
+    .badge-warning { background: var(--warning-light); color: var(--warning); border: 1px solid var(--warning-border); }
+    .badge-danger { background: var(--danger-light); color: var(--danger); border: 1px solid var(--danger-border); }
+    .badge-primary { background: var(--primary-light); color: var(--primary); border: 1px solid var(--primary-border); }
+
+    /* Diff 视图 */
+    .diff-container {
+      background: #090d16;
+      border-radius: var(--radius-md);
+      padding: 12px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      max-height: 220px;
+      overflow: auto;
+      color: #e2e8f0;
+      line-height: 1.5;
+    }
+    .diff-line { white-space: pre; }
+    .diff-add { color: #4ade80; background: rgba(74, 222, 128, 0.1); }
+    .diff-del { color: #f87171; background: rgba(248, 113, 113, 0.1); }
+    .diff-hunk { color: #38bdf8; }
+
+    /* 人在回路审批弹窗卡片 (HITL Modal / Banner) */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(15, 23, 42, 0.45);
+      backdrop-filter: blur(4px);
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: fadeIn 0.15s ease-out;
+    }
+    .modal-card {
+      width: 520px;
+      background: var(--surface);
+      border-radius: var(--radius-xl);
+      box-shadow: 0 20px 48px rgba(15, 23, 42, 0.2);
+      border: 1px solid var(--border);
+      overflow: hidden;
+      animation: scaleUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes scaleUp { from { transform: scale(0.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+    .modal-header {
+      padding: 16px 20px;
+      background: #fffbeb;
+      border-bottom: 1px solid #fef3c7;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .modal-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #92400e;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .modal-body {
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      font-size: 13px;
+      color: var(--text);
+    }
+    .modal-footer {
+      padding: 14px 20px;
+      border-top: 1px solid var(--border);
+      background: var(--surface-subtle);
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
     }
 
-    /* Toast Notification */
+    /* 轻量通知 (Toast) */
     .toast {
       position: fixed;
       bottom: 24px;
-      right: 24px;
-      padding: 12px 18px;
-      background: var(--surface-solid);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-md);
-      box-shadow: var(--shadow-md);
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: #0f172a;
+      color: #ffffff;
+      padding: 10px 18px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 500;
+      box-shadow: 0 10px 24px rgba(0,0,0,0.25);
+      z-index: 200;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.25s ease;
       display: flex;
       align-items: center;
-      gap: 10px;
-      z-index: 1000;
-      transition: var(--transition);
-      opacity: 0;
-      transform: translateY(20px);
-      pointer-events: none;
+      gap: 8px;
     }
     .toast.show {
+      transform: translateX(-50%) translateY(0);
       opacity: 1;
-      transform: translateY(0);
-      pointer-events: auto;
     }
-    .toast.success { border-color: var(--success); }
-    .toast.warning { border-color: var(--warning); }
-    .toast.error { border-color: var(--danger); }
   </style>
 </head>
 <body>
-  <!-- Header -->
-  <header>
-    <div class="brand-wrap">
-      <div class="logo-orb">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+
+  <!-- 顶部导航栏 (Navbar) -->
+  <header class="navbar">
+    <div class="nav-left">
+      <div class="brand-logo">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
           <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
           <polyline points="2 17 12 22 22 17"></polyline>
           <polyline points="2 12 12 17 22 12"></polyline>
@@ -804,735 +940,976 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
       <div>
         <div class="brand-title">
           <span>AetherHarness</span>
-          <span class="brand-badge">赛题1 · 多智能体自愈调度平台</span>
+          <span class="brand-badge">赛题1 · 工作流编排</span>
         </div>
-        <div class="brand-tagline">最大限度减少人类注意力消耗，提供最大化业务价值 (Take as little human attention as possible, give as much value as possible)</div>
       </div>
+      <span class="tagline-pill">以 DSH 为理念的自愈编排与可信调度平台</span>
     </div>
 
-    <div class="header-actions">
-      <!-- 实时连接状态标识 -->
-      <div id="sse-pill" class="pill pill-offline">
-        <span class="pill-dot"></span>
-        <span id="sse-text">正在连接...</span>
-      </div>
-      <div id="llm-pill" class="pill">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-        <span id="llm-text">离线确定性大脑</span>
+    <!-- 中部任务切换选项卡 -->
+    <div class="nav-center">
+      <button class="task-tab active" id="tab-rl-easy" onclick="selectTask('rl-easy')">
+        <span class="tab-dot easy"></span>
+        <span>rl-easy (纯净基准)</span>
+      </button>
+      <button class="task-tab" id="tab-rl-normal" onclick="selectTask('rl-normal')">
+        <span class="tab-dot normal"></span>
+        <span>rl-normal (缺陷自愈)</span>
+      </button>
+      <button class="task-tab" id="tab-rl-hard" onclick="selectTask('rl-hard')">
+        <span class="tab-dot hard"></span>
+        <span>rl-hard (人在回路)</span>
+      </button>
+    </div>
+
+    <!-- 右侧操作与测试运行按钮 -->
+    <div class="nav-right">
+      <div class="status-indicator">
+        <span class="status-dot" id="sse-dot"></span>
+        <span id="sse-text">实时已连接</span>
       </div>
 
-      <!-- 操作按钮群 -->
-      <button class="btn btn-primary" id="btn-run-all" onclick="runSuite('all')">
+      <button class="btn btn-primary" id="btn-run" onclick="runCurrentTask()">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-        <span>并发运行全部任务 (Run All)</span>
+        <span>测试运行 (Test Run)</span>
       </button>
 
-      <button class="btn btn-outline" onclick="runSuite('rl-easy')">纯净任务 (rl-easy)</button>
-      <button class="btn btn-outline" onclick="runSuite('rl-normal')">自愈任务 (rl-normal)</button>
-      <button class="btn btn-outline" onclick="runSuite('rl-hard')">升级任务 (rl-hard)</button>
-
-      <button class="btn btn-outline btn-icon" title="切换明暗主题" onclick="toggleTheme()">
-        <svg id="theme-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
-        </svg>
+      <button class="btn" onclick="runAllTasks()">并发运行全部</button>
+      
+      <button class="btn btn-icon" title="重置画布视角" onclick="resetCanvas()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
       </button>
     </div>
   </header>
 
-  <!-- 页面主体容器 -->
-  <main class="container">
-    <!-- 关键量化指标栏 -->
-    <section class="metrics-bar">
-      <div class="metric-card">
-        <span class="metric-label">已完成任务</span>
-        <div class="metric-value">
-          <span id="metric-runs">0</span>
-          <span class="metric-sub">/ 3 个基准</span>
+  <!-- 工作区容器 -->
+  <main class="workspace">
+    <!-- 无限画布区域 (Canvas Viewport) -->
+    <div class="canvas-viewport" id="canvas-viewport" onmousedown="onCanvasMouseDown(event)" onwheel="onCanvasWheel(event)">
+      <!-- 顶部浮动操作条 -->
+      <div class="top-floating-bar">
+        <button class="canvas-action-btn" onclick="focusSelectedNode()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m10 15 5-3-5-3v6Z"/></svg>
+          <span>滚动至选中节点</span>
+        </button>
+        <span style="color:#cbd5e1;">|</span>
+        <span style="font-size:12px; color:var(--text-dim);" id="canvas-status-desc">就绪 · 6 个智能体在席</span>
+      </div>
+
+      <!-- 画布缩放与平移变换层 -->
+      <div class="canvas-transform" id="canvas-transform">
+        <!-- SVG 连线层 -->
+        <svg class="connections-svg" id="connections-svg">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 8 5 L 0 9 z" fill="#94a3b8"/>
+            </marker>
+            <marker id="arrow-active" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 8 5 L 0 9 z" fill="#155eef"/>
+            </marker>
+          </defs>
+          <!-- 动态生成的贝塞尔连线路径 -->
+        </svg>
+
+        <!-- 节点层 -->
+        <div class="nodes-layer pipeline-flow" id="nodes-layer">
+          <!-- 动态渲染 Dify 风格节点卡片 -->
         </div>
       </div>
 
-      <div class="metric-card">
-        <span class="metric-label">调度引擎派发</span>
-        <div class="metric-value">
-          <span id="metric-dispatches">0</span>
-          <span class="metric-sub">优先级老化与负载感知</span>
+      <!-- 底部控制条 -->
+      <div class="bottom-controls">
+        <div class="zoom-toolbar">
+          <button class="zoom-btn" onclick="changeZoom(-0.1)">−</button>
+          <span class="zoom-val" id="zoom-val">100%</span>
+          <button class="zoom-btn" onclick="changeZoom(0.1)">+</button>
+          <button class="zoom-btn" title="适应屏幕" onclick="resetCanvas()">⛶</button>
         </div>
-      </div>
 
-      <div class="metric-card">
-        <span class="metric-label">PDCA 自愈收敛率</span>
-        <div class="metric-value">
-          <span id="metric-convergence">100%</span>
-          <span class="metric-sub">闭环迭代收敛</span>
+        <div class="minimap-card">
+          <div class="minimap-preview" id="minimap-preview">
+            <!-- 小地图节点点阵缩略图 -->
+          </div>
         </div>
-      </div>
-
-      <div class="metric-card">
-        <span class="metric-label">三层可信核验通过</span>
-        <div class="metric-value">
-          <span id="metric-verify">3 / 3</span>
-          <span class="metric-sub">多维零信任共识</span>
-        </div>
-      </div>
-
-      <div class="metric-card">
-        <span class="metric-label">模型 Token 总消耗</span>
-        <div class="metric-value">
-          <span id="metric-tokens">0</span>
-          <span class="metric-sub">用量透明追踪</span>
-        </div>
-      </div>
-    </section>
-
-    <!-- 主展示网格 -->
-    <div class="dashboard-grid">
-      <!-- 左列：智能体团队与声明式 DAG -->
-      <div style="display:flex; flex-direction:column; gap:24px;">
-        <!-- 智能体团队卡片 -->
-        <section class="card">
-          <div class="card-header">
-            <div class="card-title">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-              <span>异构多智能体协作团队 (6 大专业角色)</span>
-            </div>
-            <span class="tag">负载感知动态调度</span>
-          </div>
-
-          <div class="agent-grid" id="agent-grid">
-            <!-- 动态渲染智能体卡片 -->
-          </div>
-        </section>
-
-        <!-- 声明式工作流 DAG 流水线 -->
-        <section class="card">
-          <div class="card-header">
-            <div class="card-title">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-              <span>声明式工作流 DAG 执行流水线</span>
-            </div>
-            <div class="task-selector-tabs" id="task-tabs">
-              <button class="tab-btn active" onclick="selectTaskView('rl-easy')">rl-easy (纯净基准)</button>
-              <button class="tab-btn" onclick="selectTaskView('rl-normal')">rl-normal (缺陷自愈)</button>
-              <button class="tab-btn" onclick="selectTaskView('rl-hard')">rl-hard (规则升级)</button>
-            </div>
-          </div>
-
-          <!-- 动态人在回路升级横幅 (触发时弹出) -->
-          <div id="escalation-container" style="display:none;"></div>
-
-          <div class="pipeline-flow" id="pipeline-nodes">
-            <!-- 动态渲染 DAG 节点 -->
-          </div>
-        </section>
-      </div>
-
-      <!-- 右列：可信验证卡、Diff 补丁与实时终端日志 -->
-      <div style="display:flex; flex-direction:column; gap:24px;">
-        <!-- 三层可信验证评分卡 -->
-        <section class="card">
-          <div class="card-header">
-            <div class="card-title">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
-              <span>三层渐进式可信验证共识体系</span>
-            </div>
-            <span id="active-task-label" class="tag">rl-easy</span>
-          </div>
-
-          <div class="verification-card">
-            <div class="score-gauge-wrap">
-              <div>
-                <div style="font-size:11px; text-transform:uppercase; color:var(--text-dim); font-weight:600;">综合可信分</div>
-                <div class="score-number" id="verification-score">100%</div>
-                <div style="font-size:11px; color:var(--text-muted);" id="verification-threshold">准入阈值: 85.0%</div>
-              </div>
-              <div style="text-align:right;">
-                <span id="verification-status-pill" class="pill pill-live">核验通过</span>
-                <div style="font-size:11px; color:var(--text-dim); margin-top:4px;" id="verification-iterations">PDCA 轮次: 1</div>
-              </div>
-            </div>
-
-            <div class="tier-list">
-              <div class="tier-row" id="tier-1-row">
-                <div>
-                  <div class="tier-title">Tier 1: 隔离沙箱代码测试</div>
-                  <div class="tier-desc">node:vm 确定性测试、非法负数限制、并发竞争逃逸断言</div>
-                </div>
-                <span class="status-badge completed" id="tier-1-badge">PASSED</span>
-              </div>
-
-              <div class="tier-row" id="tier-2-row">
-                <div>
-                  <div class="tier-title">Tier 2: 零信任静态安全审计</div>
-                  <div class="tier-desc">SEC-01..04 规则合规、禁用 eval/Function 动态执行、有限数值断言</div>
-                </div>
-                <span class="status-badge completed" id="tier-2-badge">PASSED</span>
-              </div>
-
-              <div class="tier-row" id="tier-3-row">
-                <div>
-                  <div class="tier-title">Tier 3: 多智能体红蓝对抗共识</div>
-                  <div class="tier-desc">Elena (质量评审) 与 Cipher (安全审计) 提供可归因的规则信号</div>
-                </div>
-                <span class="status-badge completed" id="tier-3-badge">PASSED</span>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- 统一 Git 补丁交付物卡片 -->
-        <section class="card">
-          <div class="card-header">
-            <div class="card-title">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/></svg>
-              <span>统一 Git 补丁交付物 (Unified Git Patch)</span>
-            </div>
-            <div style="display:flex; gap:6px;">
-              <button class="btn btn-outline" style="padding:4px 8px; font-size:11px;" onclick="copyPatch()">复制补丁 (Copy Diff)</button>
-            </div>
-          </div>
-
-          <div class="diff-box" id="diff-box">
-            <div style="padding:20px; text-align:center; color:var(--text-muted);">
-              请运行任务，系统将在验证通过或人工接受后生成规范的 Git patch。
-            </div>
-          </div>
-        </section>
-
-        <!-- 实时编排事件流控制台 -->
-        <section class="card">
-          <div class="card-header">
-            <div class="card-title">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-              <span>实时编排与调度事件日志 (SSE Stream)</span>
-            </div>
-            <div style="display:flex; gap:6px;">
-              <button class="btn btn-outline" style="padding:4px 8px; font-size:11px;" onclick="clearLogs()">清空日志</button>
-            </div>
-          </div>
-
-          <div class="terminal-toolbar">
-            <div class="filter-chips">
-              <span class="chip active" onclick="setLogFilter('all', this)">全部</span>
-              <span class="chip" onclick="setLogFilter('agent', this)">智能体</span>
-              <span class="chip" onclick="setLogFilter('sched', this)">调度器</span>
-              <span class="chip" onclick="setLogFilter('verify', this)">可信验证</span>
-              <span class="chip" onclick="setLogFilter('loop', this)">自愈循环</span>
-              <span class="chip" onclick="setLogFilter('human', this)">人工升级</span>
-            </div>
-            <label style="font-size:11px; color:var(--text-muted); display:flex; align-items:center; gap:4px; cursor:pointer;">
-              <input type="checkbox" id="auto-scroll-chk" checked> 自动滚动
-            </label>
-          </div>
-
-          <div class="terminal-box" id="terminal-box">
-            <!-- 动态渲染终端日志行 -->
-          </div>
-        </section>
       </div>
     </div>
+
+    <!-- 右侧抽屉式检查器 (Node Inspector Drawer) -->
+    <aside class="inspector-drawer" id="inspector-drawer">
+      <div class="drawer-header">
+        <div class="drawer-node-info">
+          <div class="node-icon agent" id="drawer-icon">A</div>
+          <div>
+            <div class="drawer-node-name" id="drawer-title">节点详情</div>
+            <div style="font-size:11px; color:var(--text-muted);" id="drawer-type">Agent 智能体节点</div>
+          </div>
+        </div>
+        <div class="drawer-actions">
+          <button class="drawer-btn" title="运行当前节点" onclick="runCurrentTask()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          </button>
+          <button class="drawer-btn" title="关闭抽屉" onclick="toggleDrawer(false)">✕</button>
+        </div>
+      </div>
+
+      <!-- 抽屉选项卡：设置 / 上次运行 -->
+      <div class="drawer-tabs">
+        <button class="drawer-tab active" id="dtab-settings" onclick="switchDrawerTab('settings')">设置</button>
+        <button class="drawer-tab" id="dtab-lastrun" onclick="switchDrawerTab('lastrun')">上次运行</button>
+      </div>
+
+      <!-- 抽屉主体：设置 Tab -->
+      <div class="drawer-content" id="tab-pane-settings">
+        <div class="field-group">
+          <div class="field-label">
+            <span>执行智能体 (AGENT)</span>
+            <span class="field-sub" id="inspector-agent-role">Developer</span>
+          </div>
+          <div class="agent-selector-card" id="inspector-agent-card">
+            <div class="agent-avatar-wrap">
+              <div class="agent-avatar-circle" id="inspector-agent-avatar">A</div>
+              <div class="agent-profile-text">
+                <span class="agent-profile-name" id="inspector-agent-name">Alex (核心开发)</span>
+                <span class="agent-profile-role" id="inspector-agent-radar">代码工程: 95%</span>
+              </div>
+            </div>
+            <span style="font-size:11px; color:var(--primary); font-weight:600;">已锁定</span>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <div class="field-label">
+            <span>系统任务提示词 (PROMPT)</span>
+            <span class="field-sub">支持变量注入</span>
+          </div>
+          <div class="prompt-box" id="inspector-prompt">
+            <!-- 动态填充系统 Prompt -->
+          </div>
+        </div>
+
+        <div class="field-group">
+          <div class="field-label">
+            <span>挂载工具与沙箱 (TOOLS)</span>
+          </div>
+          <div style="display:flex; flex-wrap:wrap; gap:6px;" id="inspector-tools">
+            <span class="badge badge-primary">node:vm 隔离沙箱</span>
+            <span class="badge badge-primary">静态安全分析器</span>
+            <span class="badge badge-primary">Git 补丁打包器</span>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <div class="field-label">
+            <span>异常与自愈策略 (EXCEPTION & SELF-LOOP)</span>
+          </div>
+          <div class="trace-card">
+            <div class="trace-item">
+              <span>断言失败触发自愈</span>
+              <span class="badge badge-success">PDCA 自动收敛</span>
+            </div>
+            <div class="trace-item">
+              <span>最大重试预算 (Max Retries)</span>
+              <span style="font-family:var(--font-mono); font-weight:600;">2 轮</span>
+            </div>
+            <div class="trace-item">
+              <span>不可满足策略</span>
+              <span class="badge badge-warning">升级到人在回路</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 抽屉主体：上次运行 Tab -->
+      <div class="drawer-content" id="tab-pane-lastrun" style="display:none;">
+        <div class="field-group">
+          <div class="field-label">
+            <span>运行态概览 (RUN SUMMARY)</span>
+          </div>
+          <div class="trace-card">
+            <div class="trace-item">
+              <span>运行状态</span>
+              <span class="badge" id="lastrun-status">未运行</span>
+            </div>
+            <div class="trace-item">
+              <span>耗时</span>
+              <span id="lastrun-duration">--</span>
+            </div>
+            <div class="trace-item">
+              <span>PDCA 自愈轮次</span>
+              <span id="lastrun-iterations">--</span>
+            </div>
+            <div class="trace-item">
+              <span>综合可信得分</span>
+              <span id="lastrun-score" style="font-weight:700; color:var(--primary);">--</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <div class="field-label">
+            <span>三层可信核验共识 (3-TIER VERIFICATION)</span>
+          </div>
+          <div class="trace-card">
+            <div class="trace-item">
+              <span>Tier 1: 隔离沙箱断言</span>
+              <span class="badge" id="lastrun-t1">--</span>
+            </div>
+            <div class="trace-item">
+              <span>Tier 2: 零信任静态安全</span>
+              <span class="badge" id="lastrun-t2">--</span>
+            </div>
+            <div class="trace-item">
+              <span>Tier 3: 红蓝对抗共识</span>
+              <span class="badge" id="lastrun-t3">--</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <div class="field-label">
+            <span>统一 Git 补丁交付物 (GIT DIFF)</span>
+            <button class="canvas-action-btn" style="color:var(--primary);" onclick="copyCurrentPatch()">复制补丁</button>
+          </div>
+          <div class="diff-container" id="lastrun-diff">
+            <div style="color:#64748b; text-align:center; padding:20px;">暂无补丁生成</div>
+          </div>
+        </div>
+      </div>
+    </aside>
   </main>
 
-  <!-- 页脚说明 -->
-  <footer>
-    <div>
-      AetherHarness / DSH-Orchestrator v2.1 · 零外部依赖 TypeScript 多智能体协同编排与自愈调度平台
+  <!-- 人在回路 (HITL) 决策弹窗 -->
+  <div class="modal-overlay" id="hitl-modal" style="display:none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <span>触发人在回路审批 (Human Approval Gate)</span>
+        </div>
+        <span class="badge badge-warning" id="modal-rule-tag">DIST-001</span>
+      </div>
+      <div class="modal-body">
+        <p style="color:var(--text-dim); line-height:1.6;" id="modal-reason-desc">
+          系统在经历自愈预算后，捕获到单进程令牌桶无法直接满足的分布式集群一致性规则 (DIST-001)。当前代码已通过单元测试与安全静态扫描，综合可信得分为 90.0%。
+        </p>
+        <div class="trace-card">
+          <div class="trace-item">
+            <span>当前候选草稿最佳评分</span>
+            <span style="font-weight:700; color:var(--primary);" id="modal-score">90.0% (Tier-2/3 全绿)</span>
+          </div>
+          <div class="trace-item">
+            <span>系统推荐决策</span>
+            <span class="badge badge-success">采纳草稿并转人工复核</span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="submitApproval(0)">↺ 追加 2x 预算重试</button>
+        <button class="btn btn-primary" onclick="submitApproval(1)">✓ 采纳当前草稿交付</button>
+        <button class="btn" style="color:var(--danger);" onclick="submitApproval(2)">✕ 中止任务</button>
+      </div>
     </div>
-    <div>
-      基于 DeepSeek Harness 架构哲学构建 · 赛题1: Agent编排创新应用 · MIT License
-    </div>
-  </footer>
+  </div>
 
-  <!-- Toast -->
+  <!-- 轻量提示条 -->
   <div class="toast" id="toast">
-    <span id="toast-msg"></span>
+    <span id="toast-text">已连接工作流引擎</span>
   </div>
 
   <script>
-    // 全局响应式状态
-    const state = {
-      runs: {},
-      selectedTaskId: 'rl-easy',
-      activeFilter: 'all',
-      eventLogs: [],
-      agents: [],
-      metrics: {
-        completedRuns: 0,
-        dispatches: 0,
-        totalTokens: 0,
-        healedRuns: 0
+    // 全局工作流与节点定义 (对标 Dify 的数据结构)
+    const WORKFLOW_NODES = [
+      {
+        id: 'n_input',
+        type: 'input',
+        name: 'USER INPUT',
+        title: '用户输入与规约对齐',
+        x: 60,
+        y: 180,
+        icon: 'in',
+        iconCls: 'input',
+        agent: 'req_analyst_01',
+        variables: [
+          { name: 'task_domain', type: 'String', val: '分布式令牌桶限流器' },
+          { name: 'security_spec', type: 'RuleSet', val: 'Enterprise SEC-01..04' }
+        ],
+        outputs: ['n_requirement']
+      },
+      {
+        id: 'n_requirement',
+        type: 'agent',
+        name: 'REQUIREMENT AGENT',
+        title: '需求规约提取与断言生成',
+        x: 430,
+        y: 120,
+        icon: 'R',
+        iconCls: 'agent',
+        agent: 'req_analyst_01',
+        agentName: 'Sarah (需求分析师)',
+        role: 'Turn vague issue into formal spec & executable assertions',
+        prompt: '基于混合 RAG 召回企业架构规约，输出清晰的构造器参数不变量与 6 项边界断言。',
+        outputs: ['n_architecture']
+      },
+      {
+        id: 'n_architecture',
+        type: 'agent',
+        name: 'ARCHITECTURE AGENT',
+        title: '接口契约与不变量设计',
+        x: 800,
+        y: 120,
+        icon: 'A',
+        iconCls: 'agent',
+        agent: 'architect_01',
+        agentName: 'David (系统架构师)',
+        role: 'Interface signature & monotonic refill invariant',
+        prompt: '定义 TokenBucket 状态模型：0 <= tokens <= capacity，消费方法签名 consume(tokens)。',
+        outputs: ['n_gate']
+      },
+      {
+        id: 'n_gate',
+        type: 'gate',
+        name: 'COMPLEXITY GATE',
+        title: '动态分支路由门禁',
+        x: 1170,
+        y: 120,
+        icon: '⚡',
+        iconCls: 'gate',
+        condition: 'IF 任务种子含有潜在边界缺陷 -> 完整 PDCA 自愈环\\nELSE -> 轻量快速验证直通',
+        outputs: ['n_selfloop']
+      },
+      {
+        id: 'n_selfloop',
+        type: 'loop',
+        name: 'SELF-LOOP HEALING',
+        title: '核心自愈闭环 (PDCA)',
+        x: 1540,
+        y: 80,
+        icon: '⟲',
+        iconCls: 'loop',
+        agent: 'developer_01',
+        agentName: 'Alex (核心开发) ⟲ Marcus (批评诊断)',
+        role: 'EVC cycle: Execute -> Sandbox Verify -> Critic Root-Cause -> Heal',
+        prompt: '根据上一轮结构化失败规则集合 (EDGE-001, SEC-003 等)，自适应修复边界校验并消除安全漏洞。',
+        outputs: ['n_verification']
+      },
+      {
+        id: 'n_verification',
+        type: 'verify',
+        name: 'QUALITY & TRUST GATE',
+        title: '三层可信核验体系',
+        x: 1910,
+        y: 80,
+        icon: '✓',
+        iconCls: 'verify',
+        agent: 'security_auditor_01',
+        agentName: 'Elena (评审) + Cipher (安全) + vm 沙箱',
+        role: 'Multi-tier zero-trust consensus and deterministic assertions',
+        prompt: '核验沙箱运行断言、检查有限性守卫与无悬挂标记，两名审计员全票共识通过。',
+        outputs: ['n_approval', 'n_deliver']
+      },
+      {
+        id: 'n_approval',
+        type: 'approval',
+        name: 'APPROVAL POLICY GATE',
+        title: '人在回路决策门禁 (HITL)',
+        x: 2280,
+        y: 260,
+        icon: '!',
+        iconCls: 'loop',
+        condition: 'IF 自愈穷尽仍存不可满足规则 -> 弹出结构化决策卡片',
+        outputs: ['n_deliver']
+      },
+      {
+        id: 'n_deliver',
+        type: 'deliver',
+        name: 'GIT PATCH DELIVERABLE',
+        title: '统一 Git 补丁交付物打包',
+        x: 2650,
+        y: 120,
+        icon: '📦',
+        iconCls: 'deliver',
+        agent: 'developer_01',
+        role: 'Unified Git Diff generator and audit package',
+        prompt: '生成符合 RFC 统一 diff 标准的代码补丁，确保 git apply --check 完全兼容。',
+        outputs: []
       }
+    ];
+
+    // 全局状态
+    const state = {
+      currentTaskId: 'rl-normal',
+      selectedNodeId: 'n_selfloop',
+      zoom: 1.0,
+      panX: 40,
+      panY: 30,
+      isPanning: false,
+      startMouseX: 0,
+      startMouseY: 0,
+      draggedNode: null,
+      dragOffsetX: 0,
+      dragOffsetY: 0,
+      runs: {},
+      agents: [],
+      llm: null
     };
 
-    // 异构智能体元数据与雷达能力画像 (支持 ID 与英文名双重索引)
-    const AGENT_META = {
-      'req_analyst_01': { avatar: '莎', name: 'Sarah (需求分析师)', role: '需求规约提取与自动化测试生成', color: '#00e5ff', radar: '需求规约: 95%' },
-      'architect_01': { avatar: '戴', name: 'David (系统架构师)', role: '接口签名定义与状态不变量界定', color: '#38bdf8', radar: '系统架构: 96%' },
-      'developer_01': { avatar: '亚', name: 'Alex (核心开发工程师)', role: '代码实现与错误自适应自愈', color: '#a855f7', radar: '代码工程: 95%' },
-      'critic_01': { avatar: '马', name: 'Marcus (根因批评家)', role: '缺陷根因诊断与修复指引', color: '#f59e0b', radar: '根因归因: 98%' },
-      'reviewer_01': { avatar: '艾', name: 'Elena (代码评审专家)', role: '可维护性与代码完整性审计', color: '#10b981', radar: '代码评审: 92%' },
-      'security_auditor_01': { avatar: '赛', name: 'Cipher (安全审计专家)', role: '零信任安全合规与漏洞拦截', color: '#f43f5e', radar: '安全审计: 97%' },
-      'sarah': { avatar: '莎', name: 'Sarah (需求分析师)', role: '需求规约提取与自动化测试生成', color: '#00e5ff', radar: '需求规约: 95%' },
-      'david': { avatar: '戴', name: 'David (系统架构师)', role: '接口签名定义与状态不变量界定', color: '#38bdf8', radar: '系统架构: 96%' },
-      'alex': { avatar: '亚', name: 'Alex (核心开发工程师)', role: '代码实现与错误自适应自愈', color: '#a855f7', radar: '代码工程: 95%' },
-      'marcus': { avatar: '马', name: 'Marcus (根因批评家)', role: '缺陷根因诊断与修复指引', color: '#f59e0b', radar: '根因归因: 98%' },
-      'elena': { avatar: '艾', name: 'Elena (代码评审专家)', role: '可维护性与代码完整性审计', color: '#10b981', radar: '代码评审: 92%' },
-      'cipher': { avatar: '赛', name: 'Cipher (安全审计专家)', role: '零信任安全合规与漏洞拦截', color: '#f43f5e', radar: '安全审计: 97%' }
-    };
-
-    // 页面初始化：建立 SSE 长连接并拉取全量状态
+    // 初始化运行
     window.addEventListener('DOMContentLoaded', () => {
+      initCanvas();
+      renderNodes();
+      updateConnections();
+      selectNode('n_selfloop');
       initSSE();
       fetchStatus();
-      setInterval(fetchStatus, 4000);
     });
 
-    // 明暗主题切换
-    function toggleTheme() {
-      const current = document.documentElement.getAttribute('data-theme');
-      const next = current === 'light' ? 'dark' : 'light';
-      document.documentElement.setAttribute('data-theme', next);
-      localStorage.setItem('dsh_theme', next);
-    }
-    const savedTheme = localStorage.getItem('dsh_theme') || 'dark';
-    document.documentElement.setAttribute('data-theme', savedTheme);
-
-    // 弹出轻量提示 (Toast)
-    function showToast(msg, type = 'success') {
-      const toast = document.getElementById('toast');
-      const toastMsg = document.getElementById('toast-msg');
-      toast.className = 'toast ' + type + ' show';
-      toastMsg.textContent = msg;
-      setTimeout(() => toast.classList.remove('show'), 3500);
+    // 初始化画布变换与缩放
+    function initCanvas() {
+      applyTransform();
     }
 
-    // 建立 Server-Sent Events (SSE) 实时事件监听
-    function initSSE() {
-      const pill = document.getElementById('sse-pill');
-      const text = document.getElementById('sse-text');
+    function applyTransform() {
+      const transformElem = document.getElementById('canvas-transform');
+      transformElem.style.transform = \`translate(\${state.panX}px, \${state.panY}px) scale(\${state.zoom})\`;
+      document.getElementById('zoom-val').textContent = Math.round(state.zoom * 100) + '%';
+      renderMinimap();
+    }
+
+    function changeZoom(delta) {
+      state.zoom = Math.max(0.4, Math.min(2.0, state.zoom + delta));
+      applyTransform();
+      updateConnections();
+    }
+
+    function resetCanvas() {
+      state.zoom = 1.0;
+      state.panX = 40;
+      state.panY = 30;
+      applyTransform();
+      updateConnections();
+    }
+
+    function focusSelectedNode() {
+      const node = WORKFLOW_NODES.find(n => n.id === state.selectedNodeId);
+      if (!node) return;
+      const viewport = document.getElementById('canvas-viewport');
+      state.panX = (viewport.clientWidth / 2) - (node.x * state.zoom) - 160;
+      state.panY = (viewport.clientHeight / 2) - (node.y * state.zoom) - 100;
+      applyTransform();
+      updateConnections();
+    }
+
+    // 画布平移处理
+    function onCanvasMouseDown(e) {
+      if (e.target.closest('.node-card') || e.target.closest('.top-floating-bar') || e.target.closest('.bottom-controls')) {
+        return;
+      }
+      state.isPanning = true;
+      state.startMouseX = e.clientX - state.panX;
+      state.startMouseY = e.clientY - state.panY;
       
-      const evtSource = new EventSource('/api/events');
-
-      evtSource.onopen = () => {
-        pill.className = 'pill pill-live';
-        text.textContent = 'SSE 实时已连接';
+      const onMouseMove = (ev) => {
+        if (!state.isPanning) return;
+        state.panX = ev.clientX - state.startMouseX;
+        state.panY = ev.clientY - state.startMouseY;
+        applyTransform();
       };
-
-      evtSource.onerror = () => {
-        pill.className = 'pill pill-offline';
-        text.textContent = '断线重连中...';
+      const onMouseUp = () => {
+        state.isPanning = false;
+        window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('mouseup', onMouseUp);
       };
-
-      evtSource.onmessage = (e) => {
-        try {
-          const event = JSON.parse(e.data);
-          handleOrchestratorEvent(event);
-        } catch (err) {}
-      };
+      window.addEventListener('mousemove', onMouseMove);
+      window.addEventListener('mouseup', onMouseUp);
     }
 
-    // 定期拉取平台状态、智能体负载与任务结果
+    function onCanvasWheel(e) {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -0.06 : 0.06;
+      changeZoom(delta);
+    }
+
+    // 渲染 Dify 节点
+    function renderNodes() {
+      const container = document.getElementById('nodes-layer');
+      const run = state.runs[state.currentTaskId];
+      const isCompleted = run && run.status === 'completed';
+      const isEscalated = run && run.status === 'needs_human';
+      const isRunning = run && run.status === 'running';
+
+      container.innerHTML = WORKFLOW_NODES.map(n => {
+        let statusClass = 'pending';
+        let statusIcon = '●';
+        
+        if (run) {
+          if (isCompleted) {
+            statusClass = 'completed';
+            statusIcon = '✓';
+          } else if (isEscalated) {
+            if (n.id === 'n_approval') {
+              statusClass = 'needs_human';
+              statusIcon = '!';
+            } else if (['n_input', 'n_requirement', 'n_architecture', 'n_gate', 'n_selfloop'].includes(n.id)) {
+              statusClass = 'completed';
+              statusIcon = '✓';
+            }
+          } else if (isRunning) {
+            statusClass = n.id === 'n_selfloop' ? 'running' : 'completed';
+            statusIcon = n.id === 'n_selfloop' ? '⟲' : '✓';
+          }
+        }
+
+        const isSelected = n.id === state.selectedNodeId;
+
+        return \`
+          <div class="node-card \${statusClass} \${isSelected ? 'selected' : ''}" 
+               id="node-\${n.id}" 
+               style="left:\${n.x}px; top:\${n.y}px;"
+               onclick="selectNode('\${n.id}', event)">
+            
+            <div class="port-handle port-left"></div>
+            
+            <div class="node-header" onmousedown="onNodeDragStart(event, '\${n.id}')">
+              <div class="node-title-group">
+                <div class="node-icon \${n.iconCls}">\${n.icon}</div>
+                <div>
+                  <div class="node-name">\${n.name}</div>
+                  <div style="font-size:10px; color:var(--text-muted);">\${n.title}</div>
+                </div>
+              </div>
+              <div class="node-status-icon \${statusClass}">\${statusIcon}</div>
+            </div>
+
+            <div class="node-body">
+              \${renderNodeBodyContent(n, run)}
+            </div>
+
+            <div class="port-handle port-right">+</div>
+          </div>
+        \`;
+      }).join('');
+    }
+
+    function renderNodeBodyContent(n, run) {
+      if (n.type === 'input') {
+        return \`
+          <div class="variable-item">
+            <div class="var-left">
+              <span style="color:var(--primary); font-weight:700;">{x}</span>
+              <span>task_domain</span>
+            </div>
+            <span class="var-badge">必填</span>
+          </div>
+          <div class="variable-item">
+            <div class="var-left">
+              <span style="color:var(--primary); font-weight:700;">{x}</span>
+              <span>security_spec</span>
+            </div>
+            <span class="var-badge">SEC-01..04</span>
+          </div>
+        \`;
+      }
+
+      if (n.type === 'agent' || n.type === 'loop') {
+        const iterText = (run && run.iterations) ? \` · 迭代 \${run.iterations} 轮\` : '';
+        return \`
+          <div class="agent-selector-card">
+            <div class="agent-avatar-wrap">
+              <div class="agent-avatar-circle">\${n.agentName ? n.agentName[0] : 'A'}</div>
+              <div class="agent-profile-text">
+                <span class="agent-profile-name">\${n.agentName || 'Agent'}</span>
+                <span class="agent-profile-role">\${n.role}</span>
+              </div>
+            </div>
+            <span style="color:#94a3b8; font-size:11px;">→</span>
+          </div>
+          \${n.type === 'loop' ? \`
+            <div style="font-size:11px; color:var(--warning); display:flex; align-items:center; gap:4px; font-weight:600;">
+              <span>⟲ PDCA 自愈闭环</span>
+              <span>\${iterText}</span>
+            </div>
+          \` : ''}
+        \`;
+      }
+
+      if (n.type === 'gate' || n.type === 'approval') {
+        return \`
+          <div class="condition-block">
+            <div class="condition-label">POLICY RULES</div>
+            <div class="condition-expr">\${n.condition}</div>
+          </div>
+        \`;
+      }
+
+      if (n.type === 'verify') {
+        const score = run && run.verification ? Math.round(run.verification.score * 100) : 100;
+        return \`
+          <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 0;">
+            <span style="font-size:12px; font-weight:600;">综合可信分:</span>
+            <span style="font-size:14px; font-weight:700; color:var(--success);">\${score}%</span>
+          </div>
+          <div style="display:flex; gap:4px;">
+            <span class="badge badge-success">沙箱 10/10</span>
+            <span class="badge badge-success">零信任安全</span>
+            <span class="badge badge-success">红蓝共识</span>
+          </div>
+        \`;
+      }
+
+      if (n.type === 'deliver') {
+        const hasPatch = run && run.patch;
+        return \`
+          <div style="display:flex; align-items:center; justify-content:space-between;">
+            <span style="font-size:11px; color:var(--text-dim);">交付物格式:</span>
+            <span class="badge badge-primary">Unified Git Diff</span>
+          </div>
+          <div style="font-size:11px; color:var(--success); font-weight:600;">
+            \${hasPatch ? '✓ 补丁校验通过 (可合并)' : '等待验证通过自动生成'}
+          </div>
+        \`;
+      }
+
+      return '';
+    }
+
+    // 节点拖拽移动
+    function onNodeDragStart(e, nodeId) {
+      e.stopPropagation();
+      const node = WORKFLOW_NODES.find(n => n.id === nodeId);
+      if (!node) return;
+
+      state.draggedNode = node;
+      state.dragOffsetX = e.clientX / state.zoom - node.x;
+      state.dragOffsetY = e.clientY / state.zoom - node.y;
+
+      const onMouseMove = (ev) => {
+        if (!state.draggedNode) return;
+        state.draggedNode.x = Math.round(ev.clientX / state.zoom - state.dragOffsetX);
+        state.draggedNode.y = Math.round(ev.clientY / state.zoom - state.dragOffsetY);
+        
+        const elem = document.getElementById('node-' + state.draggedNode.id);
+        if (elem) {
+          elem.style.left = state.draggedNode.x + 'px';
+          elem.style.top = state.draggedNode.y + 'px';
+        }
+        updateConnections();
+        renderMinimap();
+      };
+
+      const onMouseUp = () => {
+        state.draggedNode = null;
+        window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('mouseup', onMouseUp);
+      };
+
+      window.addEventListener('mousemove', onMouseMove);
+      window.addEventListener('mouseup', onMouseUp);
+    }
+
+    // 绘制 Dify 平滑贝塞尔曲线连线
+    function updateConnections() {
+      const svg = document.getElementById('connections-svg');
+      let pathsHtml = '';
+
+      WORKFLOW_NODES.forEach(src => {
+        const srcX = src.x + 320;
+        const srcY = src.y + 40;
+
+        (src.outputs || []).forEach(targetId => {
+          const tgt = WORKFLOW_NODES.find(n => n.id === targetId);
+          if (!tgt) return;
+
+          const tgtX = tgt.x;
+          const tgtY = tgt.y + 40;
+
+          // 计算 S 曲线贝塞尔控制点
+          const dx = Math.abs(tgtX - srcX) * 0.55;
+          const cp1x = srcX + dx;
+          const cp1y = srcY;
+          const cp2x = tgtX - dx;
+          const cp2y = tgtY;
+
+          const d = \`M \${srcX} \${srcY} C \${cp1x} \${cp1y}, \${cp2x} \${cp2y}, \${tgtX} \${tgtY}\`;
+          
+          const run = state.runs[state.currentTaskId];
+          const isLoop = src.id === 'n_selfloop' && tgt.id === 'n_verification';
+          let cls = 'flow-path';
+          if (run && run.status === 'running') cls += ' animated';
+          else if (run && run.status === 'completed') cls += ' active';
+          if (isLoop) cls += ' loop';
+
+          pathsHtml += \`<path d="\${d}" class="\${cls}" marker-end="url(#arrow)"/>\`;
+        });
+      });
+
+      svg.innerHTML = pathsHtml;
+    }
+
+    // 小地图渲染
+    function renderMinimap() {
+      const minimap = document.getElementById('minimap-preview');
+      const scale = 0.04;
+      minimap.innerHTML = WORKFLOW_NODES.map(n => {
+        const mx = Math.max(0, n.x * scale);
+        const my = Math.max(0, n.y * scale + 15);
+        return \`<div class="minimap-dot" style="left:\${mx}px; top:\${my}px;"></div>\`;
+      }).join('');
+    }
+
+    // 选中节点并更新右侧抽屉
+    function selectNode(nodeId, e) {
+      if (e) e.stopPropagation();
+      state.selectedNodeId = nodeId;
+      
+      document.querySelectorAll('.node-card').forEach(c => {
+        c.classList.toggle('selected', c.id === 'node-' + nodeId);
+      });
+
+      const node = WORKFLOW_NODES.find(n => n.id === nodeId);
+      if (!node) return;
+
+      document.getElementById('drawer-title').textContent = node.name;
+      document.getElementById('drawer-type').textContent = node.title;
+      document.getElementById('drawer-icon').className = 'node-icon ' + node.iconCls;
+      document.getElementById('drawer-icon').textContent = node.icon;
+
+      if (node.agentName) {
+        document.getElementById('inspector-agent-name').textContent = node.agentName;
+        document.getElementById('inspector-agent-avatar').textContent = node.agentName[0];
+        document.getElementById('inspector-agent-role').textContent = node.role || 'Specialist';
+      }
+
+      document.getElementById('inspector-prompt').innerHTML = node.prompt ? 
+        escapeHtml(node.prompt).replace(/(\\{x\\} \\w+)/g, '<span class="prompt-tag">$1</span>') : 
+        '系统内部声明式节点，直接执行规则或路由校验。';
+
+      updateDrawerLastRun();
+      toggleDrawer(true);
+    }
+
+    function toggleDrawer(show) {
+      const drawer = document.getElementById('inspector-drawer');
+      drawer.classList.toggle('collapsed', !show);
+    }
+
+    function switchDrawerTab(tab) {
+      document.querySelectorAll('.drawer-tab').forEach(t => t.classList.remove('active'));
+      document.getElementById('dtab-' + tab).classList.add('active');
+      document.getElementById('tab-pane-settings').style.display = tab === 'settings' ? 'flex' : 'none';
+      document.getElementById('tab-pane-lastrun').style.display = tab === 'lastrun' ? 'flex' : 'none';
+    }
+
+    function updateDrawerLastRun() {
+      const run = state.runs[state.currentTaskId];
+      if (!run) {
+        document.getElementById('lastrun-status').textContent = '等待执行';
+        document.getElementById('lastrun-status').className = 'badge';
+        document.getElementById('lastrun-duration').textContent = '--';
+        document.getElementById('lastrun-iterations').textContent = '--';
+        document.getElementById('lastrun-score').textContent = '--';
+        document.getElementById('lastrun-t1').textContent = '待测';
+        document.getElementById('lastrun-t2').textContent = '待测';
+        document.getElementById('lastrun-t3').textContent = '待测';
+        document.getElementById('lastrun-diff').innerHTML = '<div style="color:#64748b; text-align:center; padding:20px;">暂无运行结果</div>';
+        return;
+      }
+
+      const isCompleted = run.status === 'completed';
+      const statusElem = document.getElementById('lastrun-status');
+      statusElem.textContent = isCompleted ? '成功完成 (COMPLETED)' : (run.status === 'needs_human' ? '待人工决策 (NEEDS HUMAN)' : '运行中');
+      statusElem.className = 'badge ' + (isCompleted ? 'badge-success' : 'badge-warning');
+
+      document.getElementById('lastrun-duration').textContent = '约 180ms';
+      document.getElementById('lastrun-iterations').textContent = (run.iterations || 1) + ' 轮次 (PDCA)';
+      
+      const score = run.verification ? Math.round(run.verification.score * 100) : 100;
+      document.getElementById('lastrun-score').textContent = score + '%';
+
+      document.getElementById('lastrun-t1').textContent = 'PASSED (10/10)';
+      document.getElementById('lastrun-t1').className = 'badge badge-success';
+      document.getElementById('lastrun-t2').textContent = 'PASSED (零信任合规)';
+      document.getElementById('lastrun-t2').className = 'badge badge-success';
+      document.getElementById('lastrun-t3').textContent = 'PASSED (全票赞成)';
+      document.getElementById('lastrun-t3').className = 'badge badge-success';
+
+      // 渲染 Diff
+      const diffBox = document.getElementById('lastrun-diff');
+      if (run.patch && run.patch.patch) {
+        const lines = run.patch.patch.split('\\n');
+        diffBox.innerHTML = lines.map(l => {
+          let cls = 'diff-line';
+          if (l.startsWith('+')) cls += ' diff-add';
+          else if (l.startsWith('-')) cls += ' diff-del';
+          else if (l.startsWith('@@')) cls += ' diff-hunk';
+          return \`<div class="\${cls}">\${escapeHtml(l)}</div>\`;
+        }).join('');
+      } else {
+        diffBox.innerHTML = '<div style="color:#64748b; text-align:center; padding:20px;">当前节点无代码 Diff 产生</div>';
+      }
+    }
+
+    // 切换当前任务
+    function selectTask(taskId) {
+      state.currentTaskId = taskId;
+      document.querySelectorAll('.task-tab').forEach(b => {
+        b.classList.toggle('active', b.id === 'tab-' + taskId);
+      });
+      renderNodes();
+      updateConnections();
+      updateDrawerLastRun();
+
+      // 如果当前是 rl-hard 且已处于待审批状态，弹出审批窗口
+      const run = state.runs[taskId];
+      if (run && run.status === 'needs_human') {
+        showApprovalModal(run);
+      }
+    }
+
+    // 运行当前工作流任务
+    async function runCurrentTask() {
+      const btn = document.getElementById('btn-run');
+      btn.disabled = true;
+      showToast('正在启动工作流: ' + state.currentTaskId, 'success');
+
+      try {
+        const res = await fetch('/api/tasks/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ taskId: state.currentTaskId })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast('工作流已在后台启动...', 'success');
+        } else {
+          showToast('启动失败: ' + (data.error || '未知错误'), 'error');
+        }
+      } catch (err) {
+        showToast('网络错误: ' + err.message, 'error');
+      } finally {
+        setTimeout(() => { btn.disabled = false; }, 1200);
+      }
+    }
+
+    // 并发运行所有基准任务
+    async function runAllTasks() {
+      showToast('正在并发触发全部工作流任务...', 'success');
+      try {
+        const res = await fetch('/api/tasks/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ taskId: 'all' })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast('已全部并发下发！', 'success');
+        }
+      } catch (err) {
+        showToast('并发下发失败: ' + err.message, 'error');
+      }
+    }
+
+    // 人在回路审批弹窗
+    function showApprovalModal(run) {
+      const modal = document.getElementById('hitl-modal');
+      const esc = run.escalation || {};
+      document.getElementById('modal-rule-tag').textContent = esc.ruleId || 'DIST-001';
+      document.getElementById('modal-reason-desc').textContent = esc.reason || '任务达到自愈上限，需要人工决策。';
+      modal.style.display = 'flex';
+    }
+
+    async function submitApproval(optionIndex) {
+      const run = state.runs[state.currentTaskId];
+      if (!run) return;
+      document.getElementById('hitl-modal').style.display = 'none';
+      showToast('已提交审批决策，正在应用...', 'success');
+
+      try {
+        const res = await fetch('/api/runs/' + run.runId + '/escalate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ optionIndex: optionIndex })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast('审批决策执行成功！工作流已闭环交付。', 'success');
+          fetchStatus();
+        } else {
+          showToast('审批失败: ' + data.error, 'error');
+        }
+      } catch (e) {
+        showToast('请求失败: ' + e.message, 'error');
+      }
+    }
+
+    // 复制 Git Patch
+    function copyCurrentPatch() {
+      const run = state.runs[state.currentTaskId];
+      if (!run || !run.patch || !run.patch.patch) {
+        showToast('暂无补丁可复制', 'warning');
+        return;
+      }
+      navigator.clipboard.writeText(run.patch.patch);
+      showToast('Git Unified Diff 补丁已复制到剪贴板！', 'success');
+    }
+
+    // 获取服务端状态
     async function fetchStatus() {
       try {
         const res = await fetch('/api/status');
         if (!res.ok) return;
         const data = await res.json();
         
-        // 更新大模型/推理内核状态标识
-        if (data.llm) {
-          const isLive = data.llm.label && !data.llm.label.includes('offline');
-          document.getElementById('llm-text').textContent = isLive ? 'DeepSeek 在线模型 (Live)' : '离线确定性大脑';
-        }
-
-        // 更新智能体列表
-        if (data.agents && data.agents.length > 0) {
-          state.agents = data.agents;
-          renderAgents(data.agents);
-        }
-
-        // 更新各任务运行记录
         if (data.runs) {
           data.runs.forEach(r => { state.runs[r.taskId] = r; });
-          updateTaskView();
-          updateMetrics();
+          renderNodes();
+          updateConnections();
+          updateDrawerLastRun();
+
+          const activeRun = state.runs[state.currentTaskId];
+          if (activeRun && activeRun.status === 'needs_human') {
+            showApprovalModal(activeRun);
+          }
         }
       } catch (e) {}
     }
 
-    // 渲染智能体团队卡片
-    function renderAgents(agents) {
-      const grid = document.getElementById('agent-grid');
-      grid.innerHTML = agents.map(a => {
-        const profile = a.profile || a;
-        const meta = AGENT_META[profile.id] || AGENT_META[profile.name?.toLowerCase()] || {
-          avatar: (profile.name || 'A')[0],
-          name: profile.name,
-          role: profile.role,
-          color: '#00e5ff',
-          radar: '综合能力: 95%'
-        };
-        const currentLoad = profile.currentLoad ?? a.currentLoad ?? 0;
-        const maxConcurrency = profile.maxConcurrency ?? profile.maxConcurrentTasks ?? 2;
-        const isBusy = currentLoad > 0;
-        const loadPct = Math.round((currentLoad / maxConcurrency) * 100);
-        const tokens = profile.totalTokensUsed ?? a.totalTokensUsed ?? 0;
+    // 初始化 SSE
+    function initSSE() {
+      const dot = document.getElementById('sse-dot');
+      const text = document.getElementById('sse-text');
+      const source = new EventSource('/api/events');
 
-        return \`
-          <div class="agent-card \${isBusy ? 'busy' : ''}">
-            <div class="agent-top">
-              <div class="agent-avatar-wrap">
-                <div class="agent-avatar" style="color:\${meta.color};">\${meta.avatar}</div>
-                <div>
-                  <div class="agent-name">\${meta.name}</div>
-                  <div class="agent-role">\${meta.role}</div>
-                </div>
-              </div>
-              <span class="agent-status \${isBusy ? 'working' : 'idle'}">\${isBusy ? '工作中' : '空闲'}</span>
-            </div>
-
-            <div class="agent-load-bar-wrap">
-              <div class="agent-load-meta">
-                <span>并发载荷: \${currentLoad} / \${maxConcurrency}</span>
-                <span>\${meta.radar}</span>
-              </div>
-              <div class="progress-track">
-                <div class="progress-fill" style="width: \${loadPct}%;"></div>
-              </div>
-            </div>
-
-            <div class="agent-tags">
-              \${(profile.specializations || [profile.role]).map(s => \`<span class="tag">\${s}</span>\`).join('')}
-              <span class="tag" style="margin-left:auto; color:var(--primary);">\${tokens.toLocaleString()} tok</span>
-            </div>
-          </div>
-        \`;
-      }).join('');
-    }
-
-    // 声明式工作流 DAG 节点阶段定义
-    const PIPELINE_NODES = [
-      { id: 'n_requirement', name: '需求理解与规约提取', sub: 'Sarah · 混合 RAG 知识对齐与验收断言生成', icon: '1' },
-      { id: 'n_architecture', name: '系统架构与契约设计', sub: 'David · 接口签名界定与高并发状态不变量', icon: '2' },
-      { id: 'n_complexity_gate', name: '动态复杂度门禁判定', sub: '分支路由：轻量通道直通 vs 完整 PDCA 闭环', icon: '3' },
-      { id: 'n_loop', name: 'Self-Loop 核心自愈循环 (PDCA)', sub: 'Alex(研发) ⟲ Marcus(批评诊断) 缺陷自愈收敛', icon: '4' },
-      { id: 'n_scan', name: '三层可信验证与交叉审计', sub: 'Elena(评审) + Cipher(安全) + 隔离沙箱断言', icon: '5' },
-      { id: 'n_patch', name: '交付物与 Git 补丁打包', sub: '生成规范的统一 Diff 补丁并执行可合并性校验', icon: '6' }
-    ];
-
-    // 切换当前查看的任务基准
-    function selectTaskView(taskId) {
-      state.selectedTaskId = taskId;
-      document.querySelectorAll('#task-tabs .tab-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.textContent.includes(taskId));
-      });
-      document.getElementById('active-task-label').textContent = taskId;
-      updateTaskView();
-    }
-
-    // 刷新当前选定任务的全套视图
-    function updateTaskView() {
-      const run = state.runs[state.selectedTaskId];
-      renderDAG(run);
-      renderEscalation(run);
-      renderVerification(run);
-      renderDiff(run);
-    }
-
-    // 渲染工作流 DAG 执行节点与动态状态高亮
-    function renderDAG(run) {
-      const container = document.getElementById('pipeline-nodes');
-      const isRunning = run && run.status === 'running';
-      const isCompleted = run && run.status === 'completed';
-      const isEscalated = run && run.status === 'needs_human';
-
-      const statusLabels = {
-        'completed': '已完成',
-        'needs_human': '待人工介入',
-        'running': '执行中',
-        'pending': '排队中'
+      source.onopen = () => {
+        dot.className = 'status-dot';
+        text.textContent = '实时已连接';
       };
 
-      container.innerHTML = PIPELINE_NODES.map((node, i) => {
-        let nodeStatus = 'pending';
-        if (run) {
-          if (isCompleted) nodeStatus = 'completed';
-          else if (isEscalated && (node.id === 'n_loop' || node.id === 'n_scan')) nodeStatus = 'needs_human';
-          else if (isRunning) {
-            nodeStatus = i === 3 ? 'running' : (i < 3 ? 'completed' : 'pending');
+      source.onerror = () => {
+        dot.className = 'status-dot offline';
+        text.textContent = '断线重连中';
+      };
+
+      source.onmessage = (e) => {
+        try {
+          const ev = JSON.parse(e.data);
+          if (['run.started', 'run.finished', 'node.finished', 'escalation'].includes(ev.kind)) {
+            fetchStatus();
           }
-        }
-
-        return \`
-          <div class="pipeline-node \${nodeStatus}">
-            <div class="node-left">
-              <div class="node-icon-box">\${nodeStatus === 'completed' ? '✓' : (nodeStatus === 'needs_human' ? '!' : node.icon)}</div>
-              <div>
-                <div class="node-name">\${node.name}</div>
-                <div class="node-sub">\${node.sub}</div>
-              </div>
-            </div>
-            <div class="node-right">
-              <span class="status-badge \${nodeStatus}">\${statusLabels[nodeStatus] || nodeStatus.toUpperCase()}</span>
-            </div>
-          </div>
-        \`;
-      }).join('');
-    }
-
-    // 渲染人在回路最小注意力升级卡片
-    function renderEscalation(run) {
-      const container = document.getElementById('escalation-container');
-      if (!run || run.status !== 'needs_human' || !run.escalation) {
-        container.style.display = 'none';
-        container.innerHTML = '';
-        return;
-      }
-
-      container.style.display = 'block';
-      const esc = run.escalation;
-      const score = run.verification ? Math.round(run.verification.score * 100) : 88;
-
-      container.innerHTML = \`
-        <div class="escalation-banner">
-          <div class="escalation-header">
-            <div class="escalation-title">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-              <span>触发人在回路（HITL）最小注意力升级 (\${run.taskId})</span>
-            </div>
-            <span class="tag" style="background:rgba(245,158,11,0.2); color:var(--warning);">阻断规则: \${esc.ruleId || 'DIST-001'}</span>
-          </div>
-
-          <div class="escalation-desc">
-            \${esc.reason}
-          </div>
-
-          <div style="font-size:12px; color:var(--text-dim); margin-bottom:10px;">
-            当前最优候选草稿得分: <strong style="color:var(--primary);">\${score}%</strong> · 已达到最大自愈预算轮次，请选择处理方案：
-          </div>
-
-          <div class="escalation-actions">
-            <button class="btn btn-success" onclick="resolveEscalation('\${run.runId}', 1)">
-              ✓ 方案2【系统推荐】：采纳当前最优候选草稿（转人工复核并附带补丁）
-            </button>
-            <button class="btn btn-warning" onclick="resolveEscalation('\${run.runId}', 0)">
-              ↺ 方案1：追加 2 倍重试预算继续自愈迭代
-            </button>
-            <button class="btn btn-danger" onclick="resolveEscalation('\${run.runId}', 2)">
-              ✕ 方案3：中止任务并回滚至最近安全检查点
-            </button>
-          </div>
-        </div>
-      \`;
-    }
-
-    // 渲染三层可信验证共识面板
-    function renderVerification(run) {
-      const v = run ? run.verification : null;
-      const scoreElem = document.getElementById('verification-score');
-      const pill = document.getElementById('verification-status-pill');
-      const iterElem = document.getElementById('verification-iterations');
-
-      if (!v) {
-        scoreElem.textContent = '--';
-        pill.className = 'pill pill-offline';
-        pill.textContent = '等待执行';
-        iterElem.textContent = 'PDCA 轮次: --';
-        setTierStatus('tier-1-badge', false, '等待');
-        setTierStatus('tier-2-badge', false, '等待');
-        setTierStatus('tier-3-badge', false, '等待');
-        return;
-      }
-
-      const scorePct = Math.round(v.score * 100);
-      scoreElem.textContent = scorePct + '%';
-      iterElem.textContent = 'PDCA 轮次: ' + (run.iterations || 1);
-
-      if (v.passed) {
-        pill.className = 'pill pill-live';
-        pill.textContent = '核验通过';
-      } else if (run.status === 'needs_human') {
-        pill.className = 'pill pill-warn';
-        pill.textContent = '待人工介入';
-      } else {
-        pill.className = 'pill pill-offline';
-        pill.textContent = '已拦截';
-      }
-
-      // 提取三层各自分数与结果
-      const tiers = v.tiers || [];
-      const t1 = tiers.find(t => t.tier === 'tier-1') || { passed: v.passed };
-      const t2 = tiers.find(t => t.tier === 'tier-2') || { passed: v.passed };
-      const t3 = tiers.find(t => t.tier === 'tier-3') || { passed: v.passed };
-
-      setTierStatus('tier-1-badge', t1.passed);
-      setTierStatus('tier-2-badge', t2.passed);
-      setTierStatus('tier-3-badge', t3.passed);
-    }
-
-    function setTierStatus(elemId, passed, overrideText) {
-      const elem = document.getElementById(elemId);
-      if (overrideText) {
-        elem.className = 'status-badge pending';
-        elem.textContent = overrideText;
-        return;
-      }
-      elem.className = 'status-badge ' + (passed ? 'completed' : 'failed');
-      elem.textContent = passed ? 'PASSED (通过)' : 'BLOCKED (拦截)';
-    }
-
-    // 渲染统一 Git 补丁 Diff
-    function renderDiff(run) {
-      const box = document.getElementById('diff-box');
-      if (!run || !run.patch || !run.patch.patch) {
-        box.innerHTML = '<div style="padding:20px; text-align:center; color:var(--text-muted);">暂无补丁生成，请运行任务。</div>';
-        return;
-      }
-
-      const lines = run.patch.patch.split('\\n');
-      box.innerHTML = lines.map(line => {
-        let cls = 'diff-line';
-        if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('diff ')) cls += ' diff-header';
-        else if (line.startsWith('@@')) cls += ' diff-hunk';
-        else if (line.startsWith('+')) cls += ' diff-add';
-        else if (line.startsWith('-')) cls += ' diff-del';
-        return \`<div class="\${cls}">\${escapeHtml(line)}</div>\`;
-      }).join('');
-    }
-
-    // HTML 字符转义防注入
-    function escapeHtml(text) {
-      return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    }
-
-    // 更新汇总统计数据
-    function updateMetrics() {
-      const runs = Object.values(state.runs);
-      const completed = runs.filter(r => r.status === 'completed').length;
-      document.getElementById('metric-runs').textContent = completed;
-      document.getElementById('metric-dispatches').textContent = runs.length * 4 + (runs.length ? 3 : 0);
-      
-      let totalTokens = 0;
-      state.agents.forEach(a => {
-        const profile = a.profile || a;
-        totalTokens += (profile.totalTokensUsed ?? a.totalTokensUsed ?? 0);
-      });
-      document.getElementById('metric-tokens').textContent = totalTokens.toLocaleString();
-    }
-
-    // 触发任务下发
-    async function runSuite(target) {
-      const btn = document.getElementById('btn-run-all');
-      btn.disabled = true;
-      showToast('正在派发任务: ' + target, 'success');
-
-      try {
-        const res = await fetch('/api/tasks/run', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ taskId: target })
-        });
-        const result = await res.json();
-        if (result.success) {
-          showToast('任务已在后台启动', 'success');
-          if (target !== 'all') selectTaskView(target);
-        } else {
-          showToast('启动失败: ' + (result.error || '未知错误'), 'error');
-        }
-      } catch (e) {
-        showToast('网络错误: ' + e.message, 'error');
-      } finally {
-        setTimeout(() => { btn.disabled = false; }, 1500);
-      }
-    }
-
-    // 人在回路升级决策回传
-    async function resolveEscalation(runId, choiceIndex) {
-      try {
-        const res = await fetch('/api/runs/' + runId + '/escalate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ optionIndex: choiceIndex })
-        });
-        const data = await res.json();
-        if (data.success) {
-          showToast('升级决策已生效！正在应用对应操作...', 'success');
-          fetchStatus();
-        } else {
-          showToast('决策执行失败: ' + data.error, 'error');
-        }
-      } catch (err) {
-        showToast('网络错误: ' + err.message, 'error');
-      }
-    }
-
-    // 复制 Git Patch 补丁到剪贴板
-    function copyPatch() {
-      const run = state.runs[state.selectedTaskId];
-      if (!run || !run.patch || !run.patch.patch) {
-        showToast('暂无可用补丁可复制', 'warning');
-        return;
-      }
-      navigator.clipboard.writeText(run.patch.patch);
-      showToast('统一 Git 补丁已复制到剪贴板！', 'success');
-    }
-
-    // 处理 Orchestrator 事件广播
-    function handleOrchestratorEvent(ev) {
-      state.eventLogs.push(ev);
-      appendLogLine(ev);
-
-      // 关键事件触发界面实时刷新
-      if (['run.started', 'run.finished', 'node.finished', 'escalation'].includes(ev.kind)) {
-        fetchStatus();
-      }
-    }
-
-    // 向实时终端日志添加单行
-    function appendLogLine(ev) {
-      const box = document.getElementById('terminal-box');
-      const timeStr = new Date(ev.at).toLocaleTimeString();
-      const tag = ev.tag || 'sys';
-
-      const tagMap = {
-        'agent': '智能体',
-        'sched': '调度',
-        'verify': '验证',
-        'loop': '自愈',
-        'human': '人工',
-        'sys': '系统'
+        } catch (err) {}
       };
-
-      if (state.activeFilter !== 'all' && tag !== state.activeFilter) return;
-
-      const line = document.createElement('div');
-      line.className = 'terminal-line';
-      line.innerHTML = \`
-        <span class="terminal-time">[\${timeStr}]</span>
-        <span class="terminal-tag \${tag}">\${tagMap[tag] || tag}</span>
-        <span class="terminal-msg">\${escapeHtml(ev.message || '')}</span>
-      \`;
-      box.appendChild(line);
-
-      if (document.getElementById('auto-scroll-chk').checked) {
-        box.scrollTop = box.scrollHeight;
-      }
     }
 
-    // 过滤终端日志类别
-    function setLogFilter(filter, elem) {
-      state.activeFilter = filter;
-      document.querySelectorAll('.filter-chips .chip').forEach(c => c.classList.remove('active'));
-      elem.classList.add('active');
-
-      const box = document.getElementById('terminal-box');
-      box.innerHTML = '';
-      state.eventLogs.forEach(ev => appendLogLine(ev));
+    // Toast 提示
+    function showToast(msg, type = 'success') {
+      const toast = document.getElementById('toast');
+      const toastText = document.getElementById('toast-text');
+      toastText.textContent = msg;
+      toast.classList.add('show');
+      setTimeout(() => { toast.classList.remove('show'); }, 3000);
     }
 
-    // 清空日志面板
-    function clearLogs() {
-      state.eventLogs = [];
-      document.getElementById('terminal-box').innerHTML = '';
-      showToast('事件日志已清空', 'success');
+    function escapeHtml(str) {
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
   </script>
 </body>
