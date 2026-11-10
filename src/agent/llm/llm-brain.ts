@@ -74,7 +74,8 @@ export class LlmBrain implements AgentBrain {
     try {
       const response = await this.provider.chat(messages, {
         temperature: this.spec.temperature,
-        maxTokens: this.spec.maxTokens
+        maxTokens: this.spec.maxTokens,
+        signal: ctx.request.signal
       });
 
       this.telemetry.promptTokens += response.usage.promptTokens;
@@ -120,6 +121,7 @@ export class FallbackBrain implements AgentBrain {
     try {
       return await this.primary.think(ctx);
     } catch (err: any) {
+      ctx.request.signal?.throwIfAborted();
       this.telemetry.fallbacks++;
       const error = err instanceof Error ? err : new Error(String(err));
       this.onFallback?.(error, this.primary.name, ctx.agent.id);

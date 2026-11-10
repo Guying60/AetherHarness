@@ -12,6 +12,8 @@
  * - the API key never appears in an error message or a log line.
  */
 
+import { setTimeout as sleep } from 'node:timers/promises';
+
 export interface LlmMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
@@ -71,8 +73,6 @@ const defaultFetch: FetchLike = async (url, init) => {
   }
   return fn(url, init);
 };
-
-const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
 const estimateTokens = (text: string): number => Math.max(1, Math.ceil((text ?? '').length / 4));
 
@@ -146,6 +146,7 @@ export class DeepSeekProvider implements LlmProvider {
     let lastError: LlmError | undefined;
 
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      options.signal?.throwIfAborted();
       const started = Date.now();
       const controller = new AbortController();
       const timeoutMs = options.timeoutMs ?? this.timeoutMs;
@@ -176,7 +177,7 @@ export class DeepSeekProvider implements LlmProvider {
           );
           if (retryable && attempt < this.maxRetries) {
             lastError = error;
-            await sleep(400 * 2 ** attempt + Math.random() * 120);
+            await sleep(400 * 2 ** attempt + Math.random() * 120, undefined, { signal: options.signal });
             continue;
           }
           throw error;
@@ -213,6 +214,7 @@ export class DeepSeekProvider implements LlmProvider {
           latencyMs: Date.now() - started
         };
       } catch (err: any) {
+        options.signal?.throwIfAborted();
         const aborted = err?.name === 'AbortError' || controller.signal.aborted;
         const error =
           err instanceof LlmError
@@ -225,7 +227,7 @@ export class DeepSeekProvider implements LlmProvider {
 
         if (error.retryable && attempt < this.maxRetries) {
           lastError = error;
-          await sleep(400 * 2 ** attempt + Math.random() * 120);
+          await sleep(400 * 2 ** attempt + Math.random() * 120, undefined, { signal: options.signal });
           continue;
         }
         throw error;

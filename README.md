@@ -25,7 +25,7 @@ pnpm start         # 交互式 TUI
 | `pnpm run live` | 用 **DeepSeek API** 驱动整个智能体团队（需 `DEEPSEEK_API_KEY`） |
 | `pnpm run preview` | 渲染 3 帧到 stdout 后退出（非 TTY 环境预览布局） |
 | `pnpm run demo` | 无头纯文本端到端报告（录制/CI 用） |
-| `pnpm test` | 172 项端到端及契约断言，逐条验证核心引擎与 Web 接口契约 |
+| `pnpm test` | 验证核心引擎、LLM 降级与 Web 接口契约 |
 
 运行环境变量：`AETHER_SIM_LATENCY_MS=0` 可关闭模拟的模型延迟（默认 55ms，见下文"诚实声明"）。
 
@@ -116,7 +116,7 @@ node dist/src/cli.js --live --headless   # 或纯文本报告
 | `DEEPSEEK_BASE_URL` / `--base-url` | `https://api.deepseek.com` | 换成任意 OpenAI 兼容端点（vLLM / OneAPI / Azure…） |
 | `DEEPSEEK_MODEL` / `--model` | `deepseek-chat` | `deepseek-reasoner` 也可 |
 | `--temperature` | 0.2 | 代码生成偏确定性 |
-| `--no-fallback` | 关 | 关闭"失败即降级到离线大脑"，改为把错误抛出 |
+| `--no-fallback` | 关 | 严格实时模式，启动时要求模型配置，推理失败会显式记录 |
 
 ### 工程上做了哪些防护
 
@@ -173,13 +173,13 @@ node dist/src/cli.js --live --headless   # 或纯文本报告
 pnpm run web       # 启动零依赖 Web 控制台（浏览器打开 http://127.0.0.1:3300）
 ```
 
-- **全中文响应式 SPA 界面**：支持一键切换暗黑/明亮科技主题；
-- **异构多智能体团队监控**：实时展示 6 大专业角色的并发载荷进度条、能力画像雷达与 Token 用量；
-- **声明式工作流 DAG 流水线**：多任务选项卡（纯净基准、缺陷自愈、超限升级），动态高亮显示执行节点状态与耗时；
-- **三层渐进式可信验证共识卡**：仪表盘展示综合可信分、准入阈值（85.0%）、PDCA 迭代轮次，以及 Tier-1/2/3 的各层判定；
-- **统一 Git 补丁交付物**：实时渲染高亮 Unified Diff，支持一键复制补丁；
-- **实时 SSE 编排事件流**：多类别筛选（全部、智能体、调度器、验证、自愈、人工），支持自动滚屏；
-- **人在回路最小注意力升级卡片**：遇到不可收敛任务时，界面弹出结构化决策卡片（追加预算 / 采纳最优草稿 / 中止回滚），一键交互。
+Web 控制台只监听本机回环地址。运行和 Agent 接口返回用于展示的字段，模型密钥、系统提示和 Agent 内存留在进程内。
+
+1. 点击 **运行缺陷修复**。展开「验证与自愈」的第一轮和第二轮，对照失败规则、诊断建议与通过结果，再到「代码与补丁」下载统一 diff。
+2. 点击 **运行阻塞案例**。在「运行摘要」查看分布式对账规则 `DIST-001`，选择加倍轮数、保留草稿待复审或终止并回退。草稿仍会保留原验收结论。
+3. 点击 **并发运行全部案例**。通过「运行历史」切换案例，在「执行日志」查看派发 Agent、优先级和等待时间，在「团队、调度与工具」查看并发负载、工具调用与提示词优化记录。
+
+工作流预览和执行状态来自同一份后端定义。离线模式便于复现演示。配置 `DEEPSEEK_API_KEY` 后运行 `pnpm run web --live` 可启用大模型推理。
 
 ### 2. 交互式终端 UI (TUI)
 
@@ -207,7 +207,7 @@ pnpm run web       # 启动零依赖 Web 控制台（浏览器打开 http://127.
 上一版文档里的 `94% 成功率 / 98.5% 漏洞拦截 / 0.12 次打扰 / 1.42 轮收敛` **在仓库里没有任何
 可复现的评测脚本支撑**。v2.1 不再声称这些数字。可复现的只有：
 
-- `pnpm test` 的 **172 项端到端及契约断言**（含 14 条针对 v1.0 缺陷的回归、42 条 LLM 层与降级路径断言、以及 23 条 Web 控制台与 API 接口契约断言）；
+- `pnpm test` 的端到端与契约断言，覆盖核心引擎、LLM 与降级路径、Web 运行接口和人工决策；
 - `pnpm run demo` 打印的本次运行遥测：dispatches / retries / aging promotions / 每工具调用次数与成功率 / 每 Agent token 数。
 
 明确的边界：
@@ -215,13 +215,13 @@ pnpm run web       # 启动零依赖 Web 控制台（浏览器打开 http://127.
 1. **默认不联网。** 不用 `--live` 时，6 个 Agent 跑的是确定性离线大脑（`RateLimiter` 的修复策略空间），
    这样 CI 与演示都不依赖任何 API。加 `--live` 才换成 DeepSeek；两者共用同一套引擎与验证器。
    离线大脑的"智能"是写死的策略空间，不是推理——这一点不要混淆。
-2. **`node:vm` 不是安全边界。** 它提供故障隔离与时间隔离（能中断死循环）、不向沙箱注入宿主对象，
-   但无法防御真正的恶意逃逸。生产环境需要独立进程或容器。
+2. **验收测试在有超时和堆预算的子进程内运行。** 预置场景的候选源码与固定测试脚本使用独立的 VM 上下文。
+   子进程提供故障隔离。执行不可信项目或开放远程访问前，还需要操作系统级权限隔离。
 3. **token 数**：离线模式是按字符估算（标注 `estimated`），`--live` 模式是 API 返回的真实用量（标注 `reported`）。
 4. **55ms 的模型延迟是模拟值**，只为让调度器的排队行为可观察；`AETHER_SIM_LATENCY_MS=0` 可关闭。
    使用 `--live` 时该模拟延迟仍然生效（它模拟的是"一次认知往返"，与真实网络延迟叠加）。
 5. **双呈现层落地**。已实现零外部依赖的轻量 Web 服务器与响应式 SPA 控制台（`src/web/server.ts` + `client.ts`），通过 HTTP/SSE 与内部 `Orchestrator` 闭环交互，全面打通多智能体编排的可视化展示与人在回路决策。
-6. `PROPOSAL.md` / `SLIDES_OUTLINE.md` / `DEMO_SCRIPT.md` 是竞赛材料，描述的是整体设计方案。**以本 README、代码与测试为准。**
+6. `COMPETITION_REQUIREMENTS.md` / `PROPOSAL.md` / `SLIDES_OUTLINE.md` / `DEMO_SCRIPT.md` 是竞赛材料（含赛题技术规范与申报书），描述的是整体设计方案。**以本 README、代码与测试为准。**
 
 ---
 
@@ -251,7 +251,7 @@ src/
   web/server.ts · client.ts         零依赖 Web 仪表盘与 SSE 实时服务端
   tui/ansi.ts · keys.ts · app.ts    零依赖终端 UI
   cli.ts · demo.ts                  入口：Web / TUI / 无头
-tests/run-tests.ts                  172 项断言
+tests/run-tests.ts                  端到端与契约断言
 ```
 
 ## 许可证

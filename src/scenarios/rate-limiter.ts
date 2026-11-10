@@ -8,6 +8,7 @@
  * hardcoded if/else — which is what makes the escalation path on the `hard` task honest:
  * `DIST-001` has no strategy in this fix space, so the loop genuinely cannot converge.
  */
+import { setTimeout as sleep } from 'node:timers/promises';
 import {
   AgentBrain,
   BrainContext,
@@ -101,9 +102,9 @@ export const SIMULATED_LLM_LATENCY_MS = Number(
   process.env.AETHER_SIM_LATENCY_MS ?? 55
 );
 
-const latency = () =>
+const latency = (signal?: AbortSignal) =>
   SIMULATED_LLM_LATENCY_MS > 0
-    ? new Promise<void>(r => setTimeout(r, SIMULATED_LLM_LATENCY_MS))
+    ? sleep(SIMULATED_LLM_LATENCY_MS, undefined, { signal })
     : Promise.resolve();
 
 export function renderRateLimiter(f: RateLimiterFeatures): string {
@@ -255,17 +256,11 @@ export function makeVerificationSpec(opts: {
       id: 'DIST-001',
       name: 'distributed counter reconciliation',
       severity: 'critical',
-      check: output => {
-        const code = asCode(output);
-        const ok = code.includes('reconcileWithCluster(');
-        return {
-          passed: ok,
-          message: ok
-            ? 'distributed reconciliation hook present'
-            : 'the artifact has no cluster reconciliation; a single-process token bucket cannot guarantee a global rate',
-          score: ok ? 1 : 0
-        };
-      }
+      check: () => ({
+        passed: false,
+        message: 'distributed reconciliation requires a cluster counter and an integration test; this scenario provides neither',
+        score: 0
+      })
     });
   }
 
@@ -273,7 +268,8 @@ export function makeVerificationSpec(opts: {
     rules,
     confidenceThreshold: opts.threshold ?? 0.9,
     executableSandboxCheck: {
-      testScriptGenerator: (_output, ctx) => ctx?.requirementSpec?.testSuiteCode || RATE_LIMITER_TESTS,
+      testScriptGenerator: () => RATE_LIMITER_TESTS,
+      bindings: ['RateLimiter'],
       expectedExitCode: 0,
       timeoutMs: 3000
     },
@@ -293,7 +289,7 @@ class RequirementAnalystBrain implements AgentBrain {
   readonly name = 'Structured Requirement Extraction';
 
   public async think(ctx: BrainContext): Promise<BrainOutput> {
-    await latency();
+    await latency(ctx.request.signal);
     const difficulty = (ctx.request.input.difficulty as TaskDifficulty) ?? 'normal';
     const seed = ctx.request.input.seedSource as string | undefined;
 
@@ -341,7 +337,7 @@ class ArchitectBrain implements AgentBrain {
   readonly name = 'Interface & Invariant Design';
 
   public async think(ctx: BrainContext): Promise<BrainOutput> {
-    await latency();
+    await latency(ctx.request.signal);
     const difficulty = (ctx.request.input.difficulty as TaskDifficulty) ?? 'normal';
     const invariants =
       difficulty === 'easy'
@@ -372,7 +368,7 @@ class DeveloperBrain implements AgentBrain {
   readonly name = 'Feedback-Driven Repair';
 
   public async think(ctx: BrainContext): Promise<BrainOutput> {
-    await latency();
+    await latency(ctx.request.signal);
     const seed = (ctx.request.input.seedFeatures as RateLimiterFeatures) ?? BASE_FEATURES;
     const features: RateLimiterFeatures = { ...seed };    const applied: string[] = [];
     const unresolved: string[] = [];
@@ -422,7 +418,7 @@ class CriticBrain implements AgentBrain {
   readonly name = 'Root-Cause Critic';
 
   public async think(ctx: BrainContext): Promise<BrainOutput> {
-    await latency();
+    await latency(ctx.request.signal);
     const failures = (ctx.request.input.failedRules as Array<{ id?: string; message: string }>) ?? [];
     const blocking = (ctx.request.input.blockingReasons as string[]) ?? [];
 
@@ -694,11 +690,17 @@ export function buildRateLimiterWorkflow(task: RateLimiterTask): WorkflowDefinit
         toolId: 'git_patch_manager',
         priority: 2,
         outputKey: 'patch',
-        inputTransformer: ctx => ({
-          originalContent: String(ctx.seedSource ?? '// placeholder\n'),
-          updatedContent: asCode(ctx.finalCode ?? ctx.lastOutput),
-          filePath: 'src/rate-limiter.js'
-        }),
+        inputTransformer: ctx => {
+          const issues = ctx.scanReport?.issues;
+          if (!Array.isArray(issues)) throw new Error('Static scan did not produce a report.');
+          const blocker = issues.find(issue => issue.severity === 'critical');
+          if (blocker) throw new Error(`Static scan blocked delivery: ${blocker.rule} ${blocker.message}`);
+          return {
+            originalContent: String(ctx.seedSource ?? '// placeholder\n'),
+            updatedContent: asCode(ctx.finalCode ?? ctx.lastOutput),
+            filePath: 'src/rate-limiter.js'
+          };
+        },
         description: 'Emit a real unified diff for review'
       }
     ],

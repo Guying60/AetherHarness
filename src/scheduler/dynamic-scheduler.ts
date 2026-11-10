@@ -120,8 +120,9 @@ export class DynamicScheduler {
    * Wait until `taskId` is the highest effective-priority dispatchable task AND an agent
    * slot is free, then reserve that slot.
    */
-  public async acquire(taskId: string): Promise<{ task: ScheduledTask; agent: BaseAgent }> {
-    const deadline = Date.now() + this.maxWaitMs;
+  public async acquire(taskId: string, runDeadline = Infinity): Promise<{ task: ScheduledTask; agent: BaseAgent }> {
+    const start = Date.now();
+    const deadline = Math.min(start + this.maxWaitMs, runDeadline);
 
     for (;;) {
       const task = this.byId.get(taskId);
@@ -132,47 +133,45 @@ export class DynamicScheduler {
       }
 
       const now = Date.now();
-      const queued = this.queue.filter(t => t.status === 'queued');
-      const dispatchable = queued.filter(t => this.dependenciesMet(t));
+      if (now >= deadline) {
+        task.status = 'failed';
+        task.finishedAt = now;
+        this.queue = this.queue.filter(t => t.id !== taskId);
+        this.stats.failed++;
+        throw new Error(`Scheduler: task '${taskId}' (${task.node.name}) starved after ${Math.max(0, deadline - start)}ms`);
+      }
+      const ready = this.queue
+        .filter(t => t.status === 'queued' && this.dependenciesMet(t))
+        .sort((a, b) => this.effectivePriority(b, now) - this.effectivePriority(a, now) || a.submittedAt - b.submittedAt);
 
-      if (dispatchable.some(t => t.id === taskId)) {
-        const head = dispatchable.reduce((best, t) =>
-          this.effectivePriority(t, now) > this.effectivePriority(best, now) ||
-          (this.effectivePriority(t, now) === this.effectivePriority(best, now) && t.submittedAt < best.submittedAt)
-            ? t
-            : best
+      for (const candidate of ready) {
+        const agent = this.pickAgent(candidate);
+        if (!agent) continue;
+        if (candidate.id !== taskId) break;
+
+        const priority = this.effectivePriority(task, now);
+        if (priority > task.basePriority) this.stats.agingPromotions++;
+
+        task.status = 'running';
+        task.startedAt = now;
+        task.assignedAgentId = agent.id;
+        task.attempts++;
+        this.inflight.set(agent.id, this.getInflight(agent.id) + 1);
+        this.queue = this.queue.filter(t => t.id !== taskId);
+
+        const wait = now - task.submittedAt;
+        this.stats.maxObservedWaitMs = Math.max(this.stats.maxObservedWaitMs, wait);
+        this.stats.dispatches++;
+        this.stats.running++;
+
+        this.onEvent?.(
+          `dispatch ${task.node.name} → ${agent.profile.name} (p${priority}${wait > 50 ? `, waited ${wait}ms` : ''})`,
+          { taskId, runId: task.runId, nodeId: task.node.id, agentId: agent.id, priority, wait }
         );
-
-        if (head.id === taskId) {
-          const agent = this.pickAgent(task);
-          if (agent) {
-            if (this.effectivePriority(task, now) > task.basePriority) this.stats.agingPromotions++;
-
-            task.status = 'running';
-            task.startedAt = now;
-            task.assignedAgentId = agent.id;
-            task.attempts++;
-            this.inflight.set(agent.id, this.getInflight(agent.id) + 1);
-            this.queue = this.queue.filter(t => t.id !== taskId);
-
-            const wait = now - task.submittedAt;
-            this.stats.maxObservedWaitMs = Math.max(this.stats.maxObservedWaitMs, wait);
-            this.stats.dispatches++;
-            this.stats.running++;
-
-            this.onEvent?.(
-              `dispatch ${task.node.name} → ${agent.profile.name} (p${this.effectivePriority(task, now)}${wait > 50 ? `, waited ${wait}ms` : ''})`,
-              { taskId, agentId: agent.id, priority: this.effectivePriority(task, now), wait }
-            );
-            return { task, agent };
-          }
-        }
+        return { task, agent };
       }
 
-      if (now > deadline) {
-        throw new Error(`Scheduler: task '${taskId}' (${task.node.name}) starved after ${this.maxWaitMs}ms`);
-      }
-      await sleep(this.pollIntervalMs);
+      await sleep(Math.min(this.pollIntervalMs, deadline - now));
     }
   }
 
@@ -201,7 +200,9 @@ export class DynamicScheduler {
       task.submittedAt = Date.now();
       this.queue.push(task);
       this.stats.retried++;
-      this.onEvent?.(`retry ${task.node.name} (attempt ${task.attempts + 1}/${this.maxRetries + 1})${error ? `: ${error}` : ''}`, { taskId });
+      this.onEvent?.(`retry ${task.node.name} (attempt ${task.attempts + 1}/${this.maxRetries + 1})${error ? `: ${error}` : ''}`, {
+        taskId, runId: task.runId, nodeId: task.node.id
+      });
       return 'retrying';
     }
 
@@ -220,30 +221,19 @@ export class DynamicScheduler {
     workflowExecutionId: string,
     priority: number,
     dependencies: string[],
-    fn: (agent: BaseAgent, task: ScheduledTask) => Promise<T>
+    fn: (agent: BaseAgent, task: ScheduledTask) => Promise<T>,
+    deadline?: number
   ): Promise<T> {
     const task = this.enqueue(node, runId, workflowExecutionId, priority, dependencies);
-    const { agent } = await this.acquire(task.id);
-
-    try {
-      const result = await fn(agent, task);
-      this.release(task.id, true);
-      return result;
-    } catch (err: any) {
-      const outcome = this.release(task.id, false, err?.message);
-      if (outcome === 'retrying') {
-        // re-acquire and try again (may land on a different, healthier agent)
-        const retry = await this.acquire(task.id);
-        try {
-          const result = await fn(retry.agent, retry.task);
-          this.release(task.id, true);
-          return result;
-        } catch (retryErr: any) {
-          this.release(task.id, false, retryErr?.message);
-          throw retryErr;
-        }
+    for (;;) {
+      const { agent } = await this.acquire(task.id, deadline);
+      try {
+        const result = await fn(agent, task);
+        this.release(task.id, true);
+        return result;
+      } catch (err: any) {
+        if (this.release(task.id, false, err?.message) !== 'retrying') throw err;
       }
-      throw err;
     }
   }
 
@@ -254,7 +244,7 @@ export class DynamicScheduler {
     return task.dependencies.every(dep => {
       if (this.completedIds.has(dep)) return true;
       const other = this.byId.get(dep);
-      return other ? other.status === 'completed' : true;
+      return other?.status === 'completed';
     });
   }
 
@@ -264,6 +254,7 @@ export class DynamicScheduler {
     if (node.agentId) {
       const agent = this.agentRegistry.get(node.agentId);
       if (agent && this.hasSlot(agent)) return agent;
+      if (!node.agentCapability) return undefined;
       // explicit pin has no room: fall through to capability routing as a fail-over
     }
 
@@ -286,6 +277,6 @@ export class DynamicScheduler {
   }
 
   private hasSlot(agent: BaseAgent): boolean {
-    return this.getInflight(agent.id) < agent.profile.maxConcurrency;
+    return agent.hasCapacity() && this.getInflight(agent.id) < agent.profile.maxConcurrency;
   }
 }

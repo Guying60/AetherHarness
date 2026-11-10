@@ -25,6 +25,7 @@ export interface ToolInvocationContext {
   [key: string]: any;
   /** hard deadline in ms; sandboxed handlers must honour it */
   timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 export interface ToolMetrics {
@@ -148,18 +149,24 @@ export class ToolRegistry {
     if (!tool) throw new Error(`Tool '${toolId}' not found in registry`);
 
     this.validateParams(tool, params);
+    context?.signal?.throwIfAborted();
 
-    const timeoutMs = tool.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const timeoutMs = Math.min(tool.timeoutMs ?? DEFAULT_TIMEOUT_MS, context?.timeoutMs ?? Infinity);
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error('tool timeout must be positive and finite');
     const metrics = this.metricsFor(toolId);
     metrics.calls++;
 
     const start = Date.now();
+    const controller = new AbortController();
+    const relayAbort = () => controller.abort(context?.signal?.reason);
+    context?.signal?.addEventListener('abort', relayAbort, { once: true });
     let timer: NodeJS.Timeout | undefined;
 
-    const timeoutPromise = new Promise<never>((_, reject) => {
+    const abort = new Promise<never>((_, reject) => {
+      controller.signal.addEventListener('abort', () => reject(controller.signal.reason), { once: true });
       timer = setTimeout(() => {
         metrics.timeouts++;
-        reject(
+        controller.abort(
           new Error(
             `Tool '${toolId}' timed out after ${timeoutMs}ms` +
               (tool.isSandboxed ? ' (sandbox deadline exceeded)' : '')
@@ -171,8 +178,8 @@ export class ToolRegistry {
     });
 
     try {
-      const ctx: ToolInvocationContext = { ...(context ?? {}), timeoutMs };
-      const result = await Promise.race([Promise.resolve(tool.handler(params, ctx)), timeoutPromise]);
+      const ctx: ToolInvocationContext = { ...context, timeoutMs, signal: controller.signal };
+      const result = await Promise.race([Promise.resolve(tool.handler(params, ctx)), abort]);
       metrics.successes++;
       return result;
     } catch (err) {
@@ -180,6 +187,7 @@ export class ToolRegistry {
       throw err;
     } finally {
       if (timer) clearTimeout(timer);
+      context?.signal?.removeEventListener('abort', relayAbort);
       metrics.totalMs += Date.now() - start;
     }
   }

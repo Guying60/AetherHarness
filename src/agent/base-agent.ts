@@ -84,11 +84,15 @@ export class BaseAgent {
 
   public async execute(request: AgentExecutionRequest): Promise<AgentExecutionResult> {
     const startTime = Date.now();
-    this.profile.currentLoad++;
+    let slotReserved = false;
 
     const failedRules: RuleFailure[] = request.failedRules ?? [];
 
     try {
+      request.signal?.throwIfAborted();
+      if (!this.hasCapacity()) throw new Error(`agent '${this.id}' has no available execution slot`);
+      this.profile.currentLoad++;
+      slotReserved = true;
       this.addMemory({
         role: 'user',
         content: JSON.stringify(request.input).slice(0, 2000),
@@ -106,6 +110,7 @@ export class BaseAgent {
       };
 
       const res = await this.brain.think(ctx);
+      request.signal?.throwIfAborted();
 
       const reasoning = res.reasoning || '';
       const tokensUsed =
@@ -147,7 +152,7 @@ export class BaseAgent {
         error: message
       };
     } finally {
-      this.profile.currentLoad = Math.max(0, this.profile.currentLoad - 1);
+      if (slotReserved) this.profile.currentLoad--;
     }
   }
 

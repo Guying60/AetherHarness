@@ -29,12 +29,13 @@ import { AgentRegistry } from '../agent/agent-registry.js';
 import { ToolRegistry } from '../tools/tool-registry.js';
 import { DynamicScheduler } from '../scheduler/dynamic-scheduler.js';
 import { VerificationEngine } from '../verification/verification-engine.js';
-import { SelfLoopEngine } from '../selfloop/self-loop-engine.js';
+import { SelfLoopEngine, SelfLoopIterationRecord } from '../selfloop/self-loop-engine.js';
 import { FeedbackOptimizer } from '../optimization/feedback-optimizer.js';
 
 export interface WorkflowHooks {
   onNodeStart?: (node: WorkflowNode, record: NodeExecutionRecord) => void;
   onNodeEnd?: (node: WorkflowNode, record: NodeExecutionRecord) => void;
+  onLoopIteration?: (node: WorkflowNode, record: SelfLoopIterationRecord) => void;
   onLog?: (message: string, data?: Record<string, any>) => void;
 }
 
@@ -230,7 +231,7 @@ export class WorkflowEngine {
   public async execute(
     workflow: WorkflowDefinition,
     initialInput: Record<string, any> = {},
-    hooks: WorkflowHooks & { runId?: string } = {}
+    hooks: WorkflowHooks & { runId?: string; deadline?: number; depth?: number } = {}
   ): Promise<WorkflowExecutionState> {
     const validation = this.validate(workflow);
     if (!validation.valid) {
@@ -254,7 +255,7 @@ export class WorkflowEngine {
     const nodeMap = new Map<string, WorkflowNode>();
     workflow.nodes.forEach(n => nodeMap.set(n.id, n));
 
-    const deadline = state.startTime + (workflow.timeoutMs ?? DEFAULT_RUN_TIMEOUT_MS);
+    const deadline = Math.min(state.startTime + (workflow.timeoutMs ?? DEFAULT_RUN_TIMEOUT_MS), hooks.deadline ?? Infinity);
     const maxSteps = workflow.maxSteps ?? DEFAULT_MAX_STEPS;
 
     /** nodeId -> scheduler taskId of the most recent execution (for dependency wiring) */
@@ -286,8 +287,13 @@ export class WorkflowEngine {
 
       this.pushCheckpoint(executionId, state.context);
 
-      const record = await this.executeNode(node, state, hooks, { deadline, taskIdByNode, workflow });
+      const record = await this.executeNode(node, state, hooks, { deadline, taskIdByNode, workflow, depth: hooks.depth });
 
+      if (Date.now() >= deadline && record.status !== 'failed') {
+        state.status = 'failed';
+        hooks.onLog?.('workflow deadline exceeded');
+        break;
+      }
       if (record.status === 'failed') {
         state.status = 'failed';
         break;
@@ -320,25 +326,26 @@ export class WorkflowEngine {
     } = {}
   ): Promise<NodeExecutionRecord> {
     const started = Date.now();
-    const deadline = internal.deadline ?? started + DEFAULT_RUN_TIMEOUT_MS;
+    const deadline = Math.min(internal.deadline ?? started + DEFAULT_RUN_TIMEOUT_MS, started + (node.timeoutMs ?? Infinity));
     const depth = internal.depth ?? 0;
 
     if (depth > MAX_NESTING) throw new Error(`workflow nesting deeper than ${MAX_NESTING}`);
-
-    const input = node.inputTransformer ? node.inputTransformer(state.context) : this.snapshotContext(state.context);
 
     const record: NodeExecutionRecord = {
       nodeId: node.id,
       nodeName: node.name,
       status: 'running',
       startTime: started,
-      input,
+      input: null,
       output: null
     };
 
-    hooks.onNodeStart?.(node, record);
-
     try {
+      const input = node.inputTransformer ? node.inputTransformer(state.context) : this.snapshotContext(state.context);
+      record.input = input;
+      hooks.onNodeStart?.(node, record);
+      const budget = Math.floor(deadline - Date.now());
+      if (budget <= 0) throw new Error(`node '${node.id}' exceeded its execution budget`);
       let output: any = null;
 
       switch (node.type) {
@@ -351,7 +358,7 @@ export class WorkflowEngine {
         // --------------------------------------------------------- tool
         case 'tool': {
           if (!node.toolId) throw new Error(`node '${node.id}' missing toolId`);
-          output = await this.toolRegistry.invoke(node.toolId, input, { timeoutMs: node.timeoutMs ?? 4000 });
+          output = await this.toolRegistry.invoke(node.toolId, input, { timeoutMs: Math.min(budget, node.timeoutMs ?? 4000) });
           break;
         }
 
@@ -419,6 +426,8 @@ export class WorkflowEngine {
           });
           const subState = await subEngine.execute(sub, input as Record<string, any>, {
             runId: `${state.workflowExecutionId}-${node.id}`,
+            deadline,
+            depth: depth + 1,
             onLog: hooks.onLog
           });
           if (subState.status !== 'completed') {
@@ -435,7 +444,9 @@ export class WorkflowEngine {
 
           const targetKey = node.verifyTargetKey ?? 'lastOutput';
           const target = state.context[targetKey];
-          const result = await this.verificationEngine.verify(target, node.verificationSpec, state.context);
+          const result = await this.verificationEngine.verify(target, node.verificationSpec, state.context, {
+            signal: AbortSignal.timeout(budget)
+          });
 
           record.verification = result;
           state.context.lastVerification = result;
@@ -478,6 +489,8 @@ export class WorkflowEngine {
               // expose the loop state to the target node's agent call
               state.context.__loopIteration = iteration;
               state.context.__failedRules = failedRules;
+              state.context.previousAttempt = loopInput.previousAttempt;
+              state.context.regressionWarning = loopInput.regressionWarning;
               if (guidance) state.context.diagnosticFeedback = guidance;
               if (previousVerification) state.context.lastVerification = previousVerification;
               state.iterationCounts[node.id] = iteration;
@@ -497,10 +510,12 @@ export class WorkflowEngine {
               workflowExecutionId: state.workflowExecutionId,
               optimizer: this.optimizer,
               targetAgentId: targetNode.agentId,
+              signal: AbortSignal.timeout(budget),
               onVerify: rec => {
+                hooks.onLoopIteration?.(node, rec);
                 hooks.onLog?.(
                   `self-loop ${node.id} iteration ${rec.iteration}: score=${rec.score.toFixed(3)} ` +
-                    `${rec.passed ? 'converged' : 'retrying'}` +
+                    `${rec.passed && rec.score >= cfg.convergenceThreshold ? 'converged' : 'blocked'}` +
                     (rec.failedRuleIds.length ? ` (this round blocked by: ${rec.failedRuleIds.join(', ')})` : '') +
                     (rec.cumulativeFailureIds.length > rec.failedRuleIds.length
                       ? ` [repaired so far: ${rec.cumulativeFailureIds.filter(id => !rec.failedRuleIds.includes(id)).join(', ')}]`
@@ -610,9 +625,11 @@ export class WorkflowEngine {
 
       const failedRules = Array.isArray(state.context.__failedRules) ? state.context.__failedRules : nodeContextFailures(state);
 
+      const controller = new AbortController();
       const request = {
         taskId: `${state.workflowExecutionId}-${node.id}-i${state.context.__loopIteration ?? 1}`,
         agentId: agent.id,
+        signal: controller.signal,
         input: { ...state.context, goal: state.context.goal ?? node.description ?? node.name },
         context: state.context,
         iteration: typeof state.context.__loopIteration === 'number' ? state.context.__loopIteration : 1,
@@ -620,12 +637,16 @@ export class WorkflowEngine {
         failedRules
       };
 
-      const remaining = Math.max(500, deadline - Date.now());
-      const budget = Math.min(remaining, node.timeoutMs ?? remaining);
+      const budget = deadline - Date.now();
+      if (budget <= 0) throw new Error(`agent node '${node.id}' exceeded its execution budget`);
 
       let timer: NodeJS.Timeout | undefined;
       const timeout = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`agent node '${node.id}' exceeded its ${budget}ms budget`)), budget);
+        timer = setTimeout(() => {
+          const error = new Error(`agent node '${node.id}' exceeded its ${budget}ms budget`);
+          controller.abort(error);
+          reject(error);
+        }, budget);
       });
 
       try {
@@ -646,11 +667,12 @@ export class WorkflowEngine {
         state.workflowExecutionId,
         node.priority ?? 5,
         deps,
-        async agent => {
+        async (agent, scheduledTask) => {
           const res = await executeOnce(agent.id);
-          taskIdByNode?.set(node.id, res.taskId);
+          taskIdByNode?.set(node.id, scheduledTask.id);
           return res.output;
-        }
+        },
+        deadline
       );
     }
 

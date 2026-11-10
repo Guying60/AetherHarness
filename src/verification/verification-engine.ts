@@ -135,8 +135,9 @@ export class VerificationEngine {
     output: any,
     spec: VerificationSpec,
     context: Record<string, any> = {},
-    opts: { iteration?: number } = {}
+    opts: { iteration?: number; signal?: AbortSignal } = {}
   ): Promise<VerificationResult> {
+    opts.signal?.throwIfAborted();
     const tiers: VerificationTierResult[] = [];
     const blocking: string[] = [];
     const artifact = artifactToString(output);
@@ -203,8 +204,8 @@ export class VerificationEngine {
         try {
           const runnerRes: any = await this.toolRegistry.invoke(
             'test_runner',
-            { testCode, sourceCode: artifact },
-            { timeoutMs: spec.executableSandboxCheck.timeoutMs ?? 4000 }
+            { testCode, sourceCode: artifact, bindings: spec.executableSandboxCheck.bindings },
+            { timeoutMs: spec.executableSandboxCheck.timeoutMs ?? 4000, signal: opts.signal }
           );
 
           const report = runnerRes?.report ?? { passed: 0, failed: 1, errors: ['malformed runner output'], total: 1 };
@@ -226,6 +227,7 @@ export class VerificationEngine {
 
           if (!passedAll) blocking.push(`Tier-2: ${report.failed}/${report.total} assertions failed`);
         } catch (err: any) {
+          opts.signal?.throwIfAborted();
           sandboxScore = 0;
           sandboxResult = { passed: false, output: `sandbox error: ${err?.message ?? String(err)}`, exitCode: 1 };
           blocking.push(`Tier-2: sandbox failed to run (${err?.message ?? String(err)})`);
@@ -267,9 +269,18 @@ export class VerificationEngine {
         const execution = await auditor.execute({
           taskId: `audit-${Date.now().toString(36)}-${auditorId}`,
           agentId: auditorId,
+          signal: opts.signal,
           input: { auditTarget: artifact, context, iteration: opts.iteration },
           iteration: opts.iteration
         });
+        opts.signal?.throwIfAborted();
+
+        if (!execution.success) {
+          const comments = execution.error ?? 'audit execution failed';
+          blocking.push(`Tier-3 ${auditorId}: ${comments}`);
+          auditorReviews.push({ agentId: auditorId, approved: false, comments, confidence: 0 });
+          continue;
+        }
 
         let verdict = execution.output as Partial<AuditVerdict> | undefined;
 

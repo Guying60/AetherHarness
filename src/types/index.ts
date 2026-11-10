@@ -50,6 +50,7 @@ export interface RuleFailure {
 export interface AgentExecutionRequest {
   taskId: string;
   agentId: string;
+  signal?: AbortSignal;
   input: Record<string, any>;
   context?: Record<string, any>;
   retrievedDocs?: KnowledgeQueryResult[];
@@ -286,6 +287,8 @@ export interface VerificationSpec {
   executableSandboxCheck?: {
     /** generates test code; assertions may be prefixed with a rule id: "EDGE-001: ..." */
     testScriptGenerator?: (output: any, context: Record<string, any>) => string;
+    /** Candidate bindings required by the trusted tests, evaluated in a separate realm. */
+    bindings?: string[];
     expectedExitCode?: number;
     timeoutMs?: number;
   };

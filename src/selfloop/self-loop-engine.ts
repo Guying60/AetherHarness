@@ -55,6 +55,7 @@ export interface SelfLoopExecutionResult {
 
 export interface SelfLoopRunOptions {
   workflowExecutionId?: string;
+  signal?: AbortSignal;
   optimizer?: FeedbackOptimizer;
   /** agent whose prompt should be refined when `autoPromptRefine` is on */
   targetAgentId?: string;
@@ -166,10 +167,12 @@ export class SelfLoopEngine {
     let sawRegression = false;
 
     for (let iteration = 1; iteration <= config.maxIterations; iteration++) {
+      options.signal?.throwIfAborted();
       const started = Date.now();
 
       // 1. DO
       const output = await executor(iterationInput, iteration, guidance, accumulated, previousVerification);
+      options.signal?.throwIfAborted();
       finalOutput = output;
 
       const declaredUnresolved = (output as { unresolved?: unknown } | null)?.unresolved;
@@ -180,7 +183,7 @@ export class SelfLoopEngine {
       }
 
       // 2. CHECK
-      const verification = await this.verificationEngine.verify(output, spec, iterationInput, { iteration });
+      const verification = await this.verificationEngine.verify(output, spec, iterationInput, { iteration, signal: options.signal });
       finalVerification = verification;
       previousVerification = verification;
 
@@ -226,6 +229,7 @@ export class SelfLoopEngine {
         const criticRes = await criticAgent.execute({
           taskId: `${workflowExecutionId}-critic-i${iteration}`,
           agentId: criticAgent.id,
+          signal: options.signal,
           input: {
             goal: iterationInput.goal ?? 'satisfy the acceptance criteria',
             iteration,
@@ -236,6 +240,8 @@ export class SelfLoopEngine {
           },
           iteration
         });
+        options.signal?.throwIfAborted();
+        if (!criticRes.success) throw new Error(criticRes.error ?? 'critic execution failed');
 
         const out = criticRes.output;
         guidance =

@@ -2,9 +2,8 @@
  * Built-in tools: sandbox execution, test runner, static analyzer, git patch manager.
  *
  * Fixes vs. the previous version:
- * - `code_sandbox` / `test_runner` no longer use `new Function(...)`. They run inside a
- *   fresh `node:vm` context with a hard `timeout`, which CAN interrupt a synchronous
- *   infinite loop (a Promise.race never could) and leaks no host objects into the sandbox.
+ * - `code_sandbox` uses a fresh `node:vm` context with a synchronous deadline.
+ * - `test_runner` evaluates the candidate and the trusted test driver in a child process.
  * - `git_patch_manager` emits a real LCS-based unified diff (with `-` lines, context and
  *   correct hunk headers) instead of an all-plus pseudo patch.
  * - the static analyzer also flags vm-escape patterns.
@@ -15,44 +14,11 @@
  * access from generated code.
  */
 import vm from 'node:vm';
+import { fork } from 'node:child_process';
 import { ToolDefinition } from '../types/index.js';
+import type { ToolInvocationContext } from './tool-registry.js';
 
 const MAX_SOURCE_BYTES = 200_000;
-
-/** Assertion helpers are declared *inside* the sandbox realm, so no host object leaks in. */
-const ASSERT_PRELUDE = `
-var __passed = 0, __failed = 0, __errors = [];
-var console = {
-  log: function () {},
-  error: function () {},
-  warn: function () {},
-  info: function () {}
-};
-function assert(condition, message) {
-  if (condition) { __passed++; }
-  else { __failed++; __errors.push(String(message || 'assertion failed')); }
-}
-function assertEqual(actual, expected, message) {
-  var ok = JSON.stringify(actual) === JSON.stringify(expected);
-  if (ok) { __passed++; }
-  else { __failed++; __errors.push(String(message || 'assertion failed') + ' (expected ' + JSON.stringify(expected) + ', got ' + JSON.stringify(actual) + ')'); }
-}
-function assertClose(actual, expected, tolerance, message) {
-  if (typeof actual === 'number' && Math.abs(actual - expected) <= tolerance) { __passed++; }
-  else { __failed++; __errors.push(String(message || 'assertion failed') + ' (expected ~' + expected + ', got ' + actual + ')'); }
-}
-function assertThrows(fn, ctorName, message) {
-  try {
-    fn();
-    __failed++;
-    __errors.push(String(message || 'assertion failed') + ' (expected ' + ctorName + ', nothing was thrown)');
-  } catch (e) {
-    var name = (e && e.constructor && e.constructor.name) || '';
-    if (!ctorName || name === ctorName) { __passed++; }
-    else { __failed++; __errors.push(String(message || 'assertion failed') + ' (expected ' + ctorName + ', got ' + name + ': ' + (e && e.message) + ')'); }
-  }
-}
-`;
 
 export interface SandboxRunOutcome {
   exitCode: number;
@@ -297,49 +263,36 @@ export function createBuiltinTools(): ToolDefinition[] {
         type: 'object',
         properties: {
           testCode: { type: 'string', description: 'Assertions; may tag failures with a rule id' },
-          sourceCode: { type: 'string', description: 'Implementation under test' }
+          sourceCode: { type: 'string', description: 'Implementation under test' },
+          bindings: { type: 'array', description: 'Candidate bindings exposed to the separate test realm' }
         },
         required: ['testCode', 'sourceCode']
       },
       isSandboxed: true,
       timeoutMs: 4000,
-      handler: async (params: { testCode: string; sourceCode: string }, ctx?: { timeoutMs?: number }) => {
-        if ((params.testCode + params.sourceCode).length > MAX_SOURCE_BYTES) {
+      handler: async (params: { testCode: string; sourceCode: string; bindings?: string[] }, ctx?: ToolInvocationContext) => {
+        if (Buffer.byteLength(params.testCode) + Buffer.byteLength(params.sourceCode) > MAX_SOURCE_BYTES) {
           throw new Error('test payload too large');
         }
 
-        const script = `${ASSERT_PRELUDE}
-${params.sourceCode}
-try {
-${params.testCode}
-} catch (e) {
-  __failed++;
-  __errors.push((e && e.constructor && e.constructor.name ? e.constructor.name + ': ' : '') + (e && e.message ? e.message : String(e)));
-}
-return { passed: __passed, failed: __failed, errors: __errors, total: __passed + __failed };
-`;
-
-        const timeout = ctx?.timeoutMs ?? 3000;
-        const outcome = runInSandbox(script, timeout);
-
-        if (outcome.exitCode !== 0) {
-          return {
-            success: false,
-            report: {
-              passed: 0,
-              failed: 1,
-              errors: [outcome.timedOut ? `TIMEOUT: ${outcome.stderr}` : outcome.stderr],
-              total: 1
-            },
-            engine: outcome.engine
-          };
-        }
-
-        const report = outcome.result as { passed: number; failed: number; errors: string[]; total: number };
-        return {
-          success: report.failed === 0 && report.total > 0,
-          report
-        };
+        const timeoutMs = ctx?.timeoutMs ?? 3000;
+        return new Promise((resolve, reject) => {
+          const child = fork(new URL('./test-runner.js', import.meta.url), {
+            execArgv: ['--max-old-space-size=64'],
+            env: {},
+            stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+            timeout: timeoutMs,
+            signal: ctx?.signal
+          });
+          child.once('message', resolve);
+          child.once('error', reject);
+          child.once('exit', (code, signal) =>
+            reject(new Error(`test runner exited without a report (${signal ?? code})`))
+          );
+          child.send({ testCode: params.testCode, sourceCode: params.sourceCode, bindings: params.bindings, timeoutMs }, err => {
+            if (err) reject(err);
+          });
+        });
       }
     },
 

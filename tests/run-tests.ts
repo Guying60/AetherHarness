@@ -7,6 +7,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { request } from 'node:http';
 
 import { ToolRegistry } from '../src/tools/tool-registry.js';
 import { createBuiltinTools, buildUnifiedDiff } from '../src/tools/builtin-tools.js';
@@ -177,6 +178,33 @@ async function suiteTools(): Promise<void> {
     langThrew = true;
   }
   check(langThrew, 'unsupported language is rejected instead of simulated');
+
+  const forged = await registry.invoke('test_runner', {
+    sourceCode: 'return { passed: 10, failed: 0, errors: [], total: 10 };',
+    testCode: 'assert(false, "the candidate is broken");'
+  });
+  equal(forged.success, false, 'candidate code cannot return a fake test report');
+
+  const legacy = await registry.invoke('test_runner', {
+    sourceCode: 'class Candidate { read() { return 2; } }',
+    testCode: 'assertEqual(new Candidate().read(), 2);'
+  });
+  equal(legacy.report.total, 1, 'trusted legacy tests can still access top-level candidate declarations');
+
+  const poisoned = await registry.invoke('test_runner', {
+    sourceCode: 'class Candidate {}\nNumber.isInteger = () => true;\nvar __passed = 10;',
+    testCode: 'new Candidate(); assert(Number.isInteger(0.5), "broken invariant");',
+    bindings: ['Candidate']
+  });
+  equal(poisoned.report, { passed: 0, failed: 1, errors: ['broken invariant'], total: 1 },
+    'candidate globals cannot change the trusted test realm or its counters');
+
+  registry.register({
+    id: 'budget_probe', name: 'budget probe', description: 'reports the effective deadline',
+    parameters: { type: 'object', properties: {} }, timeoutMs: 1000,
+    handler: async (_params, ctx) => ctx.timeoutMs
+  });
+  equal(await registry.invoke('budget_probe', {}, { timeoutMs: 25 }), 25, 'a caller can tighten the tool deadline');
 
   registry.registerMcpTool(
     {
@@ -417,6 +445,29 @@ async function suiteWorkflow(): Promise<void> {
   equal(slowState.status, 'failed', 'workflow deadline stops a run that would otherwise keep going');
   check((slowState.endTime ?? 0) - slowState.startTime < 1200, 'deadline is honoured promptly');
 
+  let aborted = false;
+  agentRegistry.register(agentProfile('abortable'), { brain: {
+    name: 'abort probe', kind: 'probe', async think(ctx) {
+      const signal = ctx.request.signal;
+      await new Promise<void>(resolve => {
+        const timer = setTimeout(resolve, 80);
+        signal?.addEventListener('abort', () => {
+          clearTimeout(timer);
+          aborted = true;
+          resolve();
+        }, { once: true });
+      });
+      return { output: 'late output', reasoning: 'abort probe' };
+    }
+  } });
+  const timedNode: WorkflowDefinition = {
+    ...slow, id: 'abortable', timeoutMs: 1000,
+    nodes: [{ id: 's1', name: 's1', type: 'agent', agentId: 'abortable', timeoutMs: 15 }], edges: []
+  };
+  const timedState = await workflow.execute(timedNode);
+  equal([timedState.status, aborted, agentRegistry.get('abortable')?.currentLoad], ['failed', true, 0],
+    'a timed-out node aborts cooperative work and releases its agent slot');
+
   // checkpoints are taken before every node (not only at t=0)
   const checkpointRun = await workflow.execute(conditional, {}, { runId: 'ckpt-run' });
   equal(checkpointRun.status, 'completed', 'checkpointed workflow completes');
@@ -477,6 +528,7 @@ async function suiteScheduler(): Promise<void> {
   }
   check(starved, 'a task with unmet dependencies is not dispatched');
   equal(blocker.status, 'queued', 'the blocker itself was never dispatched either');
+  equal(depScheduler.getStats().queued, 1, 'starved tasks are removed from the displayed queue');
 
   // high priority wins
   const orderScheduler = new DynamicScheduler(agentRegistry, { pollIntervalMs: 5 });
@@ -488,6 +540,15 @@ async function suiteScheduler(): Promise<void> {
   orderScheduler.release(high.id, true);
   const next = await orderScheduler.acquire(low.id);
   equal(next.task.id, low.id, 'the lower priority task then proceeds');
+
+  const slots = new DynamicScheduler(agentRegistry, { maxWaitMs: 100, pollIntervalMs: 5 });
+  const held = slots.enqueue(node, 'run', 'exec');
+  await slots.acquire(held.id);
+  const waiting = slots.enqueue({ ...node, agentCapability: 'exclusive_skill' }, 'run', 'exec', 9);
+  const available = slots.enqueue({ ...node, agentId: 'w2' }, 'run', 'exec', 2);
+  equal((await slots.acquire(available.id)).agent.id, 'w2', 'an unavailable high-priority task cannot block another agent');
+  slots.release(held.id, true);
+  equal((await slots.acquire(waiting.id)).agent.id, 'w1', 'the waiting task proceeds when its agent is free');
 
   // capacity is respected
   const capScheduler = new DynamicScheduler(agentRegistry, { pollIntervalMs: 5, maxWaitMs: 3000 });
@@ -522,6 +583,25 @@ async function suiteScheduler(): Promise<void> {
   equal(result, 'ok', 'a failing task is retried and succeeds');
   equal(attempts, 2, 'exactly one retry was performed');
   equal(retryScheduler.getStats().retried, 1, 'retry counter is exposed to the UI');
+
+  const multiRetry = new DynamicScheduler(agentRegistry, { maxRetries: 2 });
+  let multiAttempts = 0;
+  const multiResult = await multiRetry.run(
+    { id: 'multi', name: 'multi retry', type: 'agent', agentCapability: 'code_generation' },
+    'retry-run', 'retry-run', 5, [], async () => {
+      if (++multiAttempts < 3) throw new Error('transient failure');
+      return 'ok';
+    }
+  ).catch(() => 'failed');
+  equal([multiResult, multiAttempts, multiRetry.getStats().queued], ['ok', 3, 0],
+    'all configured retries are used without stranding a queue entry');
+
+  const missingDependency = new DynamicScheduler(agentRegistry, { maxWaitMs: 20, pollIntervalMs: 5 });
+  const unknown = await missingDependency.run(
+    { id: 'unknown', name: 'unknown dependency', type: 'agent', agentCapability: 'code_generation' },
+    'dep-run', 'dep-run', 5, ['missing'], async () => 'dispatched'
+  ).catch(() => 'blocked');
+  equal([unknown, missingDependency.getStats().queued], ['blocked', 0], 'an unknown dependency cannot be treated as complete');
 }
 
 // ---------------------------------------------------------------------------
@@ -565,6 +645,22 @@ async function suiteVerification(): Promise<void> {
   const clusterResult = await verifier.verify({ code: good }, clusterSpec, { requirementSpec: { testSuiteCode: '' } });
   check(clusterResult.score >= 0.9 && clusterResult.passed === false, 'a single unsatisfiable critical rule blocks regardless of score');
   check((clusterResult.blockingReasons ?? []).some(r => r.includes('DIST-001')), 'the unsatisfiable rule is named in the blocking reasons');
+
+  const commentOnly = await verifier.verify({ code: good + '\n// reconcileWithCluster(' }, clusterSpec);
+  check(!commentOnly.passed && commentOnly.failedRuleIds?.includes('DIST-001') === true,
+    'mentioning reconciliation does not prove distributed behaviour');
+
+  const suppliedOracle = await verifier.verify({ code: bad }, spec, {
+    requirementSpec: { testSuiteCode: 'assert(true, "weakened oracle");' }
+  });
+  equal(suppliedOracle.sandboxTestResult?.passed, false, 'scenario verification uses the fixed test suite');
+
+  agentRegistry.get('reviewer_01')!.setBrain({
+    name: 'failed auditor', kind: 'failure', async think() { throw new Error('model unavailable'); }
+  });
+  const failedAudit = await verifier.verify({ code: good }, spec);
+  check(!failedAudit.passed && failedAudit.auditorReviews?.[0]?.approved === false,
+    'failed review is recorded as unavailable instead of silently passing on deterministic heuristics');
 }
 
 // ---------------------------------------------------------------------------
@@ -716,6 +812,16 @@ async function suiteEndToEnd(): Promise<void> {
   check((normal.artifact ?? '').includes('throw new RangeError'), 'the repaired artifact contains the missing guard');
   check((normal.patch?.patch ?? '').includes('@@'), 'a real unified diff patch was produced');
 
+  const blockedDelivery = new Orchestrator();
+  const scanner = blockedDelivery.tools.get('static_analyzer')!;
+  blockedDelivery.tools.register({
+    ...scanner,
+    handler: async () => ({ clean: false, issues: [{ severity: 'critical', rule: 'SEC-004', message: 'probe' }] })
+  });
+  const blocked = await blockedDelivery.runTask(tasks[0]);
+  check(blocked.status === 'failed' && !blocked.patch && !!blocked.error?.includes('SEC-004'),
+    'a blocking static scan cannot yield a deliverable patch');
+
   equal(hard.status, 'needs_human', 'the unsatisfiable task escalates to a human');
   check(!!hard.escalation, 'the escalation request is attached to the run');
   equal(hard.escalation?.recommendedOptionIndex, 1, 'the card recommends acceptance when the agent reports an unresolved rule');
@@ -753,6 +859,16 @@ async function suiteEndToEnd(): Promise<void> {
   const retried = await orchestrator2.resolveEscalation(hardRun.runId, 0);
   check(retried?.runId !== hardRun.runId, 'the retry option starts a fresh run with a doubled budget');
   equal(orchestrator2.getRuns().length, 2, 'both the original and the retried run are tracked');
+  equal(retried?.retryOf, hardRun.runId, 'retry links to its original run');
+  equal(retried?.workflow.nodes.find(node => node.id === 'n_loop_full')?.selfLoopConfig?.maxIterations, 4,
+    'the first retry doubles the iteration budget');
+  const secondRetry = await orchestrator2.resolveEscalation(retried!.runId, 0);
+  equal(secondRetry?.workflow.nodes.find(node => node.id === 'n_loop_full')?.selfLoopConfig?.maxIterations, 8,
+    'retry doubles the budget used by the preceding run');
+  const aborted = await orchestrator2.resolveEscalation(secondRetry!.runId, 2);
+  equal(aborted?.humanDecision, 'abort', 'an aborted run is recorded separately from an execution error');
+  check(!aborted?.artifact && !aborted?.patch && !aborted?.state?.context.__loopIteration,
+    'abort rolls back the loop context and removes the draft from delivery');
 }
 
 // ---------------------------------------------------------------------------
@@ -953,6 +1069,21 @@ async function suiteLlm(): Promise<void> {
   }
   check(!!timeoutError && /timed out/.test(timeoutError.message), 'a hung request is aborted and reported as a timeout');
 
+  let cancelledAttempts = 0;
+  const cancellable = new DeepSeekProvider({
+    apiKey: 'k',
+    fetchImpl: (url, init) => {
+      cancelledAttempts++;
+      return hangingFetch(url, init);
+    },
+    maxRetries: 2
+  });
+  const cancellation = new AbortController();
+  const cancelled = cancellable.chat([{ role: 'user', content: 'hi' }], { signal: cancellation.signal });
+  cancellation.abort(new Error('cancelled by workflow'));
+  const cancelledMessage = await cancelled.catch((error: Error) => error.message);
+  equal([cancelledMessage, cancelledAttempts], ['cancelled by workflow', 1], 'a workflow abort stops the provider without retrying');
+
   // ---- graceful degradation
   const telemetry = createTelemetry();
   let fallbackNotified = 0;
@@ -1047,6 +1178,35 @@ async function suiteLlm(): Promise<void> {
 async function suiteWebServer(): Promise<void> {
   describe('[11] web dashboard & API server');
 
+  const live = new WebServer({ port: 0, llm: { apiKey: 'private-config-probe' } });
+  const liveInfo = await live.start();
+  try {
+    for (const endpoint of ['/api/agents', '/api/status']) {
+      const payload = await (await fetch(liveInfo.url + endpoint)).text();
+      check(!/private-config-probe|"systemPrompt"|"memory"/.test(payload), `${endpoint} never serializes the live provider or agent memory`);
+    }
+    const foreignHost = await new Promise<number | undefined>((resolve, reject) => {
+      const req = request(liveInfo.url + '/api/status', { headers: { Host: 'untrusted.example' } }, res => {
+        res.resume();
+        resolve(res.statusCode);
+      });
+      req.on('error', reject);
+      req.end();
+    });
+    equal(foreignHost, 403, 'a rebinding Host cannot reach the local API');
+  } finally {
+    await live.stop();
+  }
+
+  const limited = new Orchestrator({ maxConcurrentRuns: 1 });
+  const [task] = limited.getTasks();
+  const firstRun = limited.runTask(task);
+  let pendingId = '';
+  const secondRun = limited.runTask(task, { onStart: id => { pendingId = id; } });
+  equal(limited.getRun(pendingId)?.status, 'pending', 'single-run submissions share the orchestrator concurrency cap');
+  const limitedResults = await Promise.all([firstRun, secondRun]);
+  check(limitedResults.every(run => run.verification?.passed), 'a queued run starts and verifies when the slot is released');
+
   const server = new WebServer({ port: 0 });
   const info = await server.start();
 
@@ -1061,6 +1221,7 @@ async function suiteWebServer(): Promise<void> {
     const htmlText = await htmlRes.text();
     check(htmlText.includes('AetherHarness'), 'HTML includes AetherHarness brand');
     check(htmlText.includes('pipeline-flow'), 'HTML includes workflow DAG pipeline view');
+    check(htmlText.includes('选择一个案例运行'), 'HTML starts with a guided scenario picker');
 
     // 2. Status API
     const statusRes = await fetch(`${info.url}/api/status`);
@@ -1068,6 +1229,11 @@ async function suiteWebServer(): Promise<void> {
     const statusData = await statusRes.json();
     equal(statusData.status, 'ok', 'status data reports ok');
     check(Array.isArray(statusData.runs), 'status data lists runs');
+
+    const initial = await (await fetch(`${info.url}/api/dashboard`)).json();
+    equal(initial.tasks.length, 3, 'dashboard exposes the three actual scenario templates');
+    equal(initial.run, null, 'an untouched dashboard has no verification result');
+    check(initial.tasks[0].workflow.edges.some((edge: any) => edge.to === 'n_loop_quick'), 'dashboard exposes the real DAG branches');
 
     // 3. Agents API
     const agentsRes = await fetch(`${info.url}/api/agents`);
@@ -1107,6 +1273,14 @@ async function suiteWebServer(): Promise<void> {
     check(finishedRun !== undefined, 'rl-normal run was recorded');
     equal(finishedRun?.status, 'completed', 'rl-normal run completed successfully');
     check(finishedRun?.patch?.patch?.includes('--- a/'), 'run produced a unified diff patch');
+    equal(runData.runId, finishedRun.runId, 'dispatch returns the ID of the run just started');
+
+    const detail = await (await fetch(`${info.url}/api/dashboard?runId=${runData.runId}`)).json();
+    equal(detail.run.nodeProgress.n_complexity_gate.branchTaken, 'n_loop_full', 'dashboard reports the actual branch taken');
+    check(detail.run.loopRounds[0].criticFeedback && !detail.run.loopRounds[0].passed, 'dashboard includes failed round evidence and diagnosis');
+    equal(detail.run.loopRounds[1].passed, true, 'dashboard includes the successful repair round');
+    check(detail.events.some((event: any) => event.kind === 'scheduler' && event.runId === runData.runId && event.data.agentId),
+      'dispatch events stay attached to their run');
 
     // 6. Test Escalation flow via API
     await fetch(`${info.url}/api/tasks/run`, {
@@ -1127,15 +1301,23 @@ async function suiteWebServer(): Promise<void> {
     equal(hardRun?.status, 'needs_human', 'rl-hard correctly escalates to human (needs_human)');
 
     // Resolve escalation via POST /api/runs/:id/escalate
-    const escRes = await fetch(`${info.url}/api/runs/${hardRun.runId}/escalate`, {
+    const decisionUrl = `${info.url}/api/runs/${hardRun.runId}/escalate`;
+    const decide = (optionIndex: number) => fetch(decisionUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ optionIndex: 1 })
+      body: JSON.stringify({ optionIndex })
     });
+    equal((await decide(99)).status, 400, 'an invalid option cannot accidentally abort a run');
+    const escRes = await decide(1);
     equal(escRes.status, 200, 'POST /api/runs/:id/escalate returns 200 OK');
     const escData = await escRes.json();
     equal(escData.success, true, 'escalation resolution reports success');
     equal(escData.run.status, 'completed', 'escalation resolution marks run as completed');
+    equal(escData.run.humanDecision, 'review', 'dashboard can distinguish a draft review from verified delivery');
+    equal(escData.run.verification.passed, false, 'requesting review preserves the failed verification verdict');
+    check(escData.run.patch.patch.includes('@@') && !escData.run.patch.patch.includes('-// placeholder'),
+      'draft review produces a diff against the scenario seed');
+    equal((await decide(2)).status, 409, 'a resolved run rejects a second decision');
   } finally {
     await server.stop();
   }

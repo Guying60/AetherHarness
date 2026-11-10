@@ -112,7 +112,7 @@ export async function runHeadless(options: HeadlessOptions = {}): Promise<number
     const reviewPatch = await orchestrator.resolveEscalation(escalated.runId, 1);
     process.stdout.write(
       `  ${paint('└─ resolved:', style.dim)} option [2] accepted for human review ` +
-        `${paint(reviewPatch?.status ?? '', style.green)}\n`
+        `${paint(reviewPatch?.humanDecision === 'review' ? 'draft pending review' : '', style.yellow)}\n`
     );
   } else {
     process.stdout.write(heading('4/5  human-in-the-loop gateway'));
@@ -122,11 +122,13 @@ export async function runHeadless(options: HeadlessOptions = {}): Promise<number
   // ---------------------------------------------------------------- report
   process.stdout.write(heading('5/5  delivery report\n'));
   for (const run of runs) {
+    const status = run.humanDecision === 'review' ? 'draft review' : run.status;
     const statusColour =
-      run.status === 'completed' ? style.green : run.status === 'needs_human' ? style.yellow : style.red;
+      run.humanDecision === 'review' || run.status === 'needs_human' ? style.yellow :
+        run.status === 'completed' && run.verification?.passed ? style.green : style.red;
     process.stdout.write(
       `  ${paint('●', statusColour)} ${paint(run.title.padEnd(38), style.bold)} ` +
-        `${paint(run.status.padEnd(12), statusColour)} ${paint(`score ${((run.verification?.score ?? 0) * 100).toFixed(1)}%`, style.dim)}\n`
+        `${paint(status.padEnd(12), statusColour)} ${paint(`score ${((run.verification?.score ?? 0) * 100).toFixed(1)}%`, style.dim)}\n`
     );
     for (const l of renderVerification(run)) process.stdout.write(l + '\n');
     if (run.patch?.patch) {
@@ -176,15 +178,17 @@ export async function runHeadless(options: HeadlessOptions = {}): Promise<number
   process.stdout.write(
     `  ${paint('human', style.dim)}      ${
       snap.escalationsRaised > 0
-        ? `${snap.escalationsRaised} structured card(s) raised for ${runs.length} tasks, all resolved`
+        ? `${snap.escalationsRaised} structured card(s) raised for ${runs.length} tasks · ${runs.filter(run => run.escalation).length} pending`
         : `0 interruptions for ${runs.length} tasks`
     }\n\n`
   );
 
-  const failed = runs.filter(r => r.status === 'failed').length;
+  const verified = runs.filter(run => run.status === 'completed' && run.verification?.passed && !run.humanDecision).length;
+  const drafts = runs.filter(run => run.humanDecision === 'review').length;
+  const failed = runs.filter(run => run.status === 'failed').length;
   process.stdout.write(
     `${paint('='.repeat(78), style.cyan)}\n` +
-      `${paint(`  ${runs.length - failed}/${runs.length} runs delivered · ${failed} failed`, style.bold, failed ? style.red : style.green)}\n` +
+      `${paint(`  ${verified}/${runs.length} verified · ${drafts} draft(s) pending review · ${failed} failed`, style.bold, failed ? style.red : style.green)}\n` +
       `${paint('='.repeat(78), style.cyan)}\n\n`
   );
 

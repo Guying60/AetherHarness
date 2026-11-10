@@ -144,10 +144,11 @@ function buildLlmConfig(args: Args): LlmConfig | undefined {
     model: args.model,
     baseUrl: args.baseUrl,
     temperature: args.temperature,
-    fallbackToOffline: !args.noFallback
+    fallbackToOffline: args.noFallback ? false : undefined
   });
 
   if (!isLlmConfigured(config)) {
+    if (config.fallbackToOffline === false) throw new Error('Strict live mode requires DEEPSEEK_API_KEY or AETHER_LLM_API_KEY.');
     process.stderr.write(
       `${style.yellow}--live was requested but DEEPSEEK_API_KEY is not set.${style.reset}\n` +
         `  Falling back to the offline deterministic brains.\n` +

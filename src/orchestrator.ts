@@ -12,6 +12,7 @@
 import {
   ExecutionStatus,
   HumanEscalationRequest,
+  NodeExecutionRecord,
   OrchestratorEvent,
   VerificationResult,
   WorkflowDefinition,
@@ -24,7 +25,7 @@ import { createBuiltinTools } from './tools/builtin-tools.js';
 import { KnowledgeBase } from './knowledge/knowledge-base.js';
 import { DynamicScheduler } from './scheduler/dynamic-scheduler.js';
 import { VerificationEngine } from './verification/verification-engine.js';
-import { SelfLoopEngine } from './selfloop/self-loop-engine.js';
+import { SelfLoopEngine, SelfLoopIterationRecord } from './selfloop/self-loop-engine.js';
 import { FeedbackOptimizer } from './optimization/feedback-optimizer.js';
 import { WorkflowEngine } from './workflow/workflow-engine.js';
 import {
@@ -62,6 +63,11 @@ export interface RunSnapshot {
   iterations?: number;
   artifact?: string;
   error?: string;
+  citations?: string[];
+  nodeProgress?: Record<string, Pick<NodeExecutionRecord, 'status' | 'startTime' | 'endTime' | 'branchTaken' | 'error'>>;
+  loopRounds?: Array<Omit<SelfLoopIterationRecord, 'output'> & { nodeId: string }>;
+  humanDecision?: 'retry' | 'review' | 'abort';
+  retryOf?: string;
 }
 
 export type EventListener = (event: OrchestratorEvent) => void;
@@ -96,11 +102,16 @@ export class Orchestrator {
   private counter = 0;
   private escalationsRaised = 0;
   private readonly maxConcurrentRuns: number;
+  private runningCount = 0;
+  private readonly runQueue: Array<() => void> = [];
   private llmApplied?: AppliedLlm;
   private llmLabel = 'offline · deterministic brains';
 
   constructor(options: OrchestratorOptions = {}) {
     this.maxConcurrentRuns = options.maxConcurrentRuns ?? DEFAULT_MAX_CONCURRENT_RUNS;
+    if (!Number.isSafeInteger(this.maxConcurrentRuns) || this.maxConcurrentRuns < 1) {
+      throw new Error('maxConcurrentRuns must be a positive integer');
+    }
 
     // --- infrastructure ---
     createBuiltinTools().forEach(tool => this.tools.register(tool));
@@ -121,7 +132,7 @@ export class Orchestrator {
     this.scheduler = new DynamicScheduler(
       this.agents,
       options.schedulerOptions ?? {},
-      (message, data) => this.emit('scheduler', 'system', message, 'sched', data)
+      (message, data) => this.emit('scheduler', data?.runId ?? 'system', message, 'sched', data)
     );
     this.workflow = new WorkflowEngine({
       agentRegistry: this.agents,
@@ -136,8 +147,11 @@ export class Orchestrator {
     const offlineTeam = buildAgentTeam();
     let team = offlineTeam;
 
-    if (options.llm && isLlmConfigured(resolveLlmConfig(options.llm))) {
-      const config = resolveLlmConfig(options.llm);
+    const config = options.llm && resolveLlmConfig(options.llm);
+    if (config && !isLlmConfigured(config) && config.fallbackToOffline === false) {
+      throw new Error('Strict live mode requires a configured model provider.');
+    }
+    if (config && isLlmConfigured(config)) {
       const provider = createProviderFromConfig(config);
       this.llmApplied = applyLlm(offlineTeam, provider, {
         fallbackToOffline: config.fallbackToOffline ?? true,
@@ -275,56 +289,72 @@ Edge cases:
 
   public async runTask(
     task: RateLimiterTask,
-    options: { maxIterationsOverride?: number } = {}
+    options: { maxIterationsOverride?: number; retryOf?: string; onStart?: (runId: string) => void } = {}
   ): Promise<RunSnapshot> {
     const runId = `run-${(++this.counter).toString().padStart(2, '0')}`;
     const workflow = this.buildWorkflow(task, options.maxIterationsOverride);
 
+    const nodeProgress: NonNullable<RunSnapshot['nodeProgress']> = {};
+    const loopRounds: NonNullable<RunSnapshot['loopRounds']> = [];
     const snapshot: RunSnapshot = {
       runId,
       taskId: task.id,
       title: task.title,
       difficulty: task.difficulty,
-      status: 'running',
+      status: 'pending',
       workflow,
-      startedAt: Date.now()
+      startedAt: Date.now(),
+      nodeProgress,
+      loopRounds,
+      retryOf: options.retryOf
     };
     this.runs.set(runId, snapshot);
     this.runOrder.push(runId);
 
-    this.emit('run.started', runId, `${task.title} [${task.difficulty}]`, 'run', {
-      taskId: task.id,
-      nodes: workflow.nodes.length
-    });
-
-    // RAG grounding — the citations really do reach the analyst
-    const citations = this.knowledge.query(task.prompt, 2);
-    if (citations.length > 0) {
-      this.emit(
-        'log',
-        runId,
-        `RAG: ${citations[0].chunk.title} (${(citations[0].score * 100).toFixed(0)}% relevance)`,
-        'rag',
-        { citations: citations.map(c => c.citation) }
-      );
-    }
-
-    const initialInput: Record<string, any> = {
-      goal: task.prompt,
-      taskId: task.id,
-      difficulty: task.difficulty,
-      seedFeatures: task.seedFeatures,
-      seedSource: renderRateLimiter(task.seedFeatures),
-      knowledgeCitations: citations.map(c => c.citation)
-    };
-
+    let slotReserved = false;
     try {
+      options.onStart?.(runId);
+      if (this.runningCount < this.maxConcurrentRuns) {
+        this.runningCount++;
+      } else {
+        const ready = new Promise<void>(resolve => this.runQueue.push(resolve));
+        this.emit('log', runId, 'Waiting for a run slot', 'run', { status: 'pending' });
+        await ready;
+      }
+      slotReserved = true;
+      snapshot.status = 'running';
+      snapshot.startedAt = Date.now();
+      this.emit('run.started', runId, `${task.title} [${task.difficulty}]`, 'run', {
+        taskId: task.id,
+        nodes: workflow.nodes.length
+      });
+
+      const citations = this.knowledge.query(task.prompt, 2);
+      snapshot.citations = citations.map(c => c.citation);
+      if (citations.length > 0) {
+        this.emit(
+          'log', runId, `RAG: ${citations[0].chunk.title} (${(citations[0].score * 100).toFixed(0)}% relevance)`,
+          'rag', { citations: snapshot.citations }
+        );
+      }
+
+      const initialInput = {
+        goal: task.prompt,
+        taskId: task.id,
+        difficulty: task.difficulty,
+        seedFeatures: task.seedFeatures,
+        seedSource: renderRateLimiter(task.seedFeatures),
+        knowledgeCitations: snapshot.citations
+      };
       const state = await this.workflow.execute(workflow, initialInput, {
         runId,
-        onNodeStart: node => {
+        onNodeStart: (node, record) => {
+          nodeProgress[node.id] = { status: 'running', startTime: record.startTime };
           this.emit('node.started', runId, `${node.name} (${node.type})`, 'node', { nodeId: node.id });
         },
         onNodeEnd: (node, record) => {
+          const { status, startTime, endTime, branchTaken, error } = record;
+          nodeProgress[node.id] = { status, startTime, endTime, branchTaken, error };
           const meta = record.meta;
           const detail =
             meta?.iterations !== undefined
@@ -343,6 +373,10 @@ Edge cases:
             }
           );
         },
+        onLoopIteration: (node, { output, ...round }) => {
+          loopRounds.push({ nodeId: node.id, ...round });
+          snapshot.iterations = round.iteration;
+        },
         onLog: (message, data) => {
           this.emit('log', runId, message, 'engine', data);
         }
@@ -351,6 +385,9 @@ Edge cases:
       snapshot.state = state;
       snapshot.status = state.status;
       snapshot.finishedAt = Date.now();
+      if (state.status === 'failed') {
+        snapshot.error = Object.values(nodeProgress).find(node => node.error)?.error;
+      }
 
       const ctx = state.context;
       snapshot.verification = (ctx.lastVerification as VerificationResult) ?? undefined;
@@ -383,6 +420,12 @@ Edge cases:
       snapshot.finishedAt = Date.now();
       snapshot.summary = `Run failed: ${snapshot.error}`;
       this.emit('run.finished', runId, `${task.title} → failed: ${snapshot.error}`, 'run');
+    } finally {
+      if (slotReserved) {
+        const next = this.runQueue.shift();
+        if (next) next();
+        else this.runningCount--;
+      }
     }
 
     return snapshot;
@@ -420,32 +463,29 @@ Edge cases:
   public async resolveEscalation(runId: string, optionIndex: number): Promise<RunSnapshot | undefined> {
     const run = this.runs.get(runId);
     if (!run) return undefined;
-    if (!run.escalation) return run;
+    if (!run.escalation || !Number.isInteger(optionIndex) || !run.escalation.options[optionIndex]) return run;
 
     const task = this.taskById.get(run.taskId);
+    run.escalation = undefined;
 
     if (optionIndex === 0) {
-      this.emit('log', runId, 'human decision: retry with a doubled iteration budget', 'human');
       run.status = 'completed';
-      run.escalation = undefined;
+      run.humanDecision = 'retry';
       run.summary = 'Escalation resolved by a human: re-running with a doubled budget.';
       if (!task) return run;
-      const doubled = (task.maxIterations || 3) * 2;
-      return this.runTask(task, { maxIterationsOverride: doubled });
+      const budget = Math.max(...run.workflow.nodes.map(node => node.selfLoopConfig?.maxIterations ?? 0));
+      this.emit('log', runId, 'human decision: retry with a doubled iteration budget', 'human');
+      return this.runTask(task, { maxIterationsOverride: budget * 2, retryOf: runId });
     }
 
     if (optionIndex === 1) {
-      this.emit('log', runId, 'human decision: accept current draft for review', 'human');
-      run.status = 'completed';
-      run.finishedAt = Date.now();
-      run.escalation = undefined;
       const artifact = run.artifact ?? asCode(run.state?.context.finalCode ?? '');
 
       const patchTool = this.tools.get('git_patch_manager');
       if (patchTool && artifact) {
         try {
           const patchRes: any = await this.tools.invoke('git_patch_manager', {
-            originalContent: '// placeholder\n',
+            originalContent: String(run.state?.context.seedSource ?? '// placeholder\n'),
             updatedContent: artifact,
             filePath: 'src/rate-limiter.js'
           });
@@ -455,15 +495,20 @@ Edge cases:
         }
       }
 
-      run.summary = this.buildSummary(run, 'Accepted by a human after escalation — patch opened for review.');
+      run.status = 'completed';
+      run.humanDecision = 'review';
+      run.summary = this.buildSummary(run, 'Human review requested for the draft; the automated verification verdict is unchanged.');
+      this.emit('log', runId, 'human decision: send current draft for review', 'human');
       return run;
     }
 
-    this.emit('log', runId, 'human decision: abort and roll back', 'human');
     run.status = 'failed';
-    run.finishedAt = Date.now();
-    run.escalation = undefined;
-    run.summary = 'Aborted by a human. No artifact was delivered; the run is rolled back to its last checkpoint.';
+    run.humanDecision = 'abort';
+    const rolledBack = run.state && this.workflow.rollback(run.state.workflowExecutionId, run.state);
+    run.artifact = undefined;
+    run.patch = undefined;
+    run.summary = rolledBack ? 'Aborted by a human and rolled back to the last checkpoint.' : 'Aborted by a human.';
+    this.emit('log', runId, run.summary, 'human');
     return run;
   }
 

@@ -5,6 +5,7 @@
  * 负责分发 SPA 控制台静态页面并提供任务调度与人在回路决策控制 REST API。
  */
 import { createServer, IncomingMessage, ServerResponse, Server } from 'node:http';
+import { pathToFileURL } from 'node:url';
 import { Orchestrator, RunSnapshot } from '../orchestrator.js';
 import { DASHBOARD_HTML } from './client.js';
 import { LlmConfig } from '../agent/llm/index.js';
@@ -17,12 +18,19 @@ export interface WebServerOptions {
   llm?: LlmConfig;
 }
 
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
+
+function runDetail({ state, ...detail }: RunSnapshot) {
+  return detail;
+}
+
 export class WebServer {
   public readonly orchestrator: Orchestrator;
   public readonly port: number;
   public readonly host: string;
   private server?: Server;
   private sseClients: Set<ServerResponse> = new Set();
+  private events = new Map<string, OrchestratorEvent[]>();
   private unsubscribe?: () => void;
 
   constructor(options: WebServerOptions = {}) {
@@ -32,18 +40,24 @@ export class WebServer {
 
     // Hook into orchestrator events to broadcast via SSE
     this.unsubscribe = this.orchestrator.subscribe(event => {
+      const history = this.events.get(event.runId) ?? [];
+      history.push(event);
+      if (history.length > 100) history.shift();
+      this.events.set(event.runId, history);
       this.broadcastSse(event);
     });
   }
 
   public async start(): Promise<{ port: number; host: string; url: string }> {
+    const hostname = this.host === '::1' ? '[::1]' : this.host;
+    if (!LOOPBACK_HOSTS.has(hostname)) throw new Error('The Web console requires a loopback address.');
     return new Promise((resolve, reject) => {
       this.server = createServer((req, res) => this.handleRequest(req, res));
       this.server.on('error', reject);
       this.server.listen(this.port, this.host, () => {
         const address = this.server?.address();
         const actualPort = typeof address === 'object' && address ? address.port : this.port;
-        const url = `http://${this.host}:${actualPort}`;
+        const url = `http://${hostname}:${actualPort}`;
         resolve({ port: actualPort, host: this.host, url });
       });
     });
@@ -84,10 +98,16 @@ export class WebServer {
     const pathname = url.pathname;
     const method = req.method?.toUpperCase() ?? 'GET';
 
-    // CORS headers for development flexibility
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    const origin = req.headers.origin;
+    const host = req.headers.host;
+    if (!host || !LOOPBACK_HOSTS.has(host.replace(/:\d+$/, ''))) {
+      this.json(res, 403, { error: '请使用本机控制台地址。' });
+      return;
+    }
+    if (method === 'POST' && origin && origin !== `http://${host}` && origin !== `https://${host}`) {
+      this.json(res, 403, { error: '请从控制台页面提交此操作。' });
+      return;
+    }
 
     if (method === 'OPTIONS') {
       res.writeHead(204);
@@ -97,7 +117,7 @@ export class WebServer {
 
     try {
       // 1. Dashboard UI
-      if (pathname === '/' || pathname === '/index.html') {
+      if (method === 'GET' && (pathname === '/' || pathname === '/index.html')) {
         res.writeHead(200, {
           'Content-Type': 'text/html; charset=utf-8',
           'Cache-Control': 'no-cache'
@@ -107,7 +127,7 @@ export class WebServer {
       }
 
       // 2. Server-Sent Events (SSE) stream
-      if (pathname === '/api/events') {
+      if (method === 'GET' && pathname === '/api/events') {
         res.writeHead(200, {
           'Content-Type': 'text/event-stream',
           'Cache-Control': 'no-cache',
@@ -116,16 +136,47 @@ export class WebServer {
         res.write('retry: 3000\n\n');
         this.sseClients.add(res);
 
-        req.on('close', () => {
+        res.on('close', () => {
           this.sseClients.delete(res);
+        });
+        return;
+      }
+
+      if (method === 'GET' && pathname === '/api/dashboard') {
+        const { agents, runs, scheduler, pending, tools, llm, knowledgeChunks } = this.orchestrator.getSnapshot();
+        const requested = url.searchParams.get('runId');
+        const selected = requested === null ? runs.at(-1) : this.orchestrator.getRun(requested);
+        const tasks = this.orchestrator.getTasks().map(task => ({
+          id: task.id,
+          title: task.title,
+          description: task.description,
+          prompt: task.prompt,
+          difficulty: task.difficulty,
+          workflow: task.buildWorkflow({ verificationSpec: task.verificationSpec })
+        }));
+        this.json(res, 200, {
+          tasks, scheduler, tools, llm, knowledgeChunks,
+          agents: agents.map(agent => {
+            const profile = this.orchestrator.agents.get(agent.id)!.profile;
+            return { ...agent, version: profile.version, toolIds: profile.toolIds, capabilities: profile.capabilities };
+          }),
+          pending: pending.map(({ runId, node, basePriority, effectivePriority, submittedAt }) => ({
+            runId, nodeId: node.id, basePriority, effectivePriority, submittedAt
+          })),
+          optimizations: this.orchestrator.getPromptOptimizations().slice(-12),
+          runs: runs.map(({ runId, taskId, status, startedAt, finishedAt, humanDecision, retryOf }) => ({
+            runId, taskId, status, startedAt, finishedAt, humanDecision, retryOf
+          })),
+          run: selected ? runDetail(selected) : null,
+          events: selected ? this.events.get(selected.runId) ?? [] : []
         });
         return;
       }
 
       // 3. API: Status & Overview
       if (method === 'GET' && pathname === '/api/status') {
-        const runs = this.orchestrator.getRuns();
-        const agents = this.orchestrator.getAgents();
+        const runs = this.orchestrator.getRuns().map(runDetail);
+        const agents = this.agentViews();
         const llm = this.orchestrator.getLlmInfo();
         const tools = this.orchestrator.getToolReliability();
         this.json(res, 200, {
@@ -140,13 +191,13 @@ export class WebServer {
 
       // 4. API: Agents List
       if (method === 'GET' && pathname === '/api/agents') {
-        this.json(res, 200, this.orchestrator.getAgents());
+        this.json(res, 200, this.agentViews());
         return;
       }
 
       // 5. API: Runs List
       if (method === 'GET' && pathname === '/api/runs') {
-        this.json(res, 200, this.orchestrator.getRuns());
+        this.json(res, 200, this.orchestrator.getRuns().map(runDetail));
         return;
       }
 
@@ -158,14 +209,14 @@ export class WebServer {
           this.json(res, 404, { error: `Run '${runId}' not found` });
           return;
         }
-        this.json(res, 200, run);
+        this.json(res, 200, runDetail(run));
         return;
       }
 
       // 7. API: Trigger Run Task
       if (method === 'POST' && pathname === '/api/tasks/run') {
         const body = await this.readJsonBody(req);
-        const taskId = body?.taskId ?? 'all';
+        const taskId = body.taskId ?? 'all';
 
         const allTasks = this.orchestrator.getTasks();
 
@@ -186,10 +237,11 @@ export class WebServer {
           return;
         }
 
-        this.orchestrator.runTask(task).catch(err => {
+        let runId: string | undefined;
+        this.orchestrator.runTask(task, { onStart: id => { runId = id; } }).catch(err => {
           console.error(`Task ${taskId} error:`, err);
         });
-        this.json(res, 200, { success: true, taskId: task.id, message: `Task ${task.id} started` });
+        this.json(res, 200, { success: true, taskId: task.id, runId, message: `Task ${task.id} started` });
         return;
       }
 
@@ -198,7 +250,7 @@ export class WebServer {
         const match = pathname.match(/^\/api\/runs\/([^/]+)\/escalate$/);
         const runId = match![1];
         const body = await this.readJsonBody(req);
-        const optionIndex = Number(body?.optionIndex ?? 1);
+        const optionIndex = body.optionIndex;
 
         const run = this.orchestrator.getRun(runId);
         if (!run) {
@@ -206,24 +258,43 @@ export class WebServer {
           return;
         }
 
+        if (!run.escalation) {
+          this.json(res, 409, { error: '此运行已没有待处理的人工决策。' });
+          return;
+        }
+        if (typeof optionIndex !== 'number' || !Number.isInteger(optionIndex) || !run.escalation.options[optionIndex]) {
+          this.json(res, 400, { error: '请选择卡片中的有效决策。' });
+          return;
+        }
         const updated = await this.orchestrator.resolveEscalation(runId, optionIndex);
-        this.json(res, 200, { success: true, run: updated });
+        this.json(res, 200, { success: true, run: runDetail(updated ?? run) });
         return;
       }
 
       // Fallback 404
       this.json(res, 404, { error: 'Not Found', path: pathname });
     } catch (err: any) {
-      this.json(res, 500, { error: err?.message ?? 'Internal Server Error' });
+      if (err instanceof SyntaxError) {
+        this.json(res, 400, { error: '请求内容必须是 JSON 对象。' });
+      } else {
+        this.json(res, 500, { error: err?.message ?? 'Internal Server Error' });
+      }
     }
   }
 
+  private agentViews() {
+    return this.orchestrator.getAgents().map(({ profile, brainName }) => {
+      const { id, name, role, description, capabilities, toolIds, maxConcurrency, currentLoad, totalTokensUsed, version } = profile;
+      return { profile: { id, name, role, description, capabilities, toolIds, maxConcurrency, currentLoad, totalTokensUsed, version }, brainName };
+    });
+  }
+
   private json(res: ServerResponse, status: number, data: any): void {
-    res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify(data));
   }
 
-  private readJsonBody(req: IncomingMessage): Promise<any> {
+  private readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
     return new Promise((resolve, reject) => {
       let body = '';
       req.on('data', chunk => {
@@ -236,9 +307,11 @@ export class WebServer {
       req.on('end', () => {
         if (!body.trim()) return resolve({});
         try {
-          resolve(JSON.parse(body));
+          const parsed: unknown = JSON.parse(body);
+          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new SyntaxError();
+          resolve(parsed as Record<string, unknown>);
         } catch (e) {
-          reject(new Error('Invalid JSON'));
+          reject(new SyntaxError('Invalid JSON'));
         }
       });
       req.on('error', reject);
@@ -266,7 +339,7 @@ async function main(): Promise<void> {
 }
 
 // 直接运行判断
-const isDirectRun = process.argv[1]?.includes('server') || process.argv[1]?.endsWith('server.js');
+const isDirectRun = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
 if (isDirectRun) {
   main().catch(err => {
     console.error('启动 Web 服务失败:', err);
