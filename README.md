@@ -181,6 +181,35 @@ Web 控制台只监听本机回环地址。运行和 Agent 接口返回用于展
 
 工作流预览和执行状态来自同一份后端定义。离线模式便于复现演示。配置 `DEEPSEEK_API_KEY` 后运行 `pnpm run web --live` 可启用大模型推理。
 
+#### 固定 Git 仓库修复
+
+仓库任务支持一个管理员配置的本地仓库、固定提交及 `src/rate-limiter.js`。输入任务后，服务从 Git 提交读取基线并运行固定验收测试，再把失败证据交给需求、架构与开发 Agent。正式补丁必须通过固定测试、审查、静态检查和 `git apply --cached --check`。补丁检查使用临时索引，源仓库的工作树和索引保留原状。
+
+准备一个获准把目标文件发给模型的仓库，启动 Docker Linux 引擎并配置模型密钥。运行时只接受已在本地缓存的固定镜像 ID。测试容器没有网络或宿主文件挂载，文件系统只读，并设有内存、CPU 和进程数限制。
+
+```powershell
+npm.cmd run build
+docker pull node:24-alpine
+$env:AETHER_RUNNER_IMAGE = (docker image inspect node:24-alpine --format '{{.Id}}').Trim()
+$env:AETHER_PROJECT_REPO = 'D:\Projects\rate-limiter'
+$env:AETHER_PROJECT_BASE = (git -C $env:AETHER_PROJECT_REPO rev-parse HEAD).Trim()
+node dist/src/cli.js --web --live --no-fallback
+```
+
+如需从预置缺陷生成独立演示仓库，可在构建后运行以下命令，再按上面的步骤配置镜像和启动 Web。示例提交由 Git 在临时目录中创建。
+
+```powershell
+$env:AETHER_PROJECT_REPO = Join-Path ([IO.Path]::GetTempPath()) ('aether-project-' + [guid]::NewGuid())
+New-Item -ItemType Directory -Path (Join-Path $env:AETHER_PROJECT_REPO 'src') | Out-Null
+node --input-type=module -e 'import {writeFileSync} from "node:fs"; import {join} from "node:path"; import {renderRateLimiter,BASE_FEATURES} from "./dist/src/scenarios/rate-limiter.js"; writeFileSync(join(process.env.AETHER_PROJECT_REPO,"src","rate-limiter.js"),renderRateLimiter(BASE_FEATURES)+"\n");'
+git -C $env:AETHER_PROJECT_REPO init -q
+git -C $env:AETHER_PROJECT_REPO add -- src/rate-limiter.js
+git -C $env:AETHER_PROJECT_REPO -c user.name=Aether -c user.email=aether@example.test -c commit.gpgsign=false commit -qm baseline
+$env:AETHER_PROJECT_BASE = (git -C $env:AETHER_PROJECT_REPO rev-parse HEAD).Trim()
+```
+
+默认测试使用可注入的本地测试适配器和模拟模型。设置 `AETHER_TEST_RUNNER_IMAGE` 为上述镜像 ID 后再运行 `npm.cmd test`，同一仓库回归用例会改用真实 Docker 执行器。
+
 ### 2. 交互式终端 UI (TUI)
 
 ```

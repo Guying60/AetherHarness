@@ -3,7 +3,7 @@
  * contract the platform now enforces. No test framework: a deterministic runner keeps the
  * dependency count at zero and the failure output readable.
  */
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -33,6 +33,7 @@ import { SelfLoopEngine } from '../src/selfloop/self-loop-engine.js';
 import { FeedbackOptimizer } from '../src/optimization/feedback-optimizer.js';
 import { Orchestrator } from '../src/orchestrator.js';
 import { WebServer } from '../src/web/server.js';
+import { REPOSITORY_FILE, REPOSITORY_PROJECT_ID } from '../src/scenarios/repository-repair.js';
 import { AgentProfile, VerificationSpec, WorkflowDefinition } from '../src/types/index.js';
 import {
   BASE_FEATURES,
@@ -1325,6 +1326,96 @@ async function suiteWebServer(): Promise<void> {
 
 // ---------------------------------------------------------------------------
 
+async function suiteRepositoryRepair(): Promise<void> {
+  const image = process.env.AETHER_TEST_RUNNER_IMAGE;
+  describe(`[12] pinned Git repository repair (${image ? 'Docker runner' : 'local test adapter'})`);
+  const repo = mkdtempSync(join(tmpdir(), 'aether-repo-test-'));
+  const git = (...args: string[]) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' }).trim();
+  try {
+    git('init', '-q');
+    mkdirSync(join(repo, 'src'));
+    const path = join(repo, REPOSITORY_FILE);
+    const seed = '// pinned repository baseline\n' + renderRateLimiter(BASE_FEATURES) + '\n';
+    writeFileSync(path, seed);
+    git('add', '--', REPOSITORY_FILE);
+    git('-c', 'user.name=Aether test', '-c', 'user.email=aether@example.test',
+      '-c', 'commit.gpgsign=false', 'commit', '-qm', 'pinned baseline');
+    const revision = git('rev-parse', 'HEAD');
+    const index = readFileSync(join(repo, '.git', 'index'));
+    const dirty = '// uncommitted source must never be read or changed\n';
+    writeFileSync(path, dirty);
+
+    const project = { path: repo, revision, runnerImage: image ?? 'sha256:' + '0'.repeat(64) };
+    equal(new Orchestrator({ project }).getProject().ready, false, 'a repository run requires strict live mode');
+    const goal = '修复无效容量与令牌参数的校验';
+    const role = makeRoleHandler();
+    let developerCalls = 0;
+    let receivedBaseline = false;
+    const provider = new MockLlmProvider((messages, options) => {
+      if (!messages[0]?.content.includes('ROLE: developer')) return role(messages, options);
+      developerCalls++;
+      if (developerCalls === 1) {
+        const prompt = messages[1]?.content ?? '';
+        receivedBaseline = prompt.includes(goal) && prompt.includes('pinned repository baseline') && prompt.includes('EDGE-001');
+      }
+      return JSON.stringify({ code: developerCalls === 1 ? seed : renderRateLimiter(FULLY_FIXED) });
+    });
+    const orchestrator = new Orchestrator({ project, llm: { provider, fallbackToOffline: false } });
+    if (!image) {
+      const runner = orchestrator.tools.get('container_test_runner')!;
+      orchestrator.tools.register({
+        ...runner, handler: (params, ctx) => orchestrator.tools.invoke('test_runner', params, ctx)
+      });
+    }
+
+    const server = new WebServer({ port: 0, orchestrator });
+    const { url } = await server.start();
+    try {
+      const submit = (projectId: string, goal: string) => fetch(url + '/api/runs', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ projectId, goal, path: 'untrusted browser path' })
+      });
+      equal((await submit('another-project', goal)).status, 404, 'the API enforces the configured project ID');
+      equal((await submit(REPOSITORY_PROJECT_ID, ' ')).status, 400, 'empty repository goals are rejected');
+      const response = await submit(REPOSITORY_PROJECT_ID, goal);
+      equal(response.status, 202, 'repository task submission returns an accepted run ID');
+      const { runId } = await response.json();
+      const run = orchestrator.getRun(runId)!;
+      for (let i = 0; i < 300 && (run.status === 'running' || run.status === 'pending'); i++) await sleep(50);
+
+      equal(run.project?.revision, revision, 'the run records the pinned commit');
+      check(!!run.project && !Object.hasOwn(run.project, 'path'), 'repository metadata omits the absolute host path');
+      check(receivedBaseline && run.goal === goal, 'the developer receives the user goal, pinned source and failing rule IDs');
+      check(run.baselineVerification?.passed === false && !!run.plan?.invariants?.length, 'the run retains failed baseline evidence and agent plan');
+      check(run.loopRounds?.length === 2 && !!run.loopRounds[0].criticFeedback && run.verification?.passed === true,
+        'the first candidate is diagnosed and the revised candidate passes');
+      check(run.status === 'completed' && run.nodeProgress?.n_git_patch_check?.status === 'completed' &&
+        run.patch?.patch.includes('-// pinned repository baseline') === true, 'the delivered patch applies against the pinned Git index');
+      equal(readFileSync(path, 'utf8'), dirty, 'the dirty source checkout is untouched');
+      check(index.equals(readFileSync(join(repo, '.git', 'index'))), 'patch verification leaves the source index untouched');
+      const invalid = await orchestrator.tools.invoke('git_check_patch', { patch: 'not a patch' }).catch(() => 'rejected');
+      equal(invalid, 'rejected', 'Git rejects an invalid patch');
+
+      const checker = orchestrator.tools.get('git_check_patch')!;
+      orchestrator.tools.register({ ...checker, handler: async () => { throw new Error('patch check failed'); } });
+      const blockedPatch = await orchestrator.runProjectTask(goal);
+      check(blockedPatch.status === 'failed' && blockedPatch.verification?.passed === true && !blockedPatch.patch,
+        'a candidate that passes tests is withheld if Git rejects the patch');
+
+      const modelCalls = orchestrator.getLlmInfo().telemetry!.calls;
+      const runner = orchestrator.tools.get('container_test_runner')!;
+      orchestrator.tools.register({ ...runner, handler: async () => { throw new Error('runner unavailable'); } });
+      const blockedRunner = await orchestrator.runProjectTask(goal);
+      check(blockedRunner.status === 'failed' && !blockedRunner.patch && orchestrator.getLlmInfo().telemetry!.calls === modelCalls,
+        'a missing isolated runner blocks before any model calls');
+    } finally {
+      await server.stop();
+    }
+  } finally {
+    rmSync(repo, { recursive: true, force: true, maxRetries: 2 });
+  }
+}
+
 async function main(): Promise<void> {
   const started = Date.now();
   process.stdout.write('\n=== AetherHarness test suite ===\n');
@@ -1341,6 +1432,7 @@ async function main(): Promise<void> {
   await suiteEndToEnd();
   await suiteLlm();
   await suiteWebServer();
+  await suiteRepositoryRepair();
 
   const elapsed = Date.now() - started;
   process.stdout.write('\n' + '='.repeat(64) + '\n');

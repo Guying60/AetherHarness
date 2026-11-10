@@ -289,6 +289,8 @@ export interface VerificationSpec {
     testScriptGenerator?: (output: any, context: Record<string, any>) => string;
     /** Candidate bindings required by the trusted tests, evaluated in a separate realm. */
     bindings?: string[];
+    /** Optional runner registered by a repository workflow. */
+    toolId?: string;
     expectedExitCode?: number;
     timeoutMs?: number;
   };

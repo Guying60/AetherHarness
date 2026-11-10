@@ -5,6 +5,7 @@ type Snapshot = ReturnType<Orchestrator['getSnapshot']>;
 type RunSummary = Pick<RunSnapshot, 'runId' | 'taskId' | 'status' | 'startedAt' | 'finishedAt' | 'humanDecision' | 'retryOf'>;
 interface DashboardData {
   tasks: Array<{ id: string; title: string; description: string; prompt: string; difficulty: string; workflow: WorkflowDefinition }>;
+  repository: ReturnType<Orchestrator['getProject']>;
   agents: Array<Snapshot['agents'][number] & { version: string; toolIds: string[]; capabilities: Record<string, number> }>;
   scheduler: Snapshot['scheduler'];
   pending: Array<{ runId: string; nodeId: string; basePriority: number; effectivePriority: number; submittedAt: number }>;
@@ -27,7 +28,8 @@ export function dashboard(): void {
   const nodeNames: Record<string, string> = {
     n_requirement: '需求分析', n_architecture: '架构设计', n_complexity_gate: '复杂度判断',
     n_loop_full: '完整自愈', n_loop_quick: '快速验证', n_develop: '开发修复',
-    n_verify: '三层验证', n_scan: '静态扫描', n_patch: '生成补丁'
+    n_verify: '三层验证', n_scan: '静态扫描', n_patch: '生成补丁',
+    n_git_baseline: '读取 Git 基线', n_baseline_test: '运行基线测试', n_git_patch_check: '检查 Git 补丁'
   };
   const nodeTypes: Record<string, string> = {
     agent: 'Agent 节点', condition: '条件分支', self_loop: 'PDCA 自愈循环',
@@ -88,7 +90,8 @@ export function dashboard(): void {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const rendered: Record<string, string> = {};
 
-  const taskName = (id: string) => scenarios[id]?.title ?? data?.tasks.find(task => task.id === id)?.title ?? id;
+  const taskName = (id: string) => data?.repository.project?.id === id ? data.repository.project.title :
+    scenarios[id]?.title ?? data?.tasks.find(task => task.id === id)?.title ?? id;
   const agentName = (id: string) => data?.agents.find(agent => agent.id === id)?.name ?? id;
 
   function show(id: string, html: string): void {
@@ -124,7 +127,7 @@ export function dashboard(): void {
   function render(): void {
     if (!data) return;
     const run = data.run?.runId === requestedRun ? data.run : null;
-    const task = data.tasks.find(item => item.id === taskId) ?? data.tasks[0];
+    const task = data.tasks.find(item => item.id === taskId) ?? (run?.project ? undefined : data.tasks[0]);
     const live = !data.llm.label.startsWith('offline');
     const busy = data.runs.some(active);
     const telemetry = data.llm.telemetry;
@@ -132,6 +135,13 @@ export function dashboard(): void {
       ' · 调用 ' + telemetry.calls + ' 次 · 降级 ' + telemetry.fallbacks + ' 次' : '') :
       '离线演示 · 无需 API 密钥。参赛演示可启用大模型。';
     get<HTMLButtonElement>('run-all').disabled = starting || busy || data.tasks.length === 0;
+    const { project, ready, reason } = data.repository;
+    get('project-status').textContent = ready && project
+      ? project.title + ' · ' + project.filePath + ' @ ' + project.revision.slice(0, 12)
+      : reason ?? '仓库任务不可用。';
+    get<HTMLTextAreaElement>('project-goal').disabled = !ready;
+    get<HTMLButtonElement>('project-submit').disabled = starting || !ready ||
+      data.runs.some(item => item.taskId === project?.id && active(item));
 
     show('scenario-cards', data.tasks.map((item, index) => {
       const copy = scenarios[item.id];
@@ -158,7 +168,7 @@ export function dashboard(): void {
     history.value = requestedRun ?? '';
 
     renderWorkflow(run?.workflow ?? task?.workflow, run);
-    renderRun(run, task ? taskName(task.id) : '', task?.prompt);
+    renderRun(run, run?.project ? run.title : task ? taskName(task.id) : '', run?.goal ?? task?.prompt);
     renderEvidence(run);
     renderOperations(data);
   }
@@ -257,7 +267,8 @@ export function dashboard(): void {
       (v ? badge(v.passed ? '通过' : '阻塞', v.passed ? 'good' : 'bad') + ' <strong>' + pct(v.score) + '</strong>' :
         '<span class="muted small">尚无最终结论</span>') +
       (run.iterations ? '<span class="muted small">已记录 ' + run.iterations + ' 轮</span>' : '') + '</div></div>' +
-      '<p class="small muted">' + esc(description) + '</p>' + brief +
+      '<p class="small muted">' + esc(description) + '</p>' +
+      (run.project ? '<p class="small muted">Git 基线 · <code>' + esc(run.project.revision.slice(0, 12)) + '</code></p>' : '') + brief +
       (outcome === 'retry' && retry ? '<button class="btn" type="button" data-select-run="' + esc(retry.runId) + '">查看本次重试</button>' : '') +
       (run.patch?.patch ? '<button class="btn" type="button" data-tab="artifact" data-focus="open-artifact">查看' +
         (outcome === 'review' ? '草稿' : '交付') + '补丁</button>' : '') + controls +
@@ -300,7 +311,8 @@ export function dashboard(): void {
         (patch ? '<div class="row between"><div class="row">' + badge(draft ? '待复审草稿' : '已验证补丁', draft ? 'warn' : 'good') +
           '<strong class="mono small">' + esc(run.patch?.filePath) + '</strong></div><div class="row">' +
           '<button type="button" class="btn" data-copy>复制补丁</button><button type="button" class="btn primary" data-download>下载补丁</button>' +
-          '</div></div><pre class="codeblock">' + lines + '</pre><p id="copy-result" class="small" role="status"></p>' :
+          '</div></div>' + (run.project ? '<p class="small muted">补丁已通过固定提交的 Git 应用检查。</p>' : '') +
+          '<pre class="codeblock">' + lines + '</pre><p id="copy-result" class="small" role="status"></p>' :
           empty(run.artifact ? '当前没有补丁。下方可查看本次运行生成的代码。' : '当前运行没有可交付的代码或补丁。')) +
         (run.artifact ? '<details id="source-' + esc(run.runId) + '"><summary>' + (draft ? '查看代码草稿' : '查看代码') +
           '</summary><pre class="codeblock">' + esc(run.artifact) + '</pre></details>' : '') + '</div>');
@@ -321,6 +333,8 @@ export function dashboard(): void {
       return;
     }
 
+    const baseline = run.baselineVerification?.sandboxTestResult;
+    const plan = [...(run.plan?.acceptanceCriteria ?? []), ...(run.plan?.invariants ?? [])];
     const rounds = run.loopRounds ?? [];
     const roundViews = rounds.map(round => {
       const threshold = run.workflow.nodes.find(node => node.id === round.nodeId)?.selfLoopConfig?.convergenceThreshold ?? 0;
@@ -337,6 +351,10 @@ export function dashboard(): void {
           esc(round.criticFeedback) + '</pre></div>' : '') + '</div></details>';
     }).join('');
     show('evidence', '<div class="stack">' +
+      (baseline ? '<details class="inset" id="baseline-' + esc(run.runId) + '"><summary>基线测试 · ' +
+        (baseline.passed ? '通过' : '拦截') + '</summary><pre>' + esc(baseline.output) + '</pre></details>' : '') +
+      (plan.length ? '<details class="inset" id="plan-' + esc(run.runId) + '"><summary>需求与架构 Agent 的修复计划</summary><ul>' +
+        plan.map(item => '<li>' + esc(item) + '</li>').join('') + '</ul></details>' : '') +
       (roundViews || empty(run.status === 'running' ? '第一轮验证尚未完成。' : '此运行没有可查看的自愈轮次。')) +
       (run.citations?.length ? '<details id="citations-' + esc(run.runId) + '" class="inset small"><summary>知识检索引用 · ' +
         run.citations.length + ' 条</summary><ul>' + run.citations.map(source => '<li>' + esc(source) + '</li>').join('') +
@@ -448,12 +466,14 @@ export function dashboard(): void {
     scheduleRefresh();
   }
 
-  async function start(id: string): Promise<void> {
+  async function start(id: string, goal?: string): Promise<void> {
     if (starting) return;
     starting = true;
     render();
     try {
-      const result = await request<{ runId?: string }>('/api/tasks/run', { taskId: id });
+      const result = goal === undefined
+        ? await request<{ runId?: string }>('/api/tasks/run', { taskId: id })
+        : await request<{ runId: string }>('/api/runs', { projectId: id, goal });
       requestedRun = result.runId;
       if (id !== 'all') taskId = id;
       nodeId = '';
@@ -492,6 +512,17 @@ export function dashboard(): void {
   }
 
   get('run-all').addEventListener('click', () => void start('all'));
+  get<HTMLFormElement>('project-form').addEventListener('submit', event => {
+    event.preventDefault();
+    const project = data?.repository;
+    const goal = get<HTMLTextAreaElement>('project-goal').value.trim();
+    if (!project?.ready || !project.project) return;
+    if (!goal) {
+      notice('请输入任务描述。', true);
+      return;
+    }
+    void start(project.project.id, goal);
+  });
   get<HTMLSelectElement>('run-history').addEventListener('change', event => selectRun((event.target as HTMLSelectElement).value));
   document.addEventListener('click', async event => {
     const button = (event.target as HTMLElement).closest('button');

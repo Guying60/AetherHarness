@@ -203,7 +203,7 @@ export class VerificationEngine {
       } else {
         try {
           const runnerRes: any = await this.toolRegistry.invoke(
-            'test_runner',
+            spec.executableSandboxCheck.toolId ?? 'test_runner',
             { testCode, sourceCode: artifact, bindings: spec.executableSandboxCheck.bindings },
             { timeoutMs: spec.executableSandboxCheck.timeoutMs ?? 4000, signal: opts.signal }
           );
@@ -228,6 +228,7 @@ export class VerificationEngine {
           if (!passedAll) blocking.push(`Tier-2: ${report.failed}/${report.total} assertions failed`);
         } catch (err: any) {
           opts.signal?.throwIfAborted();
+          if (spec.executableSandboxCheck.toolId) throw err;
           sandboxScore = 0;
           sandboxResult = { passed: false, output: `sandbox error: ${err?.message ?? String(err)}`, exitCode: 1 };
           blocking.push(`Tier-2: sandbox failed to run (${err?.message ?? String(err)})`);

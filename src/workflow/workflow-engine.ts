@@ -480,6 +480,7 @@ export class WorkflowEngine {
           if (!verifyNode?.verificationSpec) throw new Error(`self_loop verification node '${cfg.verificationNodeId}' has no verificationSpec`);
 
           const spec: VerificationSpec = verifyNode.verificationSpec;
+          const upstreamFailures = nodeContextFailures(state);
 
           const loopResult = await this.selfLoopEngine.runLoop(
             cfg,
@@ -488,7 +489,7 @@ export class WorkflowEngine {
             async (loopInput, iteration, guidance, failedRules, previousVerification) => {
               // expose the loop state to the target node's agent call
               state.context.__loopIteration = iteration;
-              state.context.__failedRules = failedRules;
+              state.context.__failedRules = iteration === 1 ? upstreamFailures : failedRules;
               state.context.previousAttempt = loopInput.previousAttempt;
               state.context.regressionWarning = loopInput.regressionWarning;
               if (guidance) state.context.diagnosticFeedback = guidance;

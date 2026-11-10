@@ -10,12 +10,16 @@ import { Orchestrator, RunSnapshot } from '../orchestrator.js';
 import { DASHBOARD_HTML } from './client.js';
 import { LlmConfig } from '../agent/llm/index.js';
 import { OrchestratorEvent } from '../types/index.js';
+import {
+  MAX_REPOSITORY_GOAL, REPOSITORY_PROJECT_ID, repositoryConfig, type RepositoryConfig
+} from '../scenarios/repository-repair.js';
 
 export interface WebServerOptions {
   port?: number;
   host?: string;
   orchestrator?: Orchestrator;
   llm?: LlmConfig;
+  project?: RepositoryConfig;
 }
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
@@ -36,7 +40,7 @@ export class WebServer {
   constructor(options: WebServerOptions = {}) {
     this.port = options.port ?? (Number(process.env.AETHER_PORT) || 3300);
     this.host = options.host ?? '127.0.0.1';
-    this.orchestrator = options.orchestrator ?? new Orchestrator({ llm: options.llm });
+    this.orchestrator = options.orchestrator ?? new Orchestrator({ llm: options.llm, project: options.project });
 
     // Hook into orchestrator events to broadcast via SSE
     this.unsubscribe = this.orchestrator.subscribe(event => {
@@ -156,6 +160,7 @@ export class WebServer {
         }));
         this.json(res, 200, {
           tasks, scheduler, tools, llm, knowledgeChunks,
+          repository: this.orchestrator.getProject(),
           agents: agents.map(agent => {
             const profile = this.orchestrator.agents.get(agent.id)!.profile;
             return { ...agent, version: profile.version, toolIds: profile.toolIds, capabilities: profile.capabilities };
@@ -210,6 +215,27 @@ export class WebServer {
           return;
         }
         this.json(res, 200, runDetail(run));
+        return;
+      }
+
+      if (method === 'POST' && pathname === '/api/runs') {
+        const { projectId, goal } = await this.readJsonBody(req);
+        if (projectId !== REPOSITORY_PROJECT_ID) {
+          this.json(res, 404, { error: '所选仓库未获授权。' });
+          return;
+        }
+        if (typeof goal !== 'string' || !goal.trim() || goal.trim().length > MAX_REPOSITORY_GOAL) {
+          this.json(res, 400, { error: `请输入 1–${MAX_REPOSITORY_GOAL} 字符的任务描述。` });
+          return;
+        }
+        const project = this.orchestrator.getProject();
+        if (!project.ready) {
+          this.json(res, 503, { error: project.reason });
+          return;
+        }
+        let runId: string | undefined;
+        this.orchestrator.runProjectTask(goal, id => { runId = id; }).catch(() => {});
+        this.json(res, runId ? 202 : 500, runId ? { runId } : { error: '无法创建仓库运行。' });
         return;
       }
 
@@ -322,7 +348,7 @@ export class WebServer {
 /** 独立运行入口 */
 async function main(): Promise<void> {
   const port = Number(process.env.AETHER_PORT) || 3300;
-  const server = new WebServer({ port });
+  const server = new WebServer({ port, project: repositoryConfig(process.env) });
   const info = await server.start();
   console.log(`\n\x1b[36m⚡ AetherHarness Web 控制台已启动，访问地址：\x1b[1m${info.url}\x1b[0m\n`);
   console.log(`   多智能体协同编排、动态调度、PDCA 自愈与三层可信验证可视化平台`);

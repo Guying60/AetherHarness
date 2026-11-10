@@ -16,11 +16,11 @@ export const DASHBOARD_HTML = /* html */ `<!doctype html>
   }
   * { box-sizing: border-box; }
   body { margin: 0; color: var(--ink); background: var(--bg); }
-  button, select { font: inherit; }
+  button, select, textarea { font: inherit; }
   button, select, summary { cursor: pointer; }
   button:disabled { cursor: wait; opacity: .63; }
   a { color: inherit; }
-  button:focus-visible, a:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px solid #389173; outline-offset: 3px; }
+  button:focus-visible, a:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 3px solid #389173; outline-offset: 3px; }
   h1, h2, h3, h4, p { margin: 0; }
   h1 { font-size: clamp(1.95rem, 4vw, 3.2rem); letter-spacing: -.04em; line-height: 1.14; }
   h2 { font-size: 1.48rem; letter-spacing: -.025em; }
@@ -72,6 +72,8 @@ export const DASHBOARD_HTML = /* html */ `<!doctype html>
   .link { background: none; border: 0; color: var(--accent); font-size: .85rem; font-weight: 650; padding: 6px; }
   .workspace { display: grid; grid-template-columns: minmax(0, 2.25fr) minmax(260px, 1fr); gap: 12px; align-items: start; }
   .panel { padding: 17px; }
+  #project-form { margin-top: 12px; }
+  #project-goal { width: 100%; resize: vertical; font-weight: 400; }
   .panel > .stack, .panel > .empty, .panel > .metrics, .panel > .team { margin-top: 12px; }
   .pipeline-flow { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 15px; align-items: center; margin: 15px 0; padding: 13px 11px; border-radius: 11px; background: #f3f7f4; }
   .stage { position: relative; display: grid; gap: 6px; min-width: 0; }
@@ -153,6 +155,15 @@ export const DASHBOARD_HTML = /* html */ `<!doctype html>
       <button id="run-all" class="btn" type="button" disabled>并发运行全部案例</button>
     </div>
     <div id="scenario-cards" class="cards"><p class="empty">正在加载可运行的案例…</p></div>
+    <form id="project-form" class="panel stack" aria-labelledby="project-title">
+      <h3 id="project-title">仓库修复任务</h3>
+      <p id="project-status" class="muted small">正在获取仓库配置…</p>
+      <p class="muted small">运行仅验证限流器固定测试套件。目标文件会发送给已配置的模型端点。</p>
+      <label for="project-goal">任务描述</label>
+      <textarea id="project-goal" class="select" rows="3" maxlength="2000" required disabled
+        placeholder="例如：修复限流器的无效容量和令牌参数校验。"></textarea>
+      <div class="row"><button id="project-submit" class="btn primary" type="submit" disabled>创建仓库任务</button></div>
+    </form>
     <p id="notice" class="notice" role="status"></p>
   </section>
   <section id="execution" aria-labelledby="execution-title">

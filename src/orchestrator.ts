@@ -37,6 +37,10 @@ import {
   renderRateLimiter
 } from './scenarios/rate-limiter.js';
 import {
+  buildRepositoryWorkflow, MAX_REPOSITORY_GOAL, repositoryTools,
+  type RepositoryConfig, type RepositoryProject
+} from './scenarios/repository-repair.js';
+import {
   AppliedLlm,
   LlmConfig,
   LlmTelemetry,
@@ -68,14 +72,21 @@ export interface RunSnapshot {
   loopRounds?: Array<Omit<SelfLoopIterationRecord, 'output'> & { nodeId: string }>;
   humanDecision?: 'retry' | 'review' | 'abort';
   retryOf?: string;
+  project?: RepositoryProject;
+  goal?: string;
+  baselineVerification?: VerificationResult;
+  plan?: { acceptanceCriteria?: string[]; invariants?: string[] };
 }
 
 export type EventListener = (event: OrchestratorEvent) => void;
+type RunTask = RateLimiterTask & { repository?: true };
+type RunOptions = { maxIterationsOverride?: number; retryOf?: string; onStart?: (runId: string) => void };
 
 export interface OrchestratorOptions {
   onEvent?: EventListener;
   schedulerOptions?: ConstructorParameters<typeof DynamicScheduler>[1];
   maxConcurrentRuns?: number;
+  project?: RepositoryConfig;
   /**
    * When provided (and configured), every agent with an LLM spec runs on the remote model
    * with the deterministic brain as a fallback. Omit it to stay fully offline.
@@ -98,6 +109,7 @@ export class Orchestrator {
   private runs: Map<string, RunSnapshot> = new Map();
   private runOrder: string[] = [];
   private taskById: Map<string, RateLimiterTask> = new Map();
+  private taskByRun = new Map<string, RunTask>();
   private listeners: Set<EventListener> = new Set();
   private counter = 0;
   private escalationsRaised = 0;
@@ -106,6 +118,8 @@ export class Orchestrator {
   private readonly runQueue: Array<() => void> = [];
   private llmApplied?: AppliedLlm;
   private llmLabel = 'offline · deterministic brains';
+  private readonly repository?: RepositoryProject;
+  private readonly strictLive: boolean;
 
   constructor(options: OrchestratorOptions = {}) {
     this.maxConcurrentRuns = options.maxConcurrentRuns ?? DEFAULT_MAX_CONCURRENT_RUNS;
@@ -148,6 +162,7 @@ export class Orchestrator {
     let team = offlineTeam;
 
     const config = options.llm && resolveLlmConfig(options.llm);
+    this.strictLive = config?.fallbackToOffline === false;
     if (config && !isLlmConfigured(config) && config.fallbackToOffline === false) {
       throw new Error('Strict live mode requires a configured model provider.');
     }
@@ -160,6 +175,11 @@ export class Orchestrator {
       });
       team = this.llmApplied.blueprints;
       this.llmLabel = `${this.llmApplied.label}${config.fallbackToOffline === false ? ' (no fallback)' : ''}`;
+    }
+    if (options.project) {
+      const { project, tools } = repositoryTools(options.project);
+      this.repository = project;
+      tools.forEach(tool => this.tools.register(tool));
     }
 
     for (const { profile, brain } of team) {
@@ -280,17 +300,33 @@ Edge cases:
     };
   }
 
-  private buildWorkflow(task: RateLimiterTask, maxIterationsOverride?: number): WorkflowDefinition {
-    const effective: RateLimiterTask = maxIterationsOverride
-      ? { ...task, maxIterations: maxIterationsOverride }
-      : task;
-    return buildRateLimiterWorkflow(effective);
+  public getProject() {
+    const reason = !this.repository
+      ? '服务端尚未配置仓库、基线提交和隔离镜像。'
+      : !this.strictLive ? '仓库任务需要严格 Live 模式（--live --no-fallback）。' : undefined;
+    return { project: this.repository, ready: reason === undefined, reason };
   }
 
-  public async runTask(
-    task: RateLimiterTask,
-    options: { maxIterationsOverride?: number; retryOf?: string; onStart?: (runId: string) => void } = {}
-  ): Promise<RunSnapshot> {
+  public runProjectTask(goal: string, onStart?: RunOptions['onStart']): Promise<RunSnapshot> {
+    const { project, reason } = this.getProject();
+    if (!project || reason) throw new Error(reason ?? 'No configured repository.');
+    const prompt = goal.trim();
+    if (!prompt || prompt.length > MAX_REPOSITORY_GOAL) throw new Error('Invalid repository task description.');
+    const template = this.taskById.get('rl-normal')!;
+    return this.runTask({
+      ...template, repository: true, id: project.id, title: project.title, prompt,
+      description: `Repair ${project.filePath} at ${project.revision} against the fixed acceptance suite.`
+    }, { onStart });
+  }
+
+  private buildWorkflow(task: RunTask, maxIterationsOverride?: number): WorkflowDefinition {
+    const effective = maxIterationsOverride
+      ? { ...task, maxIterations: maxIterationsOverride }
+      : task;
+    return task.repository ? buildRepositoryWorkflow(effective) : buildRateLimiterWorkflow(effective);
+  }
+
+  public async runTask(task: RunTask, options: RunOptions = {}): Promise<RunSnapshot> {
     const runId = `run-${(++this.counter).toString().padStart(2, '0')}`;
     const workflow = this.buildWorkflow(task, options.maxIterationsOverride);
 
@@ -306,9 +342,12 @@ Edge cases:
       startedAt: Date.now(),
       nodeProgress,
       loopRounds,
-      retryOf: options.retryOf
+      retryOf: options.retryOf,
+      project: task.repository ? this.repository : undefined,
+      goal: task.repository ? task.prompt : undefined
     };
     this.runs.set(runId, snapshot);
+    this.taskByRun.set(runId, task);
     this.runOrder.push(runId);
 
     let slotReserved = false;
@@ -343,7 +382,7 @@ Edge cases:
         taskId: task.id,
         difficulty: task.difficulty,
         seedFeatures: task.seedFeatures,
-        seedSource: renderRateLimiter(task.seedFeatures),
+        seedSource: task.repository ? undefined : renderRateLimiter(task.seedFeatures),
         knowledgeCitations: snapshot.citations
       };
       const state = await this.workflow.execute(workflow, initialInput, {
@@ -355,6 +394,11 @@ Edge cases:
         onNodeEnd: (node, record) => {
           const { status, startTime, endTime, branchTaken, error } = record;
           nodeProgress[node.id] = { status, startTime, endTime, branchTaken, error };
+          if (task.repository && status === 'completed') {
+            if (node.id === 'n_baseline_test') snapshot.baselineVerification = record.verification;
+            if (node.id === 'n_requirement') snapshot.plan = { acceptanceCriteria: record.output?.acceptanceCriteria };
+            if (node.id === 'n_architecture') snapshot.plan = { ...snapshot.plan, invariants: record.output?.invariants };
+          }
           const meta = record.meta;
           const detail =
             meta?.iterations !== undefined
@@ -390,12 +434,14 @@ Edge cases:
       }
 
       const ctx = state.context;
-      snapshot.verification = (ctx.lastVerification as VerificationResult) ?? undefined;
+      snapshot.verification = task.repository && !snapshot.loopRounds?.length
+        ? undefined
+        : (ctx.lastVerification as VerificationResult) ?? undefined;
       snapshot.artifact = asCode(ctx.finalCode ?? ctx.lastOutput);
       snapshot.iterations = Object.values(state.iterationCounts).reduce((a, b) => Math.max(a, b), 0) || undefined;
 
       const patch = ctx.patch as RunSnapshot['patch'] | undefined;
-      if (patch?.patch) snapshot.patch = patch;
+      if (state.status === 'completed' && patch?.patch) snapshot.patch = patch;
 
       if (state.status === 'needs_human' && state.humanEscalation) {
         snapshot.escalation = state.humanEscalation;
@@ -465,7 +511,7 @@ Edge cases:
     if (!run) return undefined;
     if (!run.escalation || !Number.isInteger(optionIndex) || !run.escalation.options[optionIndex]) return run;
 
-    const task = this.taskById.get(run.taskId);
+    const task = this.taskByRun.get(runId);
     run.escalation = undefined;
 
     if (optionIndex === 0) {
@@ -489,6 +535,7 @@ Edge cases:
             updatedContent: artifact,
             filePath: 'src/rate-limiter.js'
           });
+          if (run.project && patchRes.patch) await this.tools.invoke('git_check_patch', { patch: patchRes.patch });
           run.patch = patchRes;
         } catch {
           /* the acceptance itself still stands */

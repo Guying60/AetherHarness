@@ -1,6 +1,6 @@
 import vm from 'node:vm';
 
-interface TestInput {
+export interface TestInput {
   testCode: string;
   sourceCode: string;
   bindings?: string[];
@@ -39,7 +39,7 @@ const createRealm = () => vm.createContext(Object.create(null), {
   microtaskMode: 'afterEvaluate'
 });
 
-function runTests({ testCode, sourceCode, bindings, timeoutMs }: TestInput) {
+export function runTests({ testCode, sourceCode, bindings, timeoutMs }: TestInput) {
   const deadline = Date.now() + timeoutMs;
   const evaluate = (source: string, context: vm.Context, filename: string) =>
     new vm.Script(source, { filename }).runInContext(context, { timeout: Math.max(1, deadline - Date.now()) });
@@ -74,6 +74,8 @@ function runTests({ testCode, sourceCode, bindings, timeoutMs }: TestInput) {
   }
 }
 
-process.once('message', (input: TestInput) => {
-  process.send?.(runTests(input), () => process.disconnect?.());
-});
+if (process.send) {
+  process.once('message', (input: TestInput) => {
+    process.send?.(runTests(input), () => process.disconnect?.());
+  });
+}

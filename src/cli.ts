@@ -15,6 +15,7 @@ import { runHeadless } from './demo.js';
 import { WebServer } from './web/server.js';
 import { style } from './tui/ansi.js';
 import { LlmConfig, isLlmConfigured, resolveLlmConfig } from './agent/llm/index.js';
+import { repositoryConfig } from './scenarios/repository-repair.js';
 
 interface Args {
   auto: boolean;
@@ -187,7 +188,7 @@ async function main(): Promise<void> {
   }
 
   if (args.web) {
-    const server = new WebServer({ port: args.port, llm });
+    const server = new WebServer({ port: args.port, llm, project: repositoryConfig(process.env) });
     const info = await server.start();
     process.stdout.write(
       `\n${style.cyan}⚡ AetherHarness Web 控制台已启动，访问地址：${style.bold}${info.url}${style.reset}\n` +
