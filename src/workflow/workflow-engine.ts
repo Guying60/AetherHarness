@@ -33,6 +33,7 @@ import { SelfLoopEngine, SelfLoopIterationRecord } from '../selfloop/self-loop-e
 import { FeedbackOptimizer } from '../optimization/feedback-optimizer.js';
 
 export interface WorkflowHooks {
+  rootRunId?: string;
   onNodeStart?: (node: WorkflowNode, record: NodeExecutionRecord) => void;
   onNodeEnd?: (node: WorkflowNode, record: NodeExecutionRecord) => void;
   onLoopIteration?: (node: WorkflowNode, record: SelfLoopIterationRecord) => void;
@@ -424,14 +425,25 @@ export class WorkflowEngine {
             optimizer: this.optimizer,
             subworkflowRegistry: this.subworkflowRegistry
           });
+          const prefix = (id: string) => `${node.id}/${id}`;
+          const scopedNode = (child: WorkflowNode) => ({ ...child, id: prefix(child.id) });
+          const scopedRecord = (child: NodeExecutionRecord) => ({
+            ...child, nodeId: prefix(child.nodeId),
+            branchTaken: child.branchTaken ? prefix(child.branchTaken) : undefined
+          });
           const subState = await subEngine.execute(sub, input as Record<string, any>, {
             runId: `${state.workflowExecutionId}-${node.id}`,
+            rootRunId: hooks.rootRunId ?? state.workflowExecutionId,
             deadline,
             depth: depth + 1,
-            onLog: hooks.onLog
+            onNodeStart: (child, record) => hooks.onNodeStart?.(scopedNode(child), scopedRecord(record)),
+            onNodeEnd: (child, record) => hooks.onNodeEnd?.(scopedNode(child), scopedRecord(record)),
+            onLog: (message, data) => hooks.onLog?.(message,
+              typeof data?.nodeId === 'string' ? { ...data, nodeId: prefix(data.nodeId) } : data)
           });
           if (subState.status !== 'completed') {
-            throw new Error(`subworkflow '${node.subworkflowId}' ended with status '${subState.status}'`);
+            const failure = Object.values(subState.nodeRecords).flat().find(child => child.error)?.error;
+            throw new Error(`subworkflow '${node.subworkflowId}' ended with status '${subState.status}'${failure ? ': ' + failure : ''}`);
           }
           output = subState.context;
           break;
@@ -664,7 +676,7 @@ export class WorkflowEngine {
     if (this.scheduler) {
       return this.scheduler.run(
         node,
-        state.workflowExecutionId,
+        hooks.rootRunId ?? state.workflowExecutionId,
         state.workflowExecutionId,
         node.priority ?? 5,
         deps,

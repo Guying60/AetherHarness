@@ -61,7 +61,8 @@ export class RunStore {
       for (const [runId, events] of Object.entries(data.events)) {
         if (!Array.isArray(events) || events.some(event =>
           !event || event.runId !== runId || !Number.isFinite(event.at) ||
-          typeof event.kind !== 'string' || typeof event.message !== 'string'
+          typeof event.kind !== 'string' || typeof event.message !== 'string' ||
+          (event.id !== undefined && (typeof event.id !== 'string' || !/^[0-9a-f-]{36}$/.test(event.id)))
         )) throw new Error('Invalid stored events.');
       }
       return data;

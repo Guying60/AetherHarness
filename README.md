@@ -181,15 +181,21 @@ Web 启动入口默认将运行、最近 100 条运行事件、验收轮次、�
 
 重启后可查看历史并处理待人工卡片。中断时仍在执行的任务会标记为失败并保留中断说明。历史仓库任务的加倍重试要求当前配置匹配原基线提交和隔离镜像。直接使用库构造器时可通过 `dataDir` 启用存储，注入的 Orchestrator 由调用者负责关闭。
 
+从工作台启动或选择运行后，地址会更新为 `/runs/:id`，刷新或直接打开可定位同一次运行。执行详情通过 `/api/runs/:id/events` 订阅事件。重连时使用 `Last-Event-ID` 续传保留窗口内的事件，游标过期时同步最新运行快照。控制台地址适用于同一台机器上的服务。
+
 1. 点击 **运行缺陷修复**。展开「验证与自愈」的第一轮和第二轮，对照失败规则、诊断建议与通过结果，再到「代码与补丁」下载统一 diff。
 2. 点击 **运行阻塞案例**。在「运行摘要」查看分布式对账规则 `DIST-001`，选择加倍轮数、保留草稿待复审或终止并回退。草稿仍会保留原验收结论。
 3. 点击 **并发运行全部案例**。通过「运行历史」切换案例，在「执行日志」查看派发 Agent、优先级和等待时间，在「团队、调度与工具」查看并发负载、工具调用与提示词优化记录。
+4. 打开「Agent 中心」查看注册版本和近期参与的运行。打开「系统设置」查看实际生效的模型、工具权限、超时、并发上限和重试策略。
+5. 在运行摘要下载验收报告（JSON），可核对执行状态、自动验收结论、交付状态与补丁 SHA-256。人工处理可附备注，报告保留操作与证据。
 
 工作流预览和执行状态来自同一份后端定义。离线模式便于复现演示。配置 `DEEPSEEK_API_KEY` 后运行 `pnpm run web --live` 可启用大模型推理。
 
 #### 固定 Git 仓库修复
 
 仓库任务支持一个管理员配置的本地仓库、固定提交及 `src/rate-limiter.js`。输入任务后，服务从 Git 提交读取基线并运行固定验收测试，再把失败证据交给需求、架构与开发 Agent。正式补丁必须通过固定测试、审查、静态检查和 `git apply --cached --check`。补丁检查使用临时索引，源仓库的工作树和索引保留原状。
+
+基线验收测试与静态扫描并行执行。自愈通过后进入 Git 交付子流程，依次执行候选扫描、补丁生成和应用检查。点击工作流中的并行检查或交付子流程节点，可查看实际子节点状态。
 
 准备一个获准把目标文件发给模型的仓库，启动 Docker Linux 引擎并配置模型密钥。运行时只接受已在本地缓存的固定镜像 ID。测试容器没有网络或宿主文件挂载，文件系统只读，并设有内存、CPU 和进程数限制。
 
@@ -206,15 +212,13 @@ node dist/src/cli.js --web --live --no-fallback
 
 ```powershell
 $env:AETHER_PROJECT_REPO = Join-Path ([IO.Path]::GetTempPath()) ('aether-project-' + [guid]::NewGuid())
-New-Item -ItemType Directory -Path (Join-Path $env:AETHER_PROJECT_REPO 'src') | Out-Null
-node --input-type=module -e 'import {writeFileSync} from "node:fs"; import {join} from "node:path"; import {renderRateLimiter,BASE_FEATURES} from "./dist/src/scenarios/rate-limiter.js"; writeFileSync(join(process.env.AETHER_PROJECT_REPO,"src","rate-limiter.js"),renderRateLimiter(BASE_FEATURES)+"\n");'
-git -C $env:AETHER_PROJECT_REPO init -q
-git -C $env:AETHER_PROJECT_REPO add -- src/rate-limiter.js
-git -C $env:AETHER_PROJECT_REPO -c user.name=Aether -c user.email=aether@example.test -c commit.gpgsign=false commit -qm baseline
-$env:AETHER_PROJECT_BASE = (git -C $env:AETHER_PROJECT_REPO rev-parse HEAD).Trim()
+$fixture = node scripts/create-demo-repository.mjs $env:AETHER_PROJECT_REPO | ConvertFrom-Json
+$env:AETHER_PROJECT_BASE = $fixture.revision
 ```
 
 默认测试使用可注入的本地测试适配器和模拟模型。设置 `AETHER_TEST_RUNNER_IMAGE` 为上述镜像 ID 后再运行 `npm.cmd test`，同一仓库回归用例会改用真实 Docker 执行器。
+
+执行 `node scripts/benchmark.mjs` 可重复测量固定的离线工作负载。脚本用同一组三个案例及预算对比串行和三路并发，并输出每组 5 批的原始时延、通过率、等待和失败分布。
 
 ### 2. 交互式终端 UI (TUI)
 

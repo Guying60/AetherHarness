@@ -65,6 +65,10 @@ export class DynamicScheduler {
 
   // ------------------------------------------------------------------ public
 
+  public getPolicy() {
+    return { maxRetries: this.maxRetries, agingIntervalMs: this.agingIntervalMs, maxWaitMs: this.maxWaitMs };
+  }
+
   public enqueue(
     node: WorkflowNode,
     runId: string,

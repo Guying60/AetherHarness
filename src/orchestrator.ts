@@ -9,6 +9,7 @@
  * `scheduler` and `optimizer` entirely (hence the "queue length: 0 / 0 prompt adjustments"
  * lines in the demo). Here every module is on the critical path.
  */
+import { randomUUID } from 'node:crypto';
 import {
   ExecutionStatus,
   HumanEscalationRequest,
@@ -38,7 +39,7 @@ import {
   renderRateLimiter
 } from './scenarios/rate-limiter.js';
 import {
-  buildRepositoryWorkflow, MAX_REPOSITORY_GOAL, repositoryTools,
+  buildRepositoryDeliveryWorkflow, buildRepositoryWorkflow, MAX_REPOSITORY_GOAL, repositoryTools,
   type RepositoryConfig, type RepositoryProject
 } from './scenarios/repository-repair.js';
 import {
@@ -47,6 +48,7 @@ import {
   LlmTelemetry,
   applyLlm,
   createProviderFromConfig,
+  DeepSeekProvider,
   isLlmConfigured,
   resolveLlmConfig
 } from './agent/llm/index.js';
@@ -69,13 +71,15 @@ export interface RunSnapshot {
   artifact?: string;
   error?: string;
   citations?: string[];
-  nodeProgress?: Record<string, Pick<NodeExecutionRecord, 'status' | 'startTime' | 'endTime' | 'branchTaken' | 'error'>>;
+  knowledgeHits?: Array<{ id: string; title: string; content: string; version?: string; citation: string }>;
+  nodeProgress?: Record<string, Pick<NodeExecutionRecord, 'status' | 'startTime' | 'endTime' | 'branchTaken' | 'error'> & { nodeName?: string; toolId?: string }>;
   loopRounds?: Array<Omit<SelfLoopIterationRecord, 'output'> & { nodeId: string }>;
   humanDecision?: 'retry' | 'review' | 'abort';
   retryOf?: string;
   project?: RepositoryProject;
   goal?: string;
   baselineVerification?: VerificationResult;
+  baselineScan?: Array<{ rule: string; severity: string; line: number; message: string }>;
   plan?: { acceptanceCriteria?: string[]; invariants?: string[] };
   retryAvailable?: boolean;
   restored?: boolean;
@@ -129,6 +133,7 @@ export class Orchestrator {
   private llmLabel = 'offline · deterministic brains';
   private readonly repository?: RepositoryProject;
   private readonly strictLive: boolean;
+  private readonly llmPolicy?: ReturnType<DeepSeekProvider['getPolicy']>;
 
   constructor(options: OrchestratorOptions = {}) {
     this.maxConcurrentRuns = options.maxConcurrentRuns ?? DEFAULT_MAX_CONCURRENT_RUNS;
@@ -177,6 +182,7 @@ export class Orchestrator {
     }
     if (config && isLlmConfigured(config)) {
       const provider = createProviderFromConfig(config);
+      if (provider instanceof DeepSeekProvider) this.llmPolicy = provider.getPolicy();
       this.llmApplied = applyLlm(offlineTeam, provider, {
         fallbackToOffline: config.fallbackToOffline ?? true,
         onFallback: (error, primaryName, agentId) =>
@@ -189,6 +195,7 @@ export class Orchestrator {
       const { project, tools } = repositoryTools(options.project);
       this.repository = project;
       tools.forEach(tool => this.tools.register(tool));
+      this.workflow.registerSubworkflow(buildRepositoryDeliveryWorkflow());
     }
 
     for (const { profile, brain } of team) {
@@ -216,7 +223,15 @@ export class Orchestrator {
           run.retryAvailable = !!task;
           run.restored = true;
         }
-        for (const [runId, events] of Object.entries(stored.events)) this.events.set(runId, events);
+        let upgradedEvents = false;
+        for (const [runId, events] of Object.entries(stored.events)) {
+          for (const event of events) {
+            if (event.id) continue;
+            event.id = randomUUID();
+            upgradedEvents = true;
+          }
+          this.events.set(runId, events);
+        }
         for (const run of this.getRuns()) {
           if (!['pending', 'running', 'paused'].includes(run.status)) continue;
           run.status = 'failed';
@@ -234,6 +249,7 @@ export class Orchestrator {
           }
           this.emit('run.finished', run.runId, run.error, 'run', { status: 'failed' });
         }
+        if (upgradedEvents) this.persist();
       } catch (error) {
         this.store.close();
         throw error;
@@ -255,7 +271,7 @@ export class Orchestrator {
     tag?: string,
     data?: Record<string, any>
   ): void {
-    const event: OrchestratorEvent = { at: Date.now(), runId, kind, message, tag, data };
+    const event: OrchestratorEvent = { id: randomUUID(), at: Date.now(), runId, kind, message, tag, data };
     const previous = this.events.get(runId);
     const history = [...(previous ?? []), event].slice(-100);
     this.events.set(runId, history);
@@ -303,7 +319,8 @@ export class Orchestrator {
 Rule SEC-01: Dynamic eval(), Function() constructors and unvalidated string concatenation into queries or commands are forbidden.
 Rule SEC-02: Cryptographic keys, secrets and auth tokens must never be hardcoded in repository sources; use environment variables.
 Rule SEC-03: Concurrency and asynchronous operations require timeout guards and proper error propagation.
-Rule SEC-04: 所有数值入参必须校验有限性（Number.isFinite），禁止 NaN 或 Infinity 污染状态。`
+Rule SEC-04: 所有数值入参必须校验有限性（Number.isFinite），禁止 NaN 或 Infinity 污染状态。`,
+      { version: '3.2' }
     );
 
     this.knowledge.addDocument(
@@ -318,13 +335,15 @@ Rule SEC-04: 所有数值入参必须校验有限性（Number.isFinite），禁�
 Edge cases:
 1. 容量为负数或零时必须抛出 RangeError。
 2. 令牌数量在任何时刻都不得超过容量，也不得为负。
-3. 令牌桶在分布式部署下必须与集群计数器对账，才能保证全局速率。（分布式对账）`
+3. 令牌桶在分布式部署下必须与集群计数器对账，才能保证全局速率。（分布式对账）`,
+      { version: '1.0' }
     );
 
     this.knowledge.addDocument(
       'workflow-notes',
       'Self-Loop Convergence Notes',
-      'The convergence threshold is 0.90. An unsatisfiable acceptance rule must escalate to a human instead of silently shipping a partial artifact.'
+      'The convergence threshold is 0.90. An unsatisfiable acceptance rule must escalate to a human instead of silently shipping a partial artifact.',
+      { version: '1.0' }
     );
   }
 
@@ -371,6 +390,24 @@ Edge cases:
         agentId: a.profile.id,
         role: a.profile.role,
         brain: a.brainName
+      }))
+    };
+  }
+
+  public getSettings() {
+    const tasks: RunTask[] = this.getTasks();
+    if (this.repository) tasks.push(this.projectTask(''));
+    return {
+      maxConcurrentRuns: this.maxConcurrentRuns,
+      scheduler: this.scheduler.getPolicy(),
+      model: this.llmApplied ? { strict: this.strictLive, ...this.llmPolicy } : null,
+      workflows: tasks.map(task => {
+        const workflow = this.buildWorkflow(task);
+        return { taskId: task.id, version: workflow.version, timeoutMs: workflow.timeoutMs,
+          loopLimits: workflow.nodes.flatMap(node => node.selfLoopConfig?.maxIterations ?? []) };
+      }),
+      tools: this.tools.getAll().map(({ id, description, timeoutMs, isSandboxed }) => ({
+        id, description, timeoutMs, isSandboxed: !!isSandboxed
       }))
     };
   }
@@ -462,6 +499,9 @@ Edge cases:
 
       const citations = this.knowledge.query(task.prompt, 2);
       snapshot.citations = citations.map(c => c.citation);
+      snapshot.knowledgeHits = citations.map(({ chunk, citation }) => ({
+        id: chunk.id, title: chunk.title, content: chunk.content, version: chunk.metadata.version, citation
+      }));
       if (citations.length > 0) {
         this.emit(
           'log', runId, `RAG: ${citations[0].chunk.title} (${(citations[0].score * 100).toFixed(0)}% relevance)`,
@@ -475,19 +515,21 @@ Edge cases:
         difficulty: task.difficulty,
         seedFeatures: task.seedFeatures,
         seedSource: task.repository ? undefined : renderRateLimiter(task.seedFeatures),
-        knowledgeCitations: snapshot.citations
+        knowledgeCitations: snapshot.citations,
+        knowledgeHits: snapshot.knowledgeHits
       };
       const state = await this.workflow.execute(workflow, initialInput, {
         runId,
         onNodeStart: (node, record) => {
-          nodeProgress[node.id] = { status: 'running', startTime: record.startTime };
+          nodeProgress[node.id] = { status: 'running', startTime: record.startTime, nodeName: node.name, toolId: node.toolId };
           this.emit('node.started', runId, `${node.name} (${node.type})`, 'node', { nodeId: node.id });
         },
         onNodeEnd: (node, record) => {
           const { status, startTime, endTime, branchTaken, error } = record;
-          nodeProgress[node.id] = { status, startTime, endTime, branchTaken, error };
+          nodeProgress[node.id] = { status, startTime, endTime, branchTaken, error, nodeName: node.name, toolId: node.toolId };
           if (task.repository && status === 'completed') {
             if (node.id === 'n_baseline_test') snapshot.baselineVerification = record.verification;
+            if (node.id === 'n_baseline_scan' && Array.isArray(record.output?.issues)) snapshot.baselineScan = record.output.issues;
             if (node.id === 'n_requirement') snapshot.plan = { acceptanceCriteria: record.output?.acceptanceCriteria };
             if (node.id === 'n_architecture') snapshot.plan = { ...snapshot.plan, invariants: record.output?.invariants };
           }
@@ -532,7 +574,7 @@ Edge cases:
       snapshot.artifact = asCode(ctx.finalCode ?? ctx.lastOutput);
       snapshot.iterations = Object.values(state.iterationCounts).reduce((a, b) => Math.max(a, b), 0) || undefined;
 
-      const patch = ctx.patch as RunSnapshot['patch'] | undefined;
+      const patch = (task.repository ? ctx.delivery?.patch : ctx.patch) as RunSnapshot['patch'] | undefined;
       if (state.status === 'completed' && patch?.patch) snapshot.patch = patch;
 
       if (state.status === 'needs_human' && state.humanEscalation) {
@@ -600,11 +642,14 @@ Edge cases:
    *  1 → accept the current draft (a human takes over the review)
    *  2 → abort
    */
-  public async resolveEscalation(runId: string, optionIndex: number): Promise<RunSnapshot | undefined> {
+  public async resolveEscalation(
+    runId: string, optionIndex: number, actor = 'local operator', reason?: string
+  ): Promise<RunSnapshot | undefined> {
     const run = this.runs.get(runId);
     if (!run) return undefined;
     if (!run.escalation || !Number.isInteger(optionIndex) || !run.escalation.options[optionIndex]) return run;
 
+    const decision = { actor, reason: reason || run.escalation.reason, optionIndex };
     const task = this.taskByRun.get(runId);
     if (optionIndex === 0 && !task) throw new Error('The saved task configuration is unavailable for retry.');
     const previous = {
@@ -623,7 +668,7 @@ Edge cases:
         return await this.runTask(task!, {
           maxIterationsOverride: budget * 2,
           retryOf: runId,
-          onStart: retryRunId => this.emit('log', runId, 'human decision: retry with a doubled iteration budget', 'human', { retryRunId })
+          onStart: retryRunId => this.emit('log', runId, 'human decision: retry with a doubled iteration budget', 'human', { ...decision, retryRunId })
         });
       }
 
@@ -648,7 +693,7 @@ Edge cases:
         run.status = 'completed';
         run.humanDecision = 'review';
         run.summary = this.buildSummary(run, 'Human review requested for the draft; the automated verification verdict is unchanged.');
-        this.emit('log', runId, 'human decision: send current draft for review', 'human');
+        this.emit('log', runId, 'human decision: send current draft for review', 'human', decision);
         return run;
       }
 
@@ -658,7 +703,7 @@ Edge cases:
       run.artifact = undefined;
       run.patch = undefined;
       run.summary = rolledBack ? 'Aborted by a human and rolled back to the last checkpoint.' : 'Aborted by a human.';
-      this.emit('log', runId, run.summary, 'human');
+      this.emit('log', runId, run.summary, 'human', decision);
       return run;
     } catch (error) {
       Object.assign(run, previous);

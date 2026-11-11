@@ -16,11 +16,11 @@ export const DASHBOARD_HTML = /* html */ `<!doctype html>
   }
   * { box-sizing: border-box; }
   body { margin: 0; color: var(--ink); background: var(--bg); }
-  button, select, textarea { font: inherit; }
+  button, select, textarea, input { font: inherit; }
   button, select, summary { cursor: pointer; }
   button:disabled { cursor: wait; opacity: .63; }
   a { color: inherit; }
-  button:focus-visible, a:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 3px solid #389173; outline-offset: 3px; }
+  button:focus-visible, a:focus-visible, select:focus-visible, textarea:focus-visible, input:focus-visible, summary:focus-visible { outline: 3px solid #389173; outline-offset: 3px; }
   h1, h2, h3, h4, p { margin: 0; }
   h1 { font-size: clamp(1.95rem, 4vw, 3.2rem); letter-spacing: -.04em; line-height: 1.14; }
   h2 { font-size: 1.48rem; letter-spacing: -.025em; }
@@ -65,6 +65,7 @@ export const DASHBOARD_HTML = /* html */ `<!doctype html>
   .badge.bad { background: #ffe7e3; color: #8c362d; }
   .badge.violet { background: #ece6fb; color: #634398; }
   .btn, .select { min-height: 36px; padding: 6px 12px; background: var(--paper); border: 1px solid #bdcec3; border-radius: 8px; color: var(--ink); font-size: .86rem; font-weight: 650; }
+  a.btn { display: inline-flex; align-items: center; text-decoration: none; }
   .btn:hover:not(:disabled) { border-color: #5d8b73; background: #eef7f0; }
   .btn.primary { color: #fff; background: #176348; border-color: #176348; }
   .btn.primary:hover:not(:disabled) { background: #124e38; }
@@ -106,6 +107,8 @@ export const DASHBOARD_HTML = /* html */ `<!doctype html>
   .team { margin-top: 12px; }
   .agent progress { width: 100%; height: 8px; accent-color: var(--accent); }
   .agent p, .agent ul { margin-top: 7px; }
+  .agent .link { padding-left: 0; }
+  .policy-list { margin: 0; padding-left: 20px; }
   .plain-list { padding: 0; margin: 0; list-style: none; }
   .notice { padding: 10px 13px; margin-top: 12px; border-radius: 8px; background: #deebfc; color: #174c88; }
   .notice:empty, [hidden] { display: none; }
@@ -132,8 +135,8 @@ export const DASHBOARD_HTML = /* html */ `<!doctype html>
 <body>
 <header class="top">
   <div class="shell">
-    <a class="brand" href="#top"><span class="mark" aria-hidden="true">◈</span>AetherHarness</a>
-    <nav aria-label="工作台导航"><a href="#scenarios">选择案例</a><a href="#execution">运行详情</a><a href="#operations">团队与调度</a></nav>
+    <a class="brand" href="/"><span class="mark" aria-hidden="true">◈</span>AetherHarness</a>
+    <nav aria-label="工作台导航"><a href="#scenarios">选择案例</a><a href="#execution">运行详情</a><a href="#team-title">Agent 中心</a><a href="#settings">系统设置</a></nav>
     <span id="connection" class="badge" role="status">正在连接</span>
   </div>
 </header>
@@ -200,8 +203,13 @@ export const DASHBOARD_HTML = /* html */ `<!doctype html>
       <h3>动态调度</h3>
       <div id="scheduler" class="stack"><p class="muted small">正在获取调度数据…</p></div>
     </div>
-    <div id="team" class="team" aria-label="Agent 团队"></div>
+    <h3 id="team-title" style="margin-top:16px">Agent 中心</h3>
+    <div id="team" class="team" aria-labelledby="team-title"></div>
     <div id="system" class="stack" style="margin-top:12px"></div>
+  </section>
+  <section id="settings" aria-labelledby="settings-title">
+    <div class="section-title"><div><h2 id="settings-title">系统设置</h2><p class="muted small">当前生效的配置。模型和仓库由服务启动参数配置。</p></div></div>
+    <div id="settings-policy" class="panel stack"><p class="muted small">正在读取系统设置…</p></div>
   </section>
   <footer id="storage-status" class="footer muted small">正在读取运行存储状态…</footer>
 </main>

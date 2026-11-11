@@ -425,6 +425,24 @@ async function suiteWorkflow(): Promise<void> {
   check(parMs < 230, `parallel children overlap (${parMs}ms for two 120ms tasks)`);
   equal((parState.context.branches as any)?.children?.length, 2, 'parallel group records both children');
 
+  const nestedStarts: string[] = [];
+  const nestedDispatches: string[] = [];
+  const nestedScheduler = new DynamicScheduler(agentRegistry, {}, (_message, data) => {
+    if (data?.agentId) nestedDispatches.push(data.runId);
+  });
+  const nestedEngine = new WorkflowEngine({ agentRegistry, toolRegistry, scheduler: nestedScheduler });
+  const child: WorkflowDefinition = {
+    ...parallel, id: 'nested-child', entryNodeId: 'step',
+    nodes: [{ id: 'step', name: 'nested worker', type: 'agent', agentId: 'par1' }]
+  };
+  nestedEngine.registerSubworkflow(child);
+  const nested = await nestedEngine.execute({
+    ...child, id: 'nested-parent',
+    nodes: [{ id: 'step', name: 'subworkflow', type: 'subworkflow', subworkflowId: child.id }]
+  }, {}, { runId: 'nested-run', onNodeStart: node => nestedStarts.push(node.id) });
+  equal([nested.status, nestedStarts, nestedDispatches], ['completed', ['step', 'step/step'], ['nested-run']],
+    'nested progress scopes overlapping IDs and dispatches remain on the parent run');
+
   // REGRESSION (P0): workflow timeoutMs was declared but never enforced.
   agentRegistry.register(agentProfile('slow', { maxConcurrency: 2 }), { brain: new DelayBrain(400) });
   const slow: WorkflowDefinition = {
@@ -1178,6 +1196,32 @@ async function suiteLlm(): Promise<void> {
 // [11] Web Dashboard & API Server
 // ---------------------------------------------------------------------------
 
+async function readSseEvent(response: Response): Promise<{ event?: string; id?: string; data: any }> {
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) throw new Error('SSE closed before sending an event');
+      buffer += decoder.decode(value, { stream: true });
+      let end: number;
+      while ((end = buffer.indexOf('\n\n')) >= 0) {
+        const lines = buffer.slice(0, end).split('\n');
+        buffer = buffer.slice(end + 2);
+        const data = lines.find(line => line.startsWith('data: '));
+        if (data) return {
+          event: lines.find(line => line.startsWith('event: '))?.slice(7),
+          id: lines.find(line => line.startsWith('id: '))?.slice(4),
+          data: JSON.parse(data.slice(6))
+        };
+      }
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+}
+
 async function suiteWebServer(): Promise<void> {
   describe('[11] web dashboard & API server');
 
@@ -1279,11 +1323,40 @@ async function suiteWebServer(): Promise<void> {
     equal(runData.runId, finishedRun.runId, 'dispatch returns the ID of the run just started');
 
     const detail = await (await fetch(`${info.url}/api/dashboard?runId=${runData.runId}`)).json();
+    check(detail.settings.maxConcurrentRuns === 3 && detail.settings.scheduler.maxRetries === 1 &&
+      detail.settings.model === null && detail.settings.workflows.some((workflow: any) => workflow.timeoutMs === 30_000),
+      'dashboard settings reflect effective scheduler and workflow limits');
+    check(detail.run.knowledgeHits.some((hit: any) => hit.content && hit.version),
+      'dashboard includes the retrieved text and source version');
+    const reportResponse = await fetch(info.url + '/api/runs/' + runData.runId + '/report');
+    const report = await reportResponse.json();
+    check(!!reportResponse.headers.get('content-disposition')?.includes('-report.json') &&
+      report.verdict === 'passed' && report.delivery.status === 'verified' &&
+      /^[a-f0-9]{64}$/.test(report.delivery.sha256) && !report.state && !report.artifact,
+      'verified acceptance reports identify the downloadable patch without internal state');
+    const history = await (await fetch(info.url + '/api/agents/reviewer_01/history')).json();
+    check(history.activity.some((entry: any) => entry.runId === runData.runId &&
+      entry.reviews.some((review: any) => review.approved === true)) && !JSON.stringify(history).includes('systemPrompt'),
+      'Agent history links to real review evidence and excludes prompt contents');
     equal(detail.run.nodeProgress.n_complexity_gate.branchTaken, 'n_loop_full', 'dashboard reports the actual branch taken');
     check(detail.run.loopRounds[0].criticFeedback && !detail.run.loopRounds[0].passed, 'dashboard includes failed round evidence and diagnosis');
     equal(detail.run.loopRounds[1].passed, true, 'dashboard includes the successful repair round');
     check(detail.events.some((event: any) => event.kind === 'scheduler' && event.runId === runData.runId && event.data.agentId),
       'dispatch events stay attached to their run');
+    const linked = await fetch(info.url + '/runs/' + runData.runId);
+    check(linked.status === 200 && (await linked.text()).includes('pipeline-flow'), 'a run deep link serves the execution dashboard');
+    const missingLink = await fetch(info.url + '/runs/run-999999');
+    check(missingLink.status === 404 && (await missingLink.text()).includes('pipeline-flow'), 'a missing run link shows the dashboard error state');
+    equal((await fetch(info.url + '/api/runs/run-999999/events')).status, 404, 'a missing run cannot open an event stream');
+    const scopedUrl = info.url + '/api/runs/' + runData.runId + '/events';
+    const replay = await readSseEvent(await fetch(scopedUrl, {
+      headers: { 'Last-Event-ID': detail.events.at(-2).id }, signal: AbortSignal.timeout(5000)
+    }));
+    equal([replay.id, replay.data.kind], [detail.events.at(-1).id, 'run.finished'], 'SSE replays only events after the supplied cursor');
+    const reset = await readSseEvent(await fetch(scopedUrl, {
+      headers: { 'Last-Event-ID': 'expired-cursor' }, signal: AbortSignal.timeout(5000)
+    }));
+    equal(reset.event, 'reset', 'an unavailable SSE cursor requests a snapshot refresh');
 
     // 6. Test Escalation flow via API
     await fetch(`${info.url}/api/tasks/run`, {
@@ -1308,9 +1381,14 @@ async function suiteWebServer(): Promise<void> {
     const decide = (optionIndex: number) => fetch(decisionUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ optionIndex })
+      body: JSON.stringify({ optionIndex, reason: '需要独立集群证据' })
     });
     equal((await decide(99)).status, 400, 'an invalid option cannot accidentally abort a run');
+    const hardEvents = server.orchestrator.getEvents(hardRun.runId);
+    const liveEvents = await fetch(info.url + '/api/runs/' + hardRun.runId + '/events', {
+      headers: { 'Last-Event-ID': hardEvents.at(-1)!.id! }, signal: AbortSignal.timeout(5000)
+    });
+    await server.orchestrator.runTask(server.orchestrator.getTasks().find(task => task.id === 'rl-easy')!);
     const escRes = await decide(1);
     equal(escRes.status, 200, 'POST /api/runs/:id/escalate returns 200 OK');
     const escData = await escRes.json();
@@ -1320,6 +1398,13 @@ async function suiteWebServer(): Promise<void> {
     equal(escData.run.verification.passed, false, 'requesting review preserves the failed verification verdict');
     check(escData.run.patch.patch.includes('@@') && !escData.run.patch.patch.includes('-// placeholder'),
       'draft review produces a diff against the scenario seed');
+    const decisionEvent = await readSseEvent(liveEvents);
+    check(decisionEvent.id !== hardEvents.at(-1)!.id && decisionEvent.data.runId === hardRun.runId &&
+      decisionEvent.data.tag === 'human', 'a resumed run stream delivers new decisions and excludes other runs');
+    const draftReport = await (await fetch(info.url + '/api/runs/' + hardRun.runId + '/report')).json();
+    check(draftReport.delivery.status === 'draft' && draftReport.verdict === 'blocked' &&
+      decisionEvent.data.data.actor === 'local Web operator' && decisionEvent.data.data.reason === '需要独立集群证据',
+      'draft reports preserve the failed verdict and audit the local decision');
     equal((await decide(2)).status, 409, 'a resolved run rejects a second decision');
   } finally {
     await server.stop();
@@ -1391,8 +1476,18 @@ async function suiteRepositoryRepair(): Promise<void> {
       check(run.baselineVerification?.passed === false && !!run.plan?.invariants?.length, 'the run retains failed baseline evidence and agent plan');
       check(run.loopRounds?.length === 2 && !!run.loopRounds[0].criticFeedback && run.verification?.passed === true,
         'the first candidate is diagnosed and the revised candidate passes');
-      check(run.status === 'completed' && run.nodeProgress?.n_git_patch_check?.status === 'completed' &&
+      const baselineTest = run.nodeProgress?.n_baseline_test;
+      const baselineScan = run.nodeProgress?.n_baseline_scan;
+      check(run.nodeProgress?.n_baseline_checks?.status === 'completed' &&
+        baselineTest?.endTime !== undefined && baselineScan?.endTime !== undefined &&
+        baselineScan.startTime < baselineTest.endTime && baselineTest.startTime <= baselineScan.endTime &&
+        Array.isArray(run.baselineScan), 'baseline sandbox and static checks overlap and retain their evidence');
+      check(run.status === 'completed' && run.nodeProgress?.['n_delivery/n_git_patch_check']?.status === 'completed' &&
         run.patch?.patch.includes('-// pinned repository baseline') === true, 'the delivered patch applies against the pinned Git index');
+      check(['n_scan', 'n_patch', 'n_git_patch_check'].every(nodeId =>
+        orchestrator.getEvents(run.runId).some(event =>
+          event.kind === 'node.finished' && event.data?.nodeId === 'n_delivery/' + nodeId
+        )), 'nested delivery steps emit scoped events on their parent run');
       equal(readFileSync(path, 'utf8'), dirty, 'the dirty source checkout is untouched');
       check(index.equals(readFileSync(join(repo, '.git', 'index'))), 'patch verification leaves the source index untouched');
       const invalid = await orchestrator.tools.invoke('git_check_patch', { patch: 'not a patch' }).catch(() => 'rejected');
@@ -1403,6 +1498,8 @@ async function suiteRepositoryRepair(): Promise<void> {
       const blockedPatch = await orchestrator.runProjectTask(goal);
       check(blockedPatch.status === 'failed' && blockedPatch.verification?.passed === true && !blockedPatch.patch,
         'a candidate that passes tests is withheld if Git rejects the patch');
+      check(blockedPatch.nodeProgress?.['n_delivery/n_git_patch_check']?.status === 'failed' &&
+        blockedPatch.error?.includes('patch check failed') === true, 'nested delivery failure retains the failing step and cause');
 
       const modelCalls = orchestrator.getLlmInfo().telemetry!.calls;
       const runner = orchestrator.tools.get('container_test_runner')!;
@@ -1435,7 +1532,13 @@ async function suitePersistence(): Promise<void> {
     const hard = await orchestrator.runTask(tasks.find(task => task.id === 'rl-hard')!);
     const patch = normal.patch?.patch;
     const rounds = normal.loopRounds;
+    const normalEvents = orchestrator.getEvents(normal.runId);
     await server.stop();
+
+    const stateFile = join(dataDir, 'state.json');
+    const legacy = JSON.parse(readFileSync(stateFile, 'utf8'));
+    for (const event of legacy.events[hard.runId]) delete event.id;
+    writeFileSync(stateFile, JSON.stringify(legacy));
 
     server = new WebServer({ port: 0, dataDir });
     let info = await server.start();
@@ -1445,11 +1548,18 @@ async function suitePersistence(): Promise<void> {
     check(typeof detail.run.modelLabel === 'string' && detail.run.modelLabel === normal.modelLabel,
       'the original model source remains attached to a restored run');
     check(detail.events.some((event: any) => event.kind === 'run.finished'), 'execution evidence survives restart');
+    equal(detail.events.map((event: any) => event.id), normalEvents.map(event => event.id),
+      'event cursors remain stable across restart');
+    const resumed = await readSseEvent(await fetch(info.url + '/api/runs/' + normal.runId + '/events', {
+      headers: { 'Last-Event-ID': normalEvents.at(-2)!.id! }, signal: AbortSignal.timeout(5000)
+    }));
+    equal(resumed.id, normalEvents.at(-1)!.id, 'SSE can resume using a cursor from a previous service process');
+    const upgraded = server.orchestrator.getEvents(hard.runId);
+    check(upgraded.length > 0 && upgraded.every(event => !!event.id), 'legacy stored events receive cursors without losing evidence');
     const restored = server.orchestrator.getRun(hard.runId)!;
     check(restored.status === 'needs_human' && !!restored.escalation && restored.retryAvailable === true,
       'a human escalation survives restart with its retry action');
 
-    const stateFile = join(dataDir, 'state.json');
     const saved = readFileSync(stateFile, 'utf8');
     unlinkSync(stateFile);
     mkdirSync(stateFile);

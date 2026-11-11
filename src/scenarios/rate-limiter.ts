@@ -19,7 +19,8 @@ import {
   TaskDifficulty,
   TaskSpec,
   VerificationSpec,
-  WorkflowDefinition
+  WorkflowDefinition,
+  WorkflowNode
 } from '../types/index.js';
 import { auditFor } from '../verification/verification-engine.js';
 import { estimateTokens } from '../agent/brain.js';
@@ -585,6 +586,41 @@ export interface RateLimiterTask extends TaskSpec {
   requireCluster: boolean;
 }
 
+export function rateLimiterDeliveryNodes(): WorkflowNode[] {
+  return [
+    {
+      id: 'n_scan',
+      name: 'static scan',
+      type: 'tool',
+      toolId: 'static_analyzer',
+      priority: 3,
+      outputKey: 'scanReport',
+      inputTransformer: ctx => ({ code: asCode(ctx.finalCode ?? ctx.lastOutput) }),
+      description: 'Independent post-hoc scan of the delivered artifact'
+    },
+    {
+      id: 'n_patch',
+      name: 'git patch',
+      type: 'tool',
+      toolId: 'git_patch_manager',
+      priority: 2,
+      outputKey: 'patch',
+      inputTransformer: ctx => {
+        const issues = ctx.scanReport?.issues;
+        if (!Array.isArray(issues)) throw new Error('Static scan did not produce a report.');
+        const blocker = issues.find(issue => issue.severity === 'critical');
+        if (blocker) throw new Error(`Static scan blocked delivery: ${blocker.rule} ${blocker.message}`);
+        return {
+          originalContent: String(ctx.seedSource ?? '// placeholder\n'),
+          updatedContent: asCode(ctx.finalCode ?? ctx.lastOutput),
+          filePath: 'src/rate-limiter.js'
+        };
+      },
+      description: 'Emit a real unified diff for review'
+    }
+  ];
+}
+
 export function buildRateLimiterWorkflow(task: RateLimiterTask): WorkflowDefinition {
   const verificationSpec = task.verificationSpec;
 
@@ -673,36 +709,7 @@ export function buildRateLimiterWorkflow(task: RateLimiterTask): WorkflowDefinit
         verifyTargetKey: 'lastOutput',
         description: 'Three-tier verification gate'
       },
-      {
-        id: 'n_scan',
-        name: 'static scan',
-        type: 'tool',
-        toolId: 'static_analyzer',
-        priority: 3,
-        outputKey: 'scanReport',
-        inputTransformer: ctx => ({ code: asCode(ctx.finalCode ?? ctx.lastOutput) }),
-        description: 'Independent post-hoc scan of the delivered artifact'
-      },
-      {
-        id: 'n_patch',
-        name: 'git patch',
-        type: 'tool',
-        toolId: 'git_patch_manager',
-        priority: 2,
-        outputKey: 'patch',
-        inputTransformer: ctx => {
-          const issues = ctx.scanReport?.issues;
-          if (!Array.isArray(issues)) throw new Error('Static scan did not produce a report.');
-          const blocker = issues.find(issue => issue.severity === 'critical');
-          if (blocker) throw new Error(`Static scan blocked delivery: ${blocker.rule} ${blocker.message}`);
-          return {
-            originalContent: String(ctx.seedSource ?? '// placeholder\n'),
-            updatedContent: asCode(ctx.finalCode ?? ctx.lastOutput),
-            filePath: 'src/rate-limiter.js'
-          };
-        },
-        description: 'Emit a real unified diff for review'
-      }
+      ...rateLimiterDeliveryNodes()
     ],
     edges: [
       { from: 'n_requirement', to: 'n_architecture' },

@@ -6,11 +6,12 @@ import { promisify } from 'node:util';
 import type { ToolInvocationContext } from '../tools/tool-registry.js';
 import { containerTestRunner } from '../tools/container-runner.js';
 import type { ToolDefinition, WorkflowDefinition } from '../types/index.js';
-import { asCode, buildRateLimiterWorkflow, type RateLimiterTask } from './rate-limiter.js';
+import { asCode, buildRateLimiterWorkflow, rateLimiterDeliveryNodes, type RateLimiterTask } from './rate-limiter.js';
 
 export const REPOSITORY_PROJECT_ID = 'rate-limiter-repository';
 export const REPOSITORY_FILE = 'src/rate-limiter.js';
 export const MAX_REPOSITORY_GOAL = 2000;
+const DELIVERY_WORKFLOW_ID = 'repository-delivery';
 
 export interface RepositoryConfig {
   path: string;
@@ -114,6 +115,7 @@ export function buildRepositoryWorkflow(task: RateLimiterTask): WorkflowDefiniti
     ...task, verificationSpec: { ...task.verificationSpec, executableSandboxCheck: sandbox }
   });
   workflow.entryNodeId = 'n_git_baseline';
+  workflow.version = '2.1.0';
   workflow.timeoutMs = 180_000;
   const gate = workflow.nodes.find(node => node.id === 'n_complexity_gate')!;
   const planBranch = gate.conditionFn!;
@@ -121,22 +123,54 @@ export function buildRepositoryWorkflow(task: RateLimiterTask): WorkflowDefiniti
   workflow.nodes.unshift(
     { id: 'n_git_baseline', name: 'read Git baseline', type: 'tool', toolId: 'git_read_baseline', outputKey: 'seedSource' },
     {
+      id: 'n_baseline_checks', name: 'parallel baseline checks', type: 'parallel_group',
+      parallelChildIds: ['n_baseline_test', 'n_baseline_scan'],
+      description: 'Run behavioural tests and static analysis on the pinned source.'
+    },
+    {
       id: 'n_baseline_test', name: 'baseline acceptance', type: 'verification', verifyTargetKey: 'seedSource',
       verificationSpec: { rules: [], confidenceThreshold: 1, executableSandboxCheck: sandbox }
+    },
+    {
+      id: 'n_baseline_scan', name: 'baseline static scan', type: 'tool', toolId: 'static_analyzer',
+      inputTransformer: ctx => ({ code: ctx.seedSource })
     }
   );
+  workflow.nodes = workflow.nodes.filter(node => node.id !== 'n_scan' && node.id !== 'n_patch');
   workflow.nodes.push({
-    id: 'n_git_patch_check', name: 'check Git patch', type: 'tool', toolId: 'git_check_patch',
-    inputTransformer: ctx => {
-      if (typeof ctx.patch?.patch !== 'string' ||
-        (!ctx.patch.patch && asCode(ctx.finalCode) !== ctx.seedSource)) throw new Error('Missing project patch.');
-      return { patch: ctx.patch.patch };
-    }
+    id: 'n_delivery', name: 'repository delivery', type: 'subworkflow',
+    subworkflowId: DELIVERY_WORKFLOW_ID, outputKey: 'delivery',
+    inputTransformer: ctx => ({ finalCode: ctx.finalCode, seedSource: ctx.seedSource }),
+    description: 'Scan the candidate, generate a patch and check it against the pinned index.'
   });
+  workflow.edges = workflow.edges.filter(edge => edge.from !== 'n_scan').map(edge =>
+    edge.to === 'n_scan' ? { ...edge, to: 'n_delivery' } : edge
+  );
   workflow.edges.push(
-    { from: 'n_git_baseline', to: 'n_baseline_test' },
-    { from: 'n_baseline_test', to: 'n_requirement' },
-    { from: 'n_patch', to: 'n_git_patch_check' }
+    { from: 'n_git_baseline', to: 'n_baseline_checks' },
+    { from: 'n_baseline_checks', to: 'n_requirement' }
   );
   return workflow;
+}
+
+export function buildRepositoryDeliveryWorkflow(): WorkflowDefinition {
+  return {
+    id: DELIVERY_WORKFLOW_ID,
+    name: 'Git patch delivery',
+    description: 'Validate a patch against the pinned Git baseline before releasing it.',
+    version: '1.0.0',
+    entryNodeId: 'n_scan',
+    nodes: [
+      ...rateLimiterDeliveryNodes(),
+      {
+        id: 'n_git_patch_check', name: 'check Git patch', type: 'tool', toolId: 'git_check_patch',
+        inputTransformer: ctx => {
+          if (typeof ctx.patch?.patch !== 'string' ||
+            (!ctx.patch.patch && asCode(ctx.finalCode) !== ctx.seedSource)) throw new Error('Missing project patch.');
+          return { patch: ctx.patch.patch };
+        }
+      }
+    ],
+    edges: [{ from: 'n_scan', to: 'n_patch' }, { from: 'n_patch', to: 'n_git_patch_check' }]
+  };
 }

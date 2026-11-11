@@ -31,6 +31,7 @@ export interface SelfLoopIterationRecord {
   /** union of every failure seen so far in the loop */
   cumulativeFailureIds: string[];
   criticFeedback?: string;
+  criticAgentId?: string;
   durationMs: number;
   score: number;
   passed: boolean;
@@ -243,6 +244,7 @@ export class SelfLoopEngine {
         options.signal?.throwIfAborted();
         if (!criticRes.success) throw new Error(criticRes.error ?? 'critic execution failed');
 
+        record.criticAgentId = criticRes.agentId;
         const out = criticRes.output;
         guidance =
           typeof out === 'string'

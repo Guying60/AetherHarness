@@ -17,6 +17,14 @@ interface DashboardData {
   runs: RunSummary[];
   run: Omit<RunSnapshot, 'state'> | null;
   events: OrchestratorEvent[];
+  settings: ReturnType<Orchestrator['getSettings']>;
+}
+
+interface AgentHistory {
+  versions: Array<{ version: string; toolIds: string[]; maxConcurrency: number }>;
+  activity: Array<{ runId: string; title: string;
+    dispatches: Array<{ at: number; nodeId: string; priority: number; waitMs: number }>;
+    reviews: Array<{ iteration: number; role: string; approved?: boolean }> }>;
 }
 
 /** Browser entry point. Everything it uses at runtime is defined inside this function. */
@@ -30,7 +38,9 @@ export function dashboard(): void {
     n_requirement: '需求分析', n_architecture: '架构设计', n_complexity_gate: '复杂度判断',
     n_loop_full: '完整自愈', n_loop_quick: '快速验证', n_develop: '开发修复',
     n_verify: '三层验证', n_scan: '静态扫描', n_patch: '生成补丁',
-    n_git_baseline: '读取 Git 基线', n_baseline_test: '运行基线测试', n_git_patch_check: '检查 Git 补丁'
+    n_git_baseline: '读取 Git 基线', n_baseline_checks: '并行基线检查',
+    n_baseline_test: '运行基线测试', n_baseline_scan: '基线静态扫描',
+    n_delivery: 'Git 交付子流程', n_git_patch_check: '检查 Git 补丁'
   };
   const nodeTypes: Record<string, string> = {
     agent: 'Agent 节点', condition: '条件分支', self_loop: 'PDCA 自愈循环',
@@ -41,7 +51,8 @@ export function dashboard(): void {
     code_reviewer: '代码评审', security_auditor: '安全审计', critic: '根因诊断'
   };
   const tools: Record<string, string> = {
-    code_sandbox: '代码沙箱', test_runner: '测试执行器', static_analyzer: '静态分析器', git_patch_manager: 'Git 补丁生成器'
+    code_sandbox: '代码沙箱', test_runner: '测试执行器', static_analyzer: '静态分析器', git_patch_manager: 'Git 补丁生成器',
+    git_read_baseline: 'Git 基线读取', git_check_patch: 'Git 补丁应用检查', container_test_runner: '容器验收'
   };
   const capabilities: Record<string, string> = {
     requirement_engineering: '需求分析', system_architecture: '架构设计', code_generation: '代码生成',
@@ -75,17 +86,25 @@ export function dashboard(): void {
   const empty = (message: string) => '<p class="empty">' + esc(message) + '</p>';
   const nodeName = (id: string, fallback?: string) => nodeNames[id] ?? fallback ?? id;
   const active = (run: RunSummary) => run.status === 'pending' || run.status === 'running';
+  const routeRun = () => /^\/runs\/(run-\d+)$/.exec(location.pathname)?.[1];
 
   let data: DashboardData | undefined;
-  let requestedRun: string | undefined;
+  let requestedRun = routeRun();
+  let routePath = location.pathname;
+  let revealOnLoad = !!requestedRun;
+  let unavailableRun: string | undefined;
   let taskId = 'rl-normal';
   let nodeId = '';
   let tab = 'verification';
   let connected = false;
+  let stream: EventSource | undefined;
+  let streamRun: string | undefined;
   let refreshFailed = false;
   let starting = false;
   let deciding = '';
   let decisionError = '';
+  let decisionReason = '';
+  const agentHistories = new Map<string, AgentHistory | string>();
   let refreshing = false;
   let refreshAgain = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -212,6 +231,13 @@ export function dashboard(): void {
       const record = progress[selected.id];
       const next = workflow.edges.filter(edge => edge.from === selected.id).map(edge => nodeName(edge.to, nodes.get(edge.to)?.name));
       const config = selected.selfLoopConfig;
+      const parallelChildren = (selected.parallelChildIds ?? []).flatMap(id => {
+        const child = nodes.get(id);
+        return child ? [child] : [];
+      });
+      const nestedProgress = selected.type === 'subworkflow'
+        ? Object.entries(progress).filter(([id]) => id.startsWith(selected.id + '/'))
+        : [];
       detail = '<div class="inspector small"><p><strong>' + esc(nodeName(selected.id, selected.name)) +
         '</strong> · ' + esc(nodeTypes[selected.type] ?? selected.type) + '</p>' +
         '<p class="muted">' + esc(selected.description) + '</p>' +
@@ -223,7 +249,12 @@ export function dashboard(): void {
         (record?.branchTaken ? '<p>实际选中 · ' + esc(nodeName(record.branchTaken)) + '</p>' : '') +
         (record?.endTime !== undefined && selected.type !== 'verification' ?
           '<p>最近执行耗时 · ' + duration(record.endTime - record.startTime) + '</p>' : '') +
-        (record?.error ? '<p>' + badge('错误', 'bad') + ' ' + esc(record.error) + '</p>' : '') + '</div>';
+        (record?.error ? '<p>' + badge('错误', 'bad') + ' ' + esc(record.error) + '</p>' : '') +
+        (parallelChildren.length ? '<div class="subnodes">' + parallelChildren.map(nodeButton).join('') + '</div>' : '') +
+        (nestedProgress.length ? '<ul class="plain-list stack">' + nestedProgress.map(([id, child]) =>
+          '<li class="row">' + esc(nodeName(id.split('/').at(-1)!, child.nodeName)) + ' ' +
+          stateBadge(child.status) + (child.error ? ' ' + esc(child.error) : '') + '</li>'
+        ).join('') + '</ul>' : '') + '</div>';
     }
     show('node-inspector', '<div class="stack">' + (insideLoop.length ?
       '<div><p class="muted small">自愈循环内部 · 开发、验证、诊断后决定是否重试</p><div class="subnodes">' +
@@ -233,6 +264,10 @@ export function dashboard(): void {
   function renderRun(run: DashboardData['run'], title: string, prompt?: string): void {
     const brief = prompt ? '<details id="task-brief" class="small"><summary>查看任务原文</summary><p>' + esc(prompt) + '</p></details>' : '';
     if (!run) {
+      if (unavailableRun) {
+        show('run-summary', empty('找不到运行 ' + unavailableRun + '。') + '<a class="link" href="/">返回工作台</a>');
+        return;
+      }
       show('run-summary', '<h4>' + esc(title) + '</h4>' + empty(requestedRun ?
         '正在读取所选运行…' : '当前正在预览工作流。点击案例的运行按钮开始，或通过运行历史查看已有结果。') + brief);
       return;
@@ -254,7 +289,9 @@ export function dashboard(): void {
       controls = '<div class="inset decision"><h4>需要人工决策</h4><p class="small">' +
         esc(blocking?.length ? 'Agent 报告当前环境无法满足 ' + blocking.join('、') + '。' : '当前方案仍未达到收敛条件。') +
         '</p><details id="decision-' + esc(run.runId) + '" class="small"><summary>查看决策依据</summary><p>' +
-        esc(card.reason) + '</p></details><div class="stack">' +
+        esc(card.reason) + '</p></details><div class="stack"><label class="stack small">决策备注（可选）' +
+        '<input class="select" id="decision-reason" data-focus="decision-reason" maxlength="500" value="' +
+        esc(decisionReason) + '"></label>' +
         card.options.map((option, index) => '<div><button type="button" class="btn ' +
           (index === card.recommendedOptionIndex ? 'primary' : index === 2 ? 'danger' : '') + '" data-decision="' + index +
           '" data-focus="decision-' + index + '"' + (deciding || index === 0 && run.retryAvailable === false ? ' disabled' : '') + '>' +
@@ -280,6 +317,7 @@ export function dashboard(): void {
       (outcome === 'retry' && retry ? '<button class="btn" type="button" data-select-run="' + esc(retry.runId) + '">查看本次重试</button>' : '') +
       (run.patch?.patch ? '<button class="btn" type="button" data-tab="artifact" data-focus="open-artifact">查看' +
         (outcome === 'review' ? '草稿' : '交付') + '补丁</button>' : '') + controls +
+      (run.finishedAt ? '<a class="btn" href="/api/runs/' + esc(run.runId) + '/report" download>下载验收报告（JSON）</a>' : '') +
       (deciding === run.runId ? '<p class="small" role="status">正在处理决策…</p>' : '') +
       (decisionError ? '<p class="notice" data-error="true" role="alert">' + esc(decisionError) + '</p>' : ''));
   }
@@ -334,14 +372,16 @@ export function dashboard(): void {
           const label = event.tag === 'rag' ? '知识检索' : event.tag === 'human' ? '人工决策' :
             event.tag === 'llm' ? '模型降级' : eventNames[event.kind];
           const dispatch = event.kind === 'scheduler' && info?.agentId;
+          const decision = event.tag === 'human' && info?.actor ? ' · ' + info.actor + ' · ' + info.reason : '';
           return '<li><time class="mono muted">' + time(event.at) + '</time>' + badge(label ?? event.kind) + ' ' +
             esc(dispatch ? nodeName(info.nodeId) + ' → ' + agentName(info.agentId) + ' · 有效优先级 ' + info.priority +
-              ' · 等待 ' + duration(info.wait) : event.message) + '</li>';
+              ' · 等待 ' + duration(info.wait) : event.message + decision) + '</li>';
         }).join('') + '</ol>');
       return;
     }
 
     const baseline = run.baselineVerification?.sandboxTestResult;
+    const baselineScan = run.baselineScan;
     const plan = [...(run.plan?.acceptanceCriteria ?? []), ...(run.plan?.invariants ?? [])];
     const rounds = run.loopRounds ?? [];
     const roundViews = rounds.map(round => {
@@ -361,11 +401,19 @@ export function dashboard(): void {
     show('evidence', '<div class="stack">' +
       (baseline ? '<details class="inset" id="baseline-' + esc(run.runId) + '"><summary>基线测试 · ' +
         (baseline.passed ? '通过' : '拦截') + '</summary><pre>' + esc(baseline.output) + '</pre></details>' : '') +
+      (baselineScan ? '<details class="inset" id="baseline-scan-' + esc(run.runId) + '"><summary>基线静态扫描 · ' +
+        baselineScan.length + ' 项问题</summary>' + (baselineScan.length
+          ? '<ul>' + baselineScan.map(issue => '<li>' +
+            esc(issue.rule + ' · 第 ' + issue.line + ' 行 · ' + issue.message) + '</li>').join('') + '</ul>'
+          : '<p class="muted small">静态规则未报告问题。</p>') + '</details>' : '') +
       (plan.length ? '<details class="inset" id="plan-' + esc(run.runId) + '"><summary>需求与架构 Agent 的修复计划</summary><ul>' +
         plan.map(item => '<li>' + esc(item) + '</li>').join('') + '</ul></details>' : '') +
       (roundViews || empty(run.status === 'running' ? '第一轮验证尚未完成。' : '此运行没有可查看的自愈轮次。')) +
       (run.citations?.length ? '<details id="citations-' + esc(run.runId) + '" class="inset small"><summary>知识检索引用 · ' +
-        run.citations.length + ' 条</summary><ul>' + run.citations.map(source => '<li>' + esc(source) + '</li>').join('') +
+        run.citations.length + ' 条</summary><ul>' + (run.knowledgeHits?.length ? run.knowledgeHits.map(hit =>
+          '<li><strong>' + esc(hit.title) + '</strong> · ' + esc(hit.id) + (hit.version ? ' · v' + esc(hit.version) : '') +
+          '<p class="muted">' + esc(hit.citation) + '</p><pre>' + esc(hit.content) + '</pre></li>').join('') :
+          run.citations.map(source => '<li>' + esc(source) + '</li>').join('')) +
         '</ul></details>' : '') + '</div>');
   }
 
@@ -390,7 +438,26 @@ export function dashboard(): void {
       ' · 累计 Token ' + agent.tokens.toLocaleString('zh-CN') + '</p><ul class="plain-list small">' +
       Object.entries(agent.capabilities).map(([name, score]) => '<li>' + esc(capabilities[name] ?? name) +
         ' · ' + pct(score) + '</li>').join('') + '</ul><p class="small muted">绑定工具 · ' +
-      esc(agent.toolIds.map(id => tools[id] ?? id).join('、') || '无') + '</p></details>').join(''));
+      esc(agent.toolIds.map(id => tools[id] ?? id).join('、') || '无') + '</p>' +
+      '<button class="link" type="button" data-agent-history="' + esc(agent.id) + '" data-focus="agent-history-' + esc(agent.id) +
+      '">查看 Agent 历史</button>' + agentHistory(agent.id) + '</details>').join(''));
+
+    const policy = snapshot.settings;
+    show('settings-policy', '<div class="workspace"><div><h3>模型与调度</h3><ul class="policy-list small">' +
+      '<li>' + esc(snapshot.llm.label) + '</li>' +
+      (policy.model ? '<li>降级策略 · ' + (policy.model.strict ? '严格 Live，失败即停止' : '允许离线降级') + '</li>' +
+        (policy.model.timeoutMs === undefined ? '' : '<li>单次模型请求超时 ' + duration(policy.model.timeoutMs) +
+          ' · 最多重试 ' + policy.model.maxRetries + ' 次 · 输出上限 ' + policy.model.maxTokens + ' Token</li>') : '') +
+      '<li>并发运行上限 ' + policy.maxConcurrentRuns + ' · 调度等待上限 ' + duration(policy.scheduler.maxWaitMs) +
+      ' · 节点最多重试 ' + policy.scheduler.maxRetries + ' 次</li></ul></div>' +
+      '<div><h3>工作流预算</h3><ul class="policy-list small">' + policy.workflows.map(flow => '<li>' +
+        esc(taskName(flow.taskId)) + ' · v' + esc(flow.version) +
+        (flow.timeoutMs ? ' · ' + duration(flow.timeoutMs) : '') + ' · 自愈最多 ' + Math.max(...flow.loopLimits, 0) +
+        ' 轮</li>').join('') + '</ul></div></div><div><h3>工具权限与超时</h3>' +
+      '<p class="small muted">Agent 可调用各自绑定的工具。工作流工具由服务端模板指定。</p><ul class="policy-list small">' +
+      policy.tools.map(tool => '<li>' + esc(tools[tool.id] ?? tool.id) +
+        (tool.timeoutMs ? ' · ' + duration(tool.timeoutMs) : '') + ' · ' + esc(tool.description) + '</li>').join('') +
+      '</ul></div>');
 
     show('system', '<div class="workspace"><div class="panel"><h3>工具调用</h3><div class="stack">' +
       (snapshot.tools.length ? '<ul class="plain-list small">' + snapshot.tools.map(tool => '<li>' +
@@ -404,6 +471,22 @@ export function dashboard(): void {
         ' · 新增 ' + record.addedGuardrails.length + ' 条约束</summary><ul>' +
         record.addedGuardrails.map(rule => '<li>' + esc(rule) + '</li>').join('') + '</ul></details>').join('') :
         '<p class="small muted">当验证失败触发新的提示词约束时，这里会显示优化记录。</p>') + '</div></div></div>');
+  }
+
+  function agentHistory(id: string): string {
+    const history = agentHistories.get(id);
+    if (typeof history === 'string') return '<p class="small" role="status">' + esc(history) + '</p>';
+    if (!history) return '';
+    return '<div class="small"><p class="muted">注册版本历史</p>' +
+      (history.versions.length ? '<ul>' + history.versions.map(version => '<li>v' + esc(version.version) +
+        ' · 并发 ' + version.maxConcurrency + ' · ' + esc(version.toolIds.map(tool => tools[tool] ?? tool).join('、')) +
+        '</li>').join('') + '</ul>' : '<p>当前版本尚无注册变更。</p>') +
+      '<p class="muted">最近参与的运行</p>' + (history.activity.length ? '<ul>' + history.activity.map(item =>
+        '<li><a href="/runs/' + esc(item.runId) + '">' + esc(item.runId + ' · ' + item.title) + '</a>' +
+        '<p>' + esc([...item.dispatches.map(dispatch => nodeName(dispatch.nodeId) + '（优先级 ' + dispatch.priority + '）'),
+          ...item.reviews.map(review => '第 ' + review.iteration + ' 轮' +
+            (review.role === 'critic' ? '诊断' : review.approved ? '审查通过' : '审查拦截'))].join('、')) +
+        '</p></li>').join('') + '</ul>' : '<p>尚无可查看的活动。</p>') + '</div>';
   }
 
   async function request<T>(url: string, body?: object): Promise<T> {
@@ -423,6 +506,30 @@ export function dashboard(): void {
     }, 90);
   }
 
+  function connectEvents(runId?: string): void {
+    if (stream && streamRun === runId) return;
+    stream?.close();
+    connected = false;
+    streamRun = runId;
+    const source = new EventSource(runId ? '/api/runs/' + encodeURIComponent(runId) + '/events' : '/api/events');
+    stream = source;
+    const refreshCurrent = () => {
+      if (stream === source) scheduleRefresh();
+    };
+    source.onopen = () => {
+      if (stream !== source) return;
+      connected = true;
+      scheduleRefresh();
+    };
+    source.onmessage = refreshCurrent;
+    source.addEventListener('reset', refreshCurrent);
+    source.onerror = () => {
+      if (stream !== source) return;
+      connected = false;
+      scheduleRefresh();
+    };
+  }
+
   async function refresh(): Promise<void> {
     if (refreshing) {
       refreshAgain = true;
@@ -436,15 +543,19 @@ export function dashboard(): void {
       if (selection !== requestedRun) return;
       data = snapshot;
       refreshFailed = false;
+      unavailableRun = snapshot.run ? undefined : selection || undefined;
       if (snapshot.run) {
         requestedRun = snapshot.run.runId;
         taskId = snapshot.run.taskId;
-      } else if (selection) {
-        requestedRun = '';
-        notice('所选运行已不可用，已切回工作流预览。');
       }
+      const linkedRun = routeRun();
+      connectEvents(linkedRun === snapshot.run?.runId ? linkedRun : undefined);
       setConnection(connected ? '实时已连接' : '定时刷新中', connected ? 'good' : 'warn');
       render();
+      if (revealOnLoad) {
+        revealOnLoad = false;
+        revealExecution();
+      }
     } catch {
       refreshFailed = true;
       setConnection('连接异常 · 正在重试', 'bad');
@@ -463,13 +574,18 @@ export function dashboard(): void {
     get('execution').scrollIntoView({ block: 'start' });
   }
 
-  function selectRun(id: string): void {
+  function selectRun(id: string | undefined, updateHistory = true): void {
+    const path = id ? '/runs/' + encodeURIComponent(id) : '/';
+    if (updateHistory && location.pathname !== path) window.history.pushState(null, '', path);
+    routePath = location.pathname;
     requestedRun = id;
+    unavailableRun = undefined;
     const match = data?.runs.find(run => run.runId === id);
     if (match) taskId = match.taskId;
     nodeId = '';
     tab = 'verification';
     decisionError = '';
+    decisionReason = '';
     render();
     scheduleRefresh();
   }
@@ -482,11 +598,8 @@ export function dashboard(): void {
       const result = goal === undefined
         ? await request<{ runId?: string }>('/api/tasks/run', { taskId: id })
         : await request<{ runId: string }>('/api/runs', { projectId: id, goal });
-      requestedRun = result.runId;
       if (id !== 'all') taskId = id;
-      nodeId = '';
-      tab = 'verification';
-      decisionError = '';
+      selectRun(result.runId);
       notice(id === 'all' ? '并发演示已启动。可用运行历史切换各案例。' : '已启动' + taskName(id) + '。');
       revealExecution();
     } catch (error) {
@@ -504,7 +617,8 @@ export function dashboard(): void {
     decisionError = '';
     render();
     try {
-      const result = await request<{ run: NonNullable<DashboardData['run']> }>('/api/runs/' + encodeURIComponent(runId) + '/escalate', { optionIndex: option });
+      const result = await request<{ run: NonNullable<DashboardData['run']> }>('/api/runs/' + encodeURIComponent(runId) +
+        '/escalate', { optionIndex: option, reason: decisionReason.trim() });
       if (requestedRun === runId) {
         if (result.run.runId !== runId) selectRun(result.run.runId);
         if (data) data.run = result.run;
@@ -532,10 +646,24 @@ export function dashboard(): void {
     void start(project.project.id, goal);
   });
   get<HTMLSelectElement>('run-history').addEventListener('change', event => selectRun((event.target as HTMLSelectElement).value));
+  get('run-summary').addEventListener('input', event => {
+    if ((event.target as HTMLElement).id === 'decision-reason') decisionReason = (event.target as HTMLInputElement).value;
+  });
   document.addEventListener('click', async event => {
     const button = (event.target as HTMLElement).closest('button');
     if (!button || button.disabled) return;
     const action = button.dataset;
+    if (action.agentHistory) {
+      const id = action.agentHistory;
+      agentHistories.set(id, '正在读取历史…');
+      render();
+      try {
+        agentHistories.set(id, await request<AgentHistory>('/api/agents/' + encodeURIComponent(id) + '/history'));
+      } catch {
+        agentHistories.set(id, '无法读取历史，请重试。');
+      }
+      render();
+    }
     if (action.run) void start(action.run);
     if (action.preview) {
       taskId = action.preview;
@@ -575,18 +703,14 @@ export function dashboard(): void {
     }
   });
 
-  const stream = new EventSource('/api/events');
-  stream.onopen = () => {
-    connected = true;
-    scheduleRefresh();
-  };
-  stream.onmessage = scheduleRefresh;
-  stream.onerror = () => {
-    connected = false;
-    scheduleRefresh();
-  };
+  window.addEventListener('popstate', () => {
+    if (location.pathname === routePath) return;
+    const runId = routeRun();
+    revealOnLoad = !!runId;
+    selectRun(runId, false);
+  });
   setInterval(() => {
-    if (!connected || refreshFailed || data?.runs.some(active)) scheduleRefresh();
+    if (!connected || refreshFailed || streamRun || data?.runs.some(active)) scheduleRefresh();
   }, 3000);
   void refresh();
 }

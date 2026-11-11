@@ -379,6 +379,8 @@ export type EventKind =
   | 'log';
 
 export interface OrchestratorEvent {
+  /** Stable cursor for the retained run event stream. */
+  id?: string;
   at: number;
   runId: string;
   kind: EventKind;

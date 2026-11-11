@@ -127,7 +127,11 @@ export class DeepSeekProvider implements LlmProvider {
 
   /** Masked form, safe to print. */
   public describe(): string {
-    return `${this.name}:${this.model} @ ${this.baseUrl}`;
+    return `${this.name}:${this.model} @ ${new URL(this.baseUrl).origin}`;
+  }
+
+  public getPolicy() {
+    return { timeoutMs: this.timeoutMs, maxRetries: this.maxRetries, maxTokens: this.maxTokens };
   }
 
   public async chat(messages: LlmMessage[], options: LlmChatOptions = {}): Promise<LlmResponse> {

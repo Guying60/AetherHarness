@@ -5,6 +5,7 @@
  * 负责分发 SPA 控制台静态页面并提供任务调度与人在回路决策控制 REST API。
  */
 import { createServer, IncomingMessage, ServerResponse, Server } from 'node:http';
+import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import { Orchestrator, RunSnapshot } from '../orchestrator.js';
@@ -30,12 +31,17 @@ function runDetail({ state, ...detail }: RunSnapshot) {
   return detail;
 }
 
+function eventFrame(event: OrchestratorEvent, scoped: boolean): string {
+  const cursor = scoped && event.id ? `id: ${event.id}\n` : '';
+  return `${cursor}data: ${JSON.stringify(event)}\n\n`;
+}
+
 export class WebServer {
   public readonly orchestrator: Orchestrator;
   public readonly port: number;
   public readonly host: string;
   private server?: Server;
-  private sseClients: Set<ServerResponse> = new Set();
+  private readonly sseClients = new Map<ServerResponse, string | undefined>();
   private unsubscribe?: () => void;
   private readonly ownsOrchestrator: boolean;
 
@@ -45,11 +51,6 @@ export class WebServer {
     this.ownsOrchestrator = !options.orchestrator;
     this.orchestrator = options.orchestrator ?? new Orchestrator({
       llm: options.llm, project: options.project, dataDir: options.dataDir
-    });
-
-    // Hook into orchestrator events to broadcast via SSE
-    this.unsubscribe = this.orchestrator.subscribe(event => {
-      this.broadcastSse(event);
     });
   }
 
@@ -61,6 +62,7 @@ export class WebServer {
         this.server = createServer((req, res) => this.handleRequest(req, res));
         this.server.on('error', reject);
         this.server.listen(this.port, this.host, () => {
+          this.unsubscribe ??= this.orchestrator.subscribe(event => this.broadcastSse(event));
           const address = this.server?.address();
           const actualPort = typeof address === 'object' && address ? address.port : this.port;
           const url = `http://${hostname}:${actualPort}`;
@@ -75,8 +77,9 @@ export class WebServer {
   }
 
   public async stop(): Promise<void> {
-    if (this.unsubscribe) this.unsubscribe();
-    for (const client of this.sseClients) {
+    this.unsubscribe?.();
+    this.unsubscribe = undefined;
+    for (const client of this.sseClients.keys()) {
       try {
         client.end();
       } catch {
@@ -95,14 +98,32 @@ export class WebServer {
   }
 
   private broadcastSse(event: OrchestratorEvent): void {
-    const data = `data: ${JSON.stringify(event)}\n\n`;
-    for (const client of this.sseClients) {
+    for (const [client, runId] of this.sseClients) {
+      if (runId !== undefined && runId !== event.runId) continue;
       try {
-        client.write(data);
+        client.write(eventFrame(event, runId !== undefined));
       } catch {
         this.sseClients.delete(client);
       }
     }
+  }
+
+  private openEvents(req: IncomingMessage, res: ServerResponse, runId?: string): void {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive'
+    });
+    res.write('retry: 3000\n\n');
+    if (runId) {
+      const history = this.orchestrator.getEvents(runId);
+      const cursor = req.headers['last-event-id'];
+      const index = typeof cursor === 'string' && cursor ? history.findIndex(event => event.id === cursor) : -1;
+      if (cursor && index < 0) res.write('id:\nevent: reset\ndata: {}\n\n');
+      for (const event of history.slice(index + 1)) res.write(eventFrame(event, true));
+    }
+    this.sseClients.set(res, runId);
+    res.on('close', () => this.sseClients.delete(res));
   }
 
   private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -129,8 +150,9 @@ export class WebServer {
 
     try {
       // 1. Dashboard UI
-      if (method === 'GET' && (pathname === '/' || pathname === '/index.html')) {
-        res.writeHead(200, {
+      const runPage = /^\/runs\/(run-\d+)$/.exec(pathname)?.[1];
+      if (method === 'GET' && (pathname === '/' || pathname === '/index.html' || runPage)) {
+        res.writeHead(runPage && !this.orchestrator.getRun(runPage) ? 404 : 200, {
           'Content-Type': 'text/html; charset=utf-8',
           'Cache-Control': 'no-cache'
         });
@@ -140,17 +162,16 @@ export class WebServer {
 
       // 2. Server-Sent Events (SSE) stream
       if (method === 'GET' && pathname === '/api/events') {
-        res.writeHead(200, {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive'
-        });
-        res.write('retry: 3000\n\n');
-        this.sseClients.add(res);
-
-        res.on('close', () => {
-          this.sseClients.delete(res);
-        });
+        this.openEvents(req, res);
+        return;
+      }
+      const eventRunId = /^\/api\/runs\/(run-\d+)\/events$/.exec(pathname)?.[1];
+      if (method === 'GET' && eventRunId) {
+        if (!this.orchestrator.getRun(eventRunId)) {
+          this.json(res, 404, { error: '所选运行不存在。' });
+          return;
+        }
+        this.openEvents(req, res, eventRunId);
         return;
       }
 
@@ -167,7 +188,7 @@ export class WebServer {
           workflow: task.buildWorkflow({ verificationSpec: task.verificationSpec })
         }));
         this.json(res, 200, {
-          tasks, scheduler, tools, llm, knowledgeChunks,
+          tasks, scheduler, tools, llm, knowledgeChunks, settings: this.orchestrator.getSettings(),
           repository: this.orchestrator.getProject(),
           persistentStorage: this.orchestrator.hasPersistentStorage(),
           agents: agents.map(agent => {
@@ -206,6 +227,60 @@ export class WebServer {
       // 4. API: Agents List
       if (method === 'GET' && pathname === '/api/agents') {
         this.json(res, 200, this.agentViews());
+        return;
+      }
+
+      const agentId = /^\/api\/agents\/([\w-]+)\/history$/.exec(pathname)?.[1];
+      if (method === 'GET' && agentId) {
+        if (!this.orchestrator.agents.get(agentId)) {
+          this.json(res, 404, { error: '所选 Agent 不存在。' });
+          return;
+        }
+        const versions = this.orchestrator.agents.getVersionHistory(agentId).map(({ version, toolIds, maxConcurrency }) =>
+          ({ version, toolIds, maxConcurrency }));
+        const activity = [];
+        for (const run of this.orchestrator.getRuns().reverse()) {
+          const dispatches = this.orchestrator.getEvents(run.runId)
+            .filter(event => event.kind === 'scheduler' && event.data?.agentId === agentId);
+          const reviews = (run.loopRounds ?? []).flatMap(round => [
+            ...(round.criticAgentId === agentId ? [{ iteration: round.iteration, role: 'critic' }] : []),
+            ...(round.verification.auditorReviews ?? []).filter(review => review.agentId === agentId)
+              .map(review => ({ iteration: round.iteration, role: 'audit', approved: review.approved }))
+          ]);
+          if (!dispatches.length && !reviews.length) continue;
+          activity.push({ runId: run.runId, title: run.title, dispatches: dispatches.map(event => ({
+            at: event.at, nodeId: event.data?.nodeId, priority: event.data?.priority, waitMs: event.data?.wait
+          })), reviews });
+          if (activity.length === 10) break;
+        }
+        this.json(res, 200, { versions, activity });
+        return;
+      }
+
+      const reportId = /^\/api\/runs\/(run-\d+)\/report$/.exec(pathname)?.[1];
+      if (method === 'GET' && reportId) {
+        const run = this.orchestrator.getRun(reportId);
+        if (!run) {
+          this.json(res, 404, { error: '所选运行不存在。' });
+          return;
+        }
+        const { artifact, patch, workflow, ...evidence } = runDetail(run);
+        const release = run.status === 'completed' && run.verification?.passed && !run.humanDecision;
+        const report = {
+          schemaVersion: 1,
+          ...evidence,
+          workflow: { id: workflow.id, version: workflow.version, timeoutMs: workflow.timeoutMs },
+          verdict: run.verification ? run.verification.passed ? 'passed' : 'blocked' : 'unknown',
+          delivery: {
+            status: !patch?.patch ? 'unavailable' : release ? 'verified' : 'draft',
+            filePath: patch?.filePath,
+            sha256: patch?.patch ? createHash('sha256').update(patch.patch).digest('hex') : undefined
+          },
+          events: this.orchestrator.getEvents(reportId)
+        };
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store',
+          'Content-Disposition': `attachment; filename="${reportId}-report.json"` });
+        res.end(JSON.stringify(report, null, 2) + '\n');
         return;
       }
 
@@ -286,6 +361,11 @@ export class WebServer {
         const runId = match![1];
         const body = await this.readJsonBody(req);
         const optionIndex = body.optionIndex;
+        const reason = body.reason;
+        if (reason !== undefined && (typeof reason !== 'string' || reason.length > 500)) {
+          this.json(res, 400, { error: '决策备注最多 500 字符。' });
+          return;
+        }
 
         const run = this.orchestrator.getRun(runId);
         if (!run) {
@@ -305,7 +385,7 @@ export class WebServer {
           this.json(res, 409, { error: '当前服务的任务配置与该历史运行不匹配，请重新配置后重试。' });
           return;
         }
-        const updated = await this.orchestrator.resolveEscalation(runId, optionIndex);
+        const updated = await this.orchestrator.resolveEscalation(runId, optionIndex, 'local Web operator', reason?.trim());
         this.json(res, 200, { success: true, run: runDetail(updated ?? run) });
         return;
       }

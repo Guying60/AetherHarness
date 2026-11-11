@@ -78,14 +78,17 @@ export function analystSpec(): LlmBrainSpec {
     user: ctx => {
       const data = input(ctx);
       const citations: string[] = Array.isArray(data.knowledgeCitations) ? data.knowledgeCitations : [];
+      const standards = Array.isArray(data.knowledgeHits)
+        ? data.knowledgeHits.map(hit => String(hit.citation) + '\n' + String(hit.content))
+        : citations;
       return [
         'Feature request:',
         String(data.goal ?? ctx.request.taskId),
         '',
         `Declared difficulty: ${String(data.difficulty ?? 'normal')}`,
         '',
-        'Retrieved standards (grounding):',
-        bulletList(citations)
+        'Retrieved standards (reference only, apply requirements relevant to the requested scope):',
+        bulletList(standards)
       ].join('\n');
     },
     parse: (content, ctx) => {
