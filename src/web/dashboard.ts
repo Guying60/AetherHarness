@@ -2,7 +2,10 @@ import type { Orchestrator, RunSnapshot } from '../orchestrator.js';
 import type { OrchestratorEvent, VerificationResult, WorkflowDefinition, WorkflowNode } from '../types/index.js';
 
 type Snapshot = ReturnType<Orchestrator['getSnapshot']>;
-type RunSummary = Pick<RunSnapshot, 'runId' | 'taskId' | 'status' | 'startedAt' | 'finishedAt' | 'humanDecision' | 'retryOf'>;
+type RunSummary = Pick<RunSnapshot, 'runId' | 'taskId' | 'title' | 'status' | 'startedAt' | 'finishedAt' | 'humanDecision' | 'retryOf'> & {
+  verificationPassed?: boolean;
+};
+type Page = 'workbench' | 'execution' | 'agents' | 'delivery' | 'settings';
 interface DashboardData {
   account: { username: string; role: 'operator' | 'viewer' };
   tasks: Array<{ id: string; title: string; description: string; prompt: string; difficulty: string; workflow: WorkflowDefinition }>;
@@ -88,16 +91,25 @@ export function dashboard(): void {
   const empty = (message: string) => '<p class="empty">' + esc(message) + '</p>';
   const nodeName = (id: string, fallback?: string) => nodeNames[id] ?? fallback ?? id;
   const active = (run: RunSummary) => run.status === 'pending' || run.status === 'running' || run.status === 'cancelling';
-  const routeRun = () => /^\/runs\/(run-\d+)$/.exec(location.pathname)?.[1];
+  const routeRun = () => /^\/runs\/(run-\d+)(?:\/delivery)?$/.exec(location.pathname)?.[1];
+  const routePage = (): Page => location.pathname === '/agents' ? 'agents' : location.pathname === '/settings' ? 'settings' :
+    location.pathname === '/delivery' || location.pathname.endsWith('/delivery') ? 'delivery' :
+      location.pathname.startsWith('/runs') ? 'execution' : 'workbench';
+  const routeScenario = () => new URLSearchParams(location.search).get('scenario');
+  const pageNames = { workbench: '工作台', execution: '任务执行', agents: 'Agent 中心', delivery: '验收与交付', settings: '系统设置' };
+  const runPath = (id: string, view: 'execution' | 'delivery' = 'execution') =>
+    '/runs/' + encodeURIComponent(id) + (view === 'delivery' ? '/delivery' : '');
+  const runTitle = (run: Pick<RunSnapshot, 'taskId' | 'title'>) => scenarios[run.taskId]?.title ?? run.title ?? taskName(run.taskId);
 
   let data: DashboardData | undefined;
-  let requestedRun = routeRun();
-  let routePath = location.pathname;
-  let revealOnLoad = !!requestedRun;
+  let page = routePage();
+  let requestedRun = routeRun() ?? (routeScenario() ? '' : undefined);
+  let routePath = location.pathname + location.search;
   let unavailableRun: string | undefined;
-  let taskId = 'rl-normal';
+  let taskId = routeScenario() ?? 'rl-normal';
   let nodeId = '';
-  let tab = 'verification';
+  let tab = page === 'delivery' ? 'result' : 'flow';
+  let settingsTab = 'model';
   let connected = false;
   let stream: EventSource | undefined;
   let streamRun: string | undefined;
@@ -146,7 +158,23 @@ export function dashboard(): void {
     element.dataset.error = String(error);
   }
 
+  function renderPage(): void {
+    for (const section of document.querySelectorAll<HTMLElement>('[data-page]')) {
+      section.hidden = !section.dataset.page?.split(' ').includes(page);
+    }
+    for (const link of document.querySelectorAll<HTMLAnchorElement>('[data-nav]')) {
+      if (link.dataset.nav === page) link.setAttribute('aria-current', 'page');
+      else link.removeAttribute('aria-current');
+    }
+    get('current-page').textContent = pageNames[page];
+    document.title = 'AetherHarness · ' + pageNames[page];
+    get('execution-body').hidden = page !== 'execution';
+    get('delivery-body').hidden = page !== 'delivery';
+    get('execution-title').textContent = page === 'delivery' ? '验收与交付' : '任务执行中心';
+  }
+
   function render(): void {
+    renderPage();
     if (!data) return;
     const run = data.run?.runId === requestedRun ? data.run : null;
     const task = data.tasks.find(item => item.id === taskId) ?? (run?.project ? undefined : data.tasks[0]);
@@ -155,31 +183,32 @@ export function dashboard(): void {
     const telemetry = data.llm.telemetry;
     const canOperate = data.account.role === 'operator';
     get('session-account').textContent = data.account.username + ' · ' + (canOperate ? '操作者' : '只读');
-    get('storage-status').textContent = data.persistentStorage
-      ? 'AetherHarness · 历史运行、验收证据与补丁已启用本地持久化。'
-      : 'AetherHarness · 当前服务使用进程内运行历史。';
+    get('sign-out').hidden = false;
+    get('storage-status').textContent = data.persistentStorage ? '历史与报告已启用本地持久化' : '运行历史保存在当前进程';
     get('mode').textContent = live ? '实时模型 · ' + data.llm.label + (telemetry ?
       ' · 调用 ' + telemetry.calls + ' 次 · 降级 ' + telemetry.fallbacks + ' 次' : '') :
-      '离线演示 · 无需 API 密钥。参赛演示可启用大模型。';
+      '离线演示 · 确定性 Agent';
     get<HTMLButtonElement>('run-all').hidden = !canOperate;
     get<HTMLButtonElement>('run-all').disabled = starting || busy || data.tasks.length === 0;
     const { project, ready, reason } = data.repository;
     get('project-status').textContent = ready && project
-      ? project.title + ' · ' + project.filePath + ' @ ' + project.revision.slice(0, 12)
+      ? project.filePath + ' @ ' + project.revision.slice(0, 12) + ' · 目标文件将发送至配置的模型端点。'
       : reason ?? '仓库任务不可用。';
+    show('project-select', project ? '<option value="' + esc(project.id) + '">' + esc(project.title) + '</option>' :
+      '<option value="">无配置仓库</option>');
+    get<HTMLSelectElement>('project-select').disabled = !canOperate || !ready;
     get('project-form').hidden = !canOperate;
     get<HTMLTextAreaElement>('project-goal').disabled = !canOperate || !ready;
     get<HTMLButtonElement>('project-submit').disabled = !canOperate || starting || !ready ||
       data.runs.some(item => item.taskId === project?.id && active(item));
 
-    show('scenario-cards', data.tasks.map((item, index) => {
+    show('scenario-cards', data.tasks.map(item => {
       const copy = scenarios[item.id];
       const title = taskName(item.id);
       const latest = data!.runs.findLast(record => record.taskId === item.id);
       const running = data!.runs.some(record => record.taskId === item.id && active(record));
       return '<article class="card scenario ' + (item.id === task?.id ? 'selected' : '') + '">' +
-        '<div class="row between"><span class="eyebrow">案例 ' + String(index + 1).padStart(2, '0') + '</span>' +
-        badge(copy?.label ?? item.difficulty, copy?.color) + '</div><h3>' + esc(title) + '</h3><p class="muted small">' +
+        '<div class="row">' + badge(copy?.label ?? item.difficulty, copy?.color) + '</div><h3>' + esc(title) + '</h3><p class="muted small">' +
         esc(copy?.detail ?? item.description) + '</p>' +
         '<div class="row small muted">最近运行 ' + (latest ? stateBadge(latest.humanDecision ?? latest.status) : '暂无') + '</div>' +
         '<div class="actions row">' + (canOperate ? '<button type="button" class="btn ' + (item.id === 'rl-normal' ? 'primary' : '') +
@@ -188,18 +217,51 @@ export function dashboard(): void {
         '<button type="button" class="link" data-preview="' + esc(item.id) + '" data-focus="preview-' + esc(item.id) +
         '" aria-label="预览' + esc(title) + '编排">预览编排</button></div></article>';
     }).join('') || empty('当前服务没有可用的案例。'));
+    show('overview', '<div class="metrics">' + [
+      ['已记录任务', data.runs.length],
+      ['进行中', data.runs.filter(active).length],
+      ['通过自动验收', data.runs.filter(item => item.status === 'completed' && item.verificationPassed && !item.humanDecision).length],
+      ['正在工作的 Agent', data.agents.filter(agent => agent.load > 0).length]
+    ].map(([label, value]) => metric(String(label), String(value))).join('') + '</div>');
+    const recent = data.runs.slice(-5).reverse();
+    show('recent-runs', recent.length ? '<ul class="plain-list record-list">' + recent.map(item =>
+      '<li><a class="row between" data-route href="' + runPath(item.runId) + '"><strong>' + esc(runTitle(item)) + '</strong>' +
+      stateBadge(item.humanDecision ?? item.status) + '</a><span class="mono muted small">' + esc(item.runId) + ' · ' +
+      time(item.startedAt) + '</span></li>').join('') + '</ul>' : empty('暂无运行记录'));
+
+    if (page === 'agents' || page === 'settings') {
+      renderOperations(data);
+      return;
+    }
+    if (page === 'workbench') return;
 
     const history = get<HTMLSelectElement>('run-history');
-    show('run-history', '<option value="">预览 · ' + esc(task ? taskName(task.id) : '工作流') + '</option>' +
+    const selectedTitle = run ? runTitle(run) : task ? taskName(task.id) : '';
+    show('run-history', '<option value="">' + (page === 'delivery' ? '最近结束的运行' : '预览 · ' + esc(selectedTitle)) + '</option>' +
       data.runs.slice().reverse().map(item => '<option value="' + esc(item.runId) + '">' +
-        esc(item.runId + ' · ' + taskName(item.taskId) + ' · ' + statusNames[item.humanDecision ?? item.status][0]) + '</option>').join(''));
+        esc(item.runId + ' · ' + runTitle(item) + ' · ' + (statusNames[item.humanDecision ?? item.status]?.[0] ?? item.status)) +
+        '</option>').join(''));
     history.disabled = data.runs.length === 0;
     history.value = requestedRun ?? '';
 
-    renderWorkflow(run?.workflow ?? task?.workflow, run);
-    renderRun(run, run?.project ? run.title : task ? taskName(task.id) : '', run?.goal ?? task?.prompt);
+    show('run-caption', run ? '<strong>' + esc(selectedTitle) + '</strong> <span class="mono">' + esc(run.runId) +
+      '</span> ' + stateBadge(run.humanDecision ?? run.status) : '');
+    if (page === 'execution') {
+      get('flow-content').hidden = tab !== 'flow';
+      get('execution-evidence').hidden = tab === 'flow';
+      if (tab === 'flow') renderWorkflow(run?.workflow ?? task?.workflow, run);
+      renderRun(run, selectedTitle, run?.goal ?? task?.prompt);
+      renderRunAgents(run);
+    } else {
+      get('delivery-summary').hidden = tab !== 'result';
+      get('delivery-evidence').hidden = tab === 'result';
+      if (tab === 'result') renderDelivery(run);
+    }
     renderEvidence(run);
-    renderOperations(data);
+  }
+
+  function metric(label: string, value: string): string {
+    return '<div class="inset metric"><span class="muted small">' + esc(label) + '</span><strong>' + esc(value) + '</strong></div>';
   }
 
   function renderWorkflow(workflow: WorkflowDefinition | undefined, run: DashboardData['run']): void {
@@ -222,15 +284,26 @@ export function dashboard(): void {
       if (layer !== undefined) (stages[layer] ??= []).push(node);
     }
     const nodeButton = (node: WorkflowNode) => {
-      const status = progress[node.id]?.status ?? (branches.has(node.id) || (run && run.status !== 'running') ? 'skipped' : 'pending');
+      const status = progress[node.id]?.status ?? (branches.has(node.id) || (run && run.finishedAt) ? 'skipped' : 'pending');
       return '<button type="button" class="node" data-node="' + esc(node.id) + '" data-focus="' + esc(node.id) +
-        '" aria-pressed="' + String(node.id === nodeId) + '"><strong>' + esc(nodeName(node.id, node.name)) +
+        '" data-state="' + esc(status) + '" aria-pressed="' + String(node.id === nodeId) + '"><strong>' + esc(nodeName(node.id, node.name)) +
         '</strong>' + stateBadge(status) + '</button>';
     };
     const innerIds = new Set(workflow.nodes.flatMap(node => node.selfLoopConfig ?
       [node.selfLoopConfig.targetNodeId, node.selfLoopConfig.verificationNodeId] : []));
     const insideLoop = [...innerIds].map(id => nodes.get(id)).filter((node): node is WorkflowNode => !!node);
-    show('pipeline-flow', stages.map(stage => '<div class="stage">' + stage.map(nodeButton).join('') + '</div>').join(''));
+    const edges = new Set(workflow.edges.map(edge => edge.from + '/' + edge.to));
+    const merges = stages.map((stage, index) => stages[index - 1]?.length === 2 && stage.length === 1 &&
+      stages[index - 1].every(node => edges.has(node.id + '/' + stage[0].id)));
+    show('execution-steps', stages.flat().map(nodeButton).join(''));
+    show('pipeline-flow', stages.map((stage, index) => {
+      const before = stages[index - 1];
+      const fork = before?.length === 1 && stage.length === 2 &&
+        stage.every(node => edges.has(before[0].id + '/' + node.id));
+      return '<div class="stage' + (fork ? ' fork' : merges[index] ? ' merge' : '') +
+        '" style="--branch-count:' + stage.length + '">' + stage.map(node =>
+          '<div class="graph-node"' + (merges[index + 1] ? ' data-merge' : '') + '>' + nodeButton(node) + '</div>').join('') + '</div>';
+    }).join(''));
     const selected = nodes.get(nodeId);
     let detail = '<p class="muted small">点击节点查看下游路径、执行状态和配置。</p>';
     if (selected) {
@@ -332,11 +405,62 @@ export function dashboard(): void {
       (run.modelLabel ? '<p class="small muted">运行模型 · ' + esc(run.modelLabel) + '</p>' : '') +
       (run.project ? '<p class="small muted">Git 基线 · <code>' + esc(run.project.revision.slice(0, 12)) + '</code></p>' : '') + brief +
       (outcome === 'retry' && retry ? '<button class="btn" type="button" data-select-run="' + esc(retry.runId) + '">查看本次重试</button>' : '') +
-      (run.patch?.patch ? '<button class="btn" type="button" data-tab="artifact" data-focus="open-artifact">查看' +
-        (outcome === 'review' ? '草稿' : '交付') + '补丁</button>' : '') + controls +
+      (run.finishedAt ? '<a class="btn" data-route href="' + runPath(run.runId, 'delivery') + '">查看验收与交付</a>' : '') + controls +
       (run.finishedAt ? '<a class="btn" href="/api/runs/' + esc(run.runId) + '/report" download>下载验收报告（JSON）</a>' : '') +
       (deciding === run.runId ? '<p class="small" role="status">正在处理决策…</p>' : '') +
       (decisionError ? '<p class="notice" data-error="true" role="alert">' + esc(decisionError) + '</p>' : ''));
+  }
+
+  function renderRunAgents(run: DashboardData['run']): void {
+    const participation = new Map<string, Set<string>>();
+    const add = (agentId: string, label: string) => {
+      const labels = participation.get(agentId) ?? new Set<string>();
+      labels.add(label);
+      participation.set(agentId, labels);
+    };
+    if (run) {
+      for (const event of data?.events ?? []) {
+        if (event.kind === 'scheduler' && event.data?.agentId && typeof event.data.nodeId === 'string') {
+          add(event.data.agentId, nodeName(event.data.nodeId));
+        }
+      }
+      for (const round of run.loopRounds ?? []) {
+        if (round.criticAgentId) add(round.criticAgentId, '根因诊断');
+        for (const audit of round.verification.auditorReviews ?? []) add(audit.agentId, '交叉审查');
+      }
+    }
+    show('run-agents', participation.size ? '<ul class="plain-list record-list">' + [...participation].map(([id, labels]) =>
+      '<li><strong>' + esc(agentName(id)) + '</strong><p class="muted small">' + esc([...labels].join('、')) +
+      '</p></li>').join('') + '</ul>' : empty('暂无本次运行的派发或审查记录。'));
+  }
+
+  function renderDelivery(run: DashboardData['run']): void {
+    if (!run) {
+      show('delivery-summary', empty(unavailableRun ? '找不到运行 ' + unavailableRun + '。' : '暂无验收结果，请选择历史运行。'));
+      return;
+    }
+    const verification = run.verification;
+    const sandbox = verification?.sandboxTestResult;
+    const patch = run.patch?.patch;
+    const draft = !!patch && !(run.status === 'completed' && verification?.passed && !run.humanDecision);
+    const assertionCount = sandbox?.passedCount !== undefined && sandbox.totalCount !== undefined
+      ? sandbox.passedCount + ' / ' + sandbox.totalCount : '—';
+    const verdict = verification ? badge(verification.passed ? '自动验收通过' : '自动验收阻塞', verification.passed ? 'good' : 'bad') :
+      badge('暂无最终验收');
+    show('delivery-summary', '<div class="row between"><h2>验收结果</h2>' + verdict + '</div>' +
+      '<div class="metrics">' + metric('最终沙箱断言', assertionCount) +
+      metric('验证得分', verification ? pct(verification.score) : '—') +
+      metric('自愈轮数', run.iterations === undefined ? '—' : String(run.iterations)) +
+      metric('运行耗时', run.finishedAt ? duration(run.finishedAt - run.startedAt) : '—') + '</div>' +
+      (verification?.blockingReasons?.length ? '<p class="small muted">' + esc(verification.blockingReasons.join(' · ')) + '</p>' : '') +
+      '<h3>交付物</h3>' +
+      (patch ? '<div class="inset row between"><div class="row"><code>' + esc(run.patch?.filePath) + '</code>' +
+        badge(draft ? '待复审草稿' : '已验证补丁', draft ? 'warn' : 'good') + '</div><div class="row">' +
+        '<button class="btn" type="button" data-tab="artifact">查看 Diff</button><button class="btn primary" type="button" data-download>下载补丁</button></div></div>' :
+        '<p class="muted small">本次运行没有可下载的补丁。</p>') +
+      (run.finishedAt ? '<div class="inset row between"><strong>验收报告</strong><a class="btn" href="/api/runs/' +
+        esc(run.runId) + '/report" download>下载 JSON 报告</a></div>' : '') +
+      '<div><a class="link" data-route href="' + runPath(run.runId) + '">查看任务执行</a></div>');
   }
 
   function verification(result: VerificationResult): string {
@@ -361,8 +485,39 @@ export function dashboard(): void {
     for (const button of document.querySelectorAll('.tab[data-tab]')) {
       button.setAttribute('aria-pressed', String((button as HTMLElement).dataset.tab === tab));
     }
+    if (tab === 'flow' || tab === 'result') return;
+    const evidence = page === 'delivery' ? 'delivery-evidence' : 'execution-evidence';
     if (!run) {
-      show('evidence', empty('启动案例或选择历史运行后，这里会展示该次运行的证据。'));
+      show(evidence, empty('启动案例或选择历史运行后，这里会展示该次运行的证据。'));
+      return;
+    }
+    if (tab === 'tools') {
+      const calls = Object.entries(run.nodeProgress ?? {}).filter(([, item]) => !!item.toolId);
+      const tests = (run.loopRounds ?? []).filter(round => !!round.verification.sandboxTestResult);
+      const baseline = run.baselineVerification?.sandboxTestResult;
+      show(evidence, '<div class="stack"><h3>本次运行的工具与测试</h3>' + (calls.length || tests.length || baseline ?
+        '<ul class="plain-list record-list">' + calls.map(([id, item]) => '<li><div class="row between"><strong>' +
+          esc(tools[item.toolId!] ?? item.toolId) + '</strong>' + stateBadge(item.status) + '</div><p class="small muted">' +
+          esc(nodeName(id.split('/').at(-1)!, item.nodeName)) + ' · ' + time(item.startTime) +
+          (item.endTime !== undefined ? ' · ' + duration(item.endTime - item.startTime) : '') +
+          '</p>' + (item.error ? '<p>' + esc(item.error) + '</p>' : '') + '</li>').join('') +
+        (baseline ? '<li><strong>基线沙箱测试</strong><p class="small muted">' + esc(baseline.output) + '</p></li>' : '') +
+        tests.map(round => '<li><strong>第 ' + round.iteration + ' 轮沙箱测试</strong><p class="small muted">' +
+          esc(round.verification.sandboxTestResult?.output) + '</p></li>').join('') + '</ul>' :
+        empty('暂无工具调用或沙箱测试记录。')) + '</div>');
+      return;
+    }
+    if (tab === 'context') {
+      const goal = run.goal ?? data?.tasks.find(item => item.id === run.taskId)?.prompt;
+      const plan = [...(run.plan?.acceptanceCriteria ?? []), ...(run.plan?.invariants ?? [])];
+      show(evidence, '<div class="stack"><h3>任务上下文</h3>' +
+        (goal ? '<div class="inset"><h4>任务描述</h4><pre>' + esc(goal) + '</pre></div>' : '') +
+        (run.project ? '<div class="inset"><h4>固定仓库</h4><p class="small muted">' + esc(run.project.filePath) +
+          '</p><code>' + esc(run.project.revision) + '</code></div>' : '') +
+        (plan.length ? '<div class="inset"><h4>修复计划</h4><ul>' + plan.map(item => '<li>' + esc(item) + '</li>').join('') + '</ul></div>' : '') +
+        (run.knowledgeHits?.length ? '<div class="inset"><h4>知识检索</h4>' + run.knowledgeHits.map(hit =>
+          '<p><strong>' + esc(hit.title) + '</strong> <span class="muted">' + esc(hit.citation) + '</span></p>').join('') +
+          '</div>' : '') + '</div>');
       return;
     }
     if (tab === 'artifact') {
@@ -370,7 +525,7 @@ export function dashboard(): void {
       const draft = !run.verification?.passed || run.status !== 'completed' || !!run.humanDecision;
       const lines = patch?.split('\n').map(line => '<span class="' +
         (line.startsWith('+') ? 'added' : line.startsWith('-') ? 'removed' : '') + '">' + esc(line) + '</span>').join('\n');
-      show('evidence', '<div class="stack">' +
+      show(evidence, '<div class="stack">' +
         (patch ? '<div class="row between"><div class="row">' + badge(draft ? '待复审草稿' : '已验证补丁', draft ? 'warn' : 'good') +
           '<strong class="mono small">' + esc(run.patch?.filePath) + '</strong></div><div class="row">' +
           '<button type="button" class="btn" data-copy>复制补丁</button><button type="button" class="btn primary" data-download>下载补丁</button>' +
@@ -382,7 +537,7 @@ export function dashboard(): void {
       return;
     }
     if (tab === 'events') {
-      show('evidence', !data?.events.length ? empty('当前没有可显示的运行事件。') :
+      show(evidence, !data?.events.length ? empty('当前没有可显示的运行事件。') :
         '<p class="small muted">此运行最近 ' + data.events.length + ' 条事件，最新在前。</p><ol class="log small">' +
         data.events.slice().reverse().map(event => {
           const info = event.data;
@@ -415,7 +570,7 @@ export function dashboard(): void {
         (round.criticFeedback ? '<div class="inset small"><strong>诊断与修复建议</strong><pre>' +
           esc(round.criticFeedback) + '</pre></div>' : '') + '</div></details>';
     }).join('');
-    show('evidence', '<div class="stack">' +
+    show(evidence, '<div class="stack">' +
       (baseline ? '<details class="inset" id="baseline-' + esc(run.runId) + '"><summary>基线测试 · ' +
         (baseline.passed ? '通过' : '拦截') + '</summary><pre>' + esc(baseline.output) + '</pre></details>' : '') +
       (baselineScan ? '<details class="inset" id="baseline-scan-' + esc(run.runId) + '"><summary>基线静态扫描 · ' +
@@ -435,6 +590,10 @@ export function dashboard(): void {
   }
 
   function renderOperations(snapshot: DashboardData): void {
+    if (page === 'settings') {
+      renderSettings(snapshot);
+      return;
+    }
     const s = snapshot.scheduler;
     show('scheduler', '<div class="metrics">' + [
       ['等待派发', s.queued], ['正在执行', s.running], ['累计派发', s.dispatches], ['重试', s.retried]
@@ -447,9 +606,13 @@ export function dashboard(): void {
         item.effectivePriority + ' · 已等待 ' + duration(Math.max(0, Date.now() - item.submittedAt)) + '</li>').join('') +
         '</ul>' : '<p class="muted small">等待队列为空。并发运行全部案例可以观察队列和负载变化。</p>'));
 
+    const roleIcons: Record<string, string> = { requirement_analyst: '≡', architect: '◇', developer: '⌘',
+      code_reviewer: '✓', security_auditor: '◈', critic: '⌕' };
     show('team', snapshot.agents.map(agent => '<details id="agent-' + esc(agent.id) +
-      '" class="card agent"><summary>' + esc(roles[agent.role] ?? agent.role) + ' · ' + esc(agent.name) +
-      '</summary><p class="muted small">并发负载 ' + agent.load + ' / ' + agent.max + '</p>' +
+      '" class="card agent"><summary><span class="agent-title"><span class="agent-icon" aria-hidden="true">' +
+      esc(roleIcons[agent.role] ?? '◇') + '</span><strong>' + esc(agent.name) + '</strong> ' +
+      badge(agent.load > 0 ? '运行中' : '空闲', agent.load > 0 ? 'active' : 'good') + '</span><span class="small muted">' +
+      esc(roles[agent.role] ?? agent.role) + ' · 并发 ' + agent.load + ' / ' + agent.max + '</span></summary>' +
       '<progress value="' + agent.load + '" max="' + agent.max + '" aria-label="' + esc(agent.name) +
       ' 并发负载"></progress><p class="small muted">配置 v' + esc(agent.version) + ' · ' + esc(agent.brain) +
       ' · 累计 Token ' + agent.tokens.toLocaleString('zh-CN') + '</p><ul class="plain-list small">' +
@@ -458,23 +621,6 @@ export function dashboard(): void {
       esc(agent.toolIds.map(id => tools[id] ?? id).join('、') || '无') + '</p>' +
       '<button class="link" type="button" data-agent-history="' + esc(agent.id) + '" data-focus="agent-history-' + esc(agent.id) +
       '">查看 Agent 历史</button>' + agentHistory(agent.id) + '</details>').join(''));
-
-    const policy = snapshot.settings;
-    show('settings-policy', '<div class="workspace"><div><h3>模型与调度</h3><ul class="policy-list small">' +
-      '<li>' + esc(snapshot.llm.label) + '</li>' +
-      (policy.model ? '<li>降级策略 · ' + (policy.model.strict ? '严格 Live，失败即停止' : '允许离线降级') + '</li>' +
-        (policy.model.timeoutMs === undefined ? '' : '<li>单次模型请求超时 ' + duration(policy.model.timeoutMs) +
-          ' · 最多重试 ' + policy.model.maxRetries + ' 次 · 输出上限 ' + policy.model.maxTokens + ' Token</li>') : '') +
-      '<li>并发运行上限 ' + policy.maxConcurrentRuns + ' · 调度等待上限 ' + duration(policy.scheduler.maxWaitMs) +
-      ' · 节点最多重试 ' + policy.scheduler.maxRetries + ' 次</li></ul></div>' +
-      '<div><h3>工作流预算</h3><ul class="policy-list small">' + policy.workflows.map(flow => '<li>' +
-        esc(taskName(flow.taskId)) + ' · v' + esc(flow.version) +
-        (flow.timeoutMs ? ' · ' + duration(flow.timeoutMs) : '') + ' · 自愈最多 ' + Math.max(...flow.loopLimits, 0) +
-        ' 轮</li>').join('') + '</ul></div></div><div><h3>工具权限与超时</h3>' +
-      '<p class="small muted">Agent 可调用各自绑定的工具。工作流工具由服务端模板指定。</p><ul class="policy-list small">' +
-      policy.tools.map(tool => '<li>' + esc(tools[tool.id] ?? tool.id) +
-        (tool.timeoutMs ? ' · ' + duration(tool.timeoutMs) : '') + ' · ' + esc(tool.description) + '</li>').join('') +
-      '</ul></div>');
 
     show('system', '<div class="workspace"><div class="panel"><h3>工具调用</h3><div class="stack">' +
       (snapshot.tools.length ? '<ul class="plain-list small">' + snapshot.tools.map(tool => '<li>' +
@@ -490,6 +636,51 @@ export function dashboard(): void {
         '<p class="small muted">当验证失败触发新的提示词约束时，这里会显示优化记录。</p>') + '</div></div></div>');
   }
 
+  function renderSettings(snapshot: DashboardData): void {
+    const policy = snapshot.settings;
+    for (const button of document.querySelectorAll<HTMLElement>('[data-settings]')) {
+      button.setAttribute('aria-pressed', String(button.dataset.settings === settingsTab));
+    }
+    if (settingsTab === 'tools') {
+      show('settings-policy', '<h2>工具权限与超时</h2><p class="small muted">Agent 的工具权限由角色绑定。工作流工具由服务端模板指定。</p>' +
+        '<ul class="plain-list record-list">' + policy.tools.map(tool => {
+          const bindings = snapshot.agents.filter(agent => agent.toolIds.includes(tool.id)).map(agent => agent.name);
+          return '<li><div class="row between"><strong>' + esc(tools[tool.id] ?? tool.id) + '</strong>' +
+            (tool.timeoutMs ? badge(duration(tool.timeoutMs)) : '') + '</div><p class="muted small">' + esc(tool.description) +
+            '</p><p class="small">' + esc(bindings.length ? '已绑定 · ' + bindings.join('、') : '暂无 Agent 绑定') + '</p></li>';
+        }).join('') + '</ul>');
+      return;
+    }
+    if (settingsTab === 'strategy') {
+      show('settings-policy', '<h2>执行策略</h2><div class="metrics">' +
+        metric('并发运行上限', String(policy.maxConcurrentRuns)) +
+        metric('调度等待上限', duration(policy.scheduler.maxWaitMs)) +
+        metric('节点重试上限', String(policy.scheduler.maxRetries)) + '</div>' +
+        '<h3>工作流预算</h3><ul class="plain-list record-list">' + policy.workflows.map(flow => '<li>' +
+          esc(taskName(flow.taskId)) + ' · v' + esc(flow.version) +
+          (flow.timeoutMs ? ' · ' + duration(flow.timeoutMs) : '') + ' · 自愈最多 ' + Math.max(...flow.loopLimits, 0) +
+          ' 轮</li>').join('') + '</ul>');
+      return;
+    }
+    if (settingsTab === 'runtime') {
+      const { project, ready, reason } = snapshot.repository;
+      show('settings-policy', '<h2>运行环境</h2><ul class="plain-list record-list">' +
+        '<li><strong>历史存储</strong><p class="muted">' + (snapshot.persistentStorage ? '本地持久化已启用' : '当前服务进程内存') +
+        '</p></li><li><strong>固定 Git 仓库</strong><p class="muted">' + esc(project ? project.title + ' · ' + project.filePath : '未配置') +
+        '</p>' + (project ? '<p><code>' + esc(project.revision) + '</code></p>' : '') +
+        (ready || !reason ? '' : '<p class="muted">' + esc(reason) + '</p>') + '</li>' +
+        (project ? '<li><strong>固定验收镜像</strong><p class="muted"><code>' + esc(project.runnerImage) + '</code></p></li>' : '') + '</ul>');
+      return;
+    }
+    show('settings-policy', '<div class="row between"><h2>当前推理模式</h2>' +
+      badge(policy.model ? 'Live 模式' : '离线演示', policy.model ? 'active' : '') + '</div><div class="inset">' +
+      '<strong>' + esc(snapshot.llm.label) + '</strong>' +
+      (policy.model ? '<p class="muted small">' + (policy.model.strict ? '严格 Live，失败即停止' : '允许离线降级') + '</p>' +
+        (policy.model.timeoutMs === undefined ? '' : '<p class="muted small">单次请求超时 ' + duration(policy.model.timeoutMs) +
+          ' · 最多重试 ' + policy.model.maxRetries + ' 次 · 输出上限 ' + policy.model.maxTokens + ' Token</p>') : '') +
+      '</div><p class="small muted">通过服务启动参数配置模型，重启后生效。启动时不启用 Live 将使用确定性 Agent。</p>');
+  }
+
   function agentHistory(id: string): string {
     const history = agentHistories.get(id);
     if (typeof history === 'string') return '<p class="small" role="status">' + esc(history) + '</p>';
@@ -499,7 +690,7 @@ export function dashboard(): void {
         ' · 并发 ' + version.maxConcurrency + ' · ' + esc(version.toolIds.map(tool => tools[tool] ?? tool).join('、')) +
         '</li>').join('') + '</ul>' : '<p>当前版本尚无注册变更。</p>') +
       '<p class="muted">最近参与的运行</p>' + (history.activity.length ? '<ul>' + history.activity.map(item =>
-        '<li><a href="/runs/' + esc(item.runId) + '">' + esc(item.runId + ' · ' + item.title) + '</a>' +
+        '<li><a data-route href="' + runPath(item.runId) + '">' + esc(item.runId + ' · ' + item.title) + '</a>' +
         '<p>' + esc([...item.dispatches.map(dispatch => nodeName(dispatch.nodeId) + '（优先级 ' + dispatch.priority + '）'),
           ...item.reviews.map(review => '第 ' + review.iteration + ' 轮' +
             (review.role === 'critic' ? '诊断' : review.approved ? '审查通过' : '审查拦截'))].join('、')) +
@@ -510,6 +701,10 @@ export function dashboard(): void {
     const response = await fetch(url, body ? {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
     } : undefined);
+    if (response.status === 401) {
+      stream?.close();
+      location.replace('/login?expired=1&next=' + encodeURIComponent(location.pathname));
+    }
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error ?? 'HTTP ' + response.status);
     return payload;
@@ -554,10 +749,14 @@ export function dashboard(): void {
     }
     refreshing = true;
     const selection = requestedRun;
+    const selectedRoute = routePath;
     try {
-      const query = selection === undefined ? '' : '?runId=' + encodeURIComponent(selection);
-      const snapshot = await request<DashboardData>('/api/dashboard' + query);
-      if (selection !== requestedRun) return;
+      const query = new URLSearchParams();
+      if (page === 'delivery') query.set('view', 'delivery');
+      if (page !== 'delivery' && page !== 'execution') query.set('runId', '');
+      else if (selection !== undefined) query.set('runId', selection);
+      const snapshot = await request<DashboardData>('/api/dashboard?' + query);
+      if (selectedRoute !== routePath || selection !== requestedRun) return;
       data = snapshot;
       refreshFailed = false;
       unavailableRun = snapshot.run ? undefined : selection || undefined;
@@ -569,10 +768,6 @@ export function dashboard(): void {
       connectEvents(linkedRun === snapshot.run?.runId ? linkedRun : undefined);
       setConnection(connected ? '实时已连接' : '定时刷新中', connected ? 'good' : 'warn');
       render();
-      if (revealOnLoad) {
-        revealOnLoad = false;
-        revealExecution();
-      }
     } catch {
       refreshFailed = true;
       setConnection('连接异常 · 正在重试', 'bad');
@@ -586,25 +781,36 @@ export function dashboard(): void {
     }
   }
 
-  function revealExecution(): void {
-    get('execution-title').focus({ preventScroll: true });
-    get('execution').scrollIntoView({ block: 'start' });
-  }
-
-  function selectRun(id: string | undefined, updateHistory = true): void {
-    const path = id ? '/runs/' + encodeURIComponent(id) : '/';
-    if (updateHistory && location.pathname !== path) window.history.pushState(null, '', path);
-    routePath = location.pathname;
-    requestedRun = id;
+  function syncRoute(focus: boolean): void {
+    routePath = location.pathname + location.search;
+    page = routePage();
+    requestedRun = routeRun() ?? (routeScenario() ? '' : undefined);
     unavailableRun = undefined;
-    const match = data?.runs.find(run => run.runId === id);
-    if (match) taskId = match.taskId;
+    const match = data?.runs.find(run => run.runId === requestedRun);
+    taskId = routeScenario() ?? match?.taskId ?? 'rl-normal';
     nodeId = '';
-    tab = 'verification';
+    tab = page === 'delivery' ? 'result' : 'flow';
     decisionError = '';
     decisionReason = '';
     render();
+    if (focus) {
+      const heading = page === 'workbench' ? 'heading' : page === 'agents' ? 'team-title' :
+        page === 'settings' ? 'settings-title' : 'execution-title';
+      get(heading).focus({ preventScroll: true });
+      window.scrollTo(0, 0);
+    }
     scheduleRefresh();
+  }
+
+  function navigate(path: string): void {
+    if (routePath !== path) window.history.pushState(null, '', path);
+    notice('');
+    syncRoute(true);
+  }
+
+  function selectRun(id: string | undefined, view: 'execution' | 'delivery' = 'execution'): void {
+    navigate(id ? runPath(id, view) : view === 'delivery' ? '/delivery' :
+      id === '' ? '/runs?scenario=' + encodeURIComponent(taskId) : '/runs');
   }
 
   async function start(id: string, goal?: string): Promise<void> {
@@ -618,7 +824,6 @@ export function dashboard(): void {
       if (id !== 'all') taskId = id;
       selectRun(result.runId);
       notice(id === 'all' ? '并发演示已启动。可用运行历史切换各案例。' : '已启动' + taskName(id) + '。');
-      revealExecution();
     } catch (error) {
       notice('启动失败。' + (error instanceof Error ? error.message : ''), true);
     } finally {
@@ -639,7 +844,10 @@ export function dashboard(): void {
       if (requestedRun === runId) {
         if (result.run.runId !== runId) selectRun(result.run.runId);
         if (data) data.run = result.run;
-        if (option === 1) tab = 'artifact';
+        if (option === 1) {
+          selectRun(result.run.runId, 'delivery');
+          tab = 'artifact';
+        }
       }
     } catch (error) {
       if (requestedRun === runId) decisionError = '操作提交失败。' + (error instanceof Error ? error.message : '');
@@ -651,25 +859,49 @@ export function dashboard(): void {
   }
 
   get('run-all').addEventListener('click', () => void start('all'));
+  get<HTMLButtonElement>('sign-out').addEventListener('click', async event => {
+    const button = event.currentTarget as HTMLButtonElement;
+    button.disabled = true;
+    try {
+      const response = await fetch('/api/logout', { method: 'POST' });
+      if (!response.ok) throw new Error('Could not sign out');
+      stream?.close();
+      location.replace('/login');
+    } catch {
+      notice('退出失败，请重试。', true);
+      button.disabled = false;
+    }
+  });
   get<HTMLFormElement>('project-form').addEventListener('submit', event => {
     event.preventDefault();
     const project = data?.repository;
     const goal = get<HTMLTextAreaElement>('project-goal').value.trim();
-    if (!project?.ready || !project.project) return;
+    if (!project?.ready || !project.project || get<HTMLSelectElement>('project-select').value !== project.project.id) return;
     if (!goal) {
       notice('请输入任务描述。', true);
       return;
     }
     void start(project.project.id, goal);
   });
-  get<HTMLSelectElement>('run-history').addEventListener('change', event => selectRun((event.target as HTMLSelectElement).value));
+  get<HTMLSelectElement>('run-history').addEventListener('change', event =>
+    selectRun((event.target as HTMLSelectElement).value, page === 'delivery' ? 'delivery' : 'execution'));
   get('run-summary').addEventListener('input', event => {
     if ((event.target as HTMLElement).id === 'decision-reason') decisionReason = (event.target as HTMLInputElement).value;
   });
   document.addEventListener('click', async event => {
+    const link = (event.target as HTMLElement).closest<HTMLAnchorElement>('a[data-route]');
+    if (link && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) {
+      event.preventDefault();
+      navigate(link.pathname + link.search);
+      return;
+    }
     const button = (event.target as HTMLElement).closest('button');
     if (!button || button.disabled) return;
     const action = button.dataset;
+    if (action.settings) {
+      settingsTab = action.settings;
+      render();
+    }
     if (action.agentHistory) {
       const id = action.agentHistory;
       agentHistories.set(id, '正在读取历史…');
@@ -685,7 +917,6 @@ export function dashboard(): void {
     if (action.preview) {
       taskId = action.preview;
       selectRun('');
-      revealExecution();
     }
     if (action.selectRun) selectRun(action.selectRun);
     if (action.node) {
@@ -695,7 +926,6 @@ export function dashboard(): void {
     if (action.tab) {
       tab = action.tab;
       render();
-      if (!button.classList.contains('tab')) get('evidence').scrollIntoView({ block: 'nearest' });
     }
     const run = data?.run;
     if (!run || run.runId !== requestedRun) return;
@@ -722,13 +952,14 @@ export function dashboard(): void {
   });
 
   window.addEventListener('popstate', () => {
-    if (location.pathname === routePath) return;
-    const runId = routeRun();
-    revealOnLoad = !!runId;
-    selectRun(runId, false);
+    if (location.pathname + location.search !== routePath) syncRoute(false);
+  });
+  window.addEventListener('pageshow', event => {
+    if (event.persisted) scheduleRefresh();
   });
   setInterval(() => {
     if (!connected || refreshFailed || streamRun || data?.runs.some(active)) scheduleRefresh();
   }, 3000);
+  renderPage();
   void refresh();
 }

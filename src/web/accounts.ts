@@ -40,10 +40,16 @@ export function hashWebToken(token: string): string {
 export function authenticate(accounts: ReadonlyMap<string, WebAccount>, header: string | undefined): WebAccount | undefined {
   const encoded = /^Basic ([a-z\d+/=]{1,160})$/i.exec(header ?? '')?.[1];
   if (!encoded) return undefined;
-  const fields = /^([a-zA-Z0-9_-]{1,40}):([a-f0-9]{64})$/.exec(Buffer.from(encoded, 'base64').toString('utf8'));
-  if (!fields) return undefined;
-  const account = accounts.get(fields[1]);
+  const [username, token, extra] = Buffer.from(encoded, 'base64').toString('utf8').split(':');
+  if (extra !== undefined) return undefined;
+  return authenticateToken(accounts, username, token);
+}
+
+export function authenticateToken(accounts: ReadonlyMap<string, WebAccount>, username: unknown, token: unknown): WebAccount | undefined {
+  if (typeof username !== 'string' || !/^[a-zA-Z0-9_-]{1,40}$/.test(username) ||
+    typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) return undefined;
+  const account = accounts.get(username);
   const expected = Buffer.from(account?.tokenHash ?? '0'.repeat(64), 'hex');
-  const candidate = Buffer.from(hashWebToken(fields[2]), 'hex');
+  const candidate = Buffer.from(hashWebToken(token), 'hex');
   return timingSafeEqual(expected, candidate) ? account : undefined;
 }

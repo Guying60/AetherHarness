@@ -1276,11 +1276,39 @@ async function suiteWebServer(): Promise<void> {
 
   try {
     check(info.port > 0, `web server listens on ephemeral port (${info.port})`);
-    for (const path of ['/', '/api/dashboard', '/api/events', '/api/runs/run-01/report']) {
+    const loginRedirect = await fetch(info.url + '/runs/run-01', { redirect: 'manual' });
+    check(loginRedirect.status === 303 && loginRedirect.headers.get('location') === '/login?next=%2Fruns%2Frun-01',
+      'the browser login redirect preserves the requested run');
+    const loginPage = await fetch(info.url + '/login');
+    check(loginPage.status === 200 && (await loginPage.text()).includes('登录工作台'), 'GET /login serves the sign-in form');
+    for (const path of ['/api/dashboard', '/api/events', '/api/runs/run-01/report']) {
       const response = await fetch(info.url + path);
-      check(response.status === 401 && response.headers.get('www-authenticate')?.includes('Basic') === true,
-        `${path} challenges unauthenticated clients`);
+      check(response.status === 401 && !response.headers.has('www-authenticate'),
+        `${path} rejects anonymous clients without opening a browser prompt`);
     }
+    const login = (token: string, next: string) => fetch(info.url + '/api/login', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username: accounts[0].username, token, next })
+    });
+    equal((await login('0'.repeat(64), '/')).status, 401, 'the login form rejects invalid credentials');
+    const signedIn = await login(accounts[0].token, '//outside.example');
+    const setCookie = signedIn.headers.get('set-cookie') ?? '';
+    check(signedIn.status === 200 && setCookie.includes('HttpOnly') && setCookie.includes('SameSite=Strict') &&
+      !setCookie.includes(accounts[0].token) && (await signedIn.json()).next === '/',
+      'login creates an opaque session and restricts redirects to workspace pages');
+    const sessionHeaders = { cookie: setCookie.split(';')[0] };
+    const signedInDashboard = await fetch(info.url + '/api/dashboard', { headers: sessionHeaders });
+    equal((await signedInDashboard.json()).account, { username: 'reviewer', role: 'viewer' },
+      'a browser session uses the authenticated account role');
+    equal((await fetch(info.url + '/api/tasks/run', { method: 'POST', headers: sessionHeaders })).status, 403,
+      'a browser session enforces the viewer role on writes');
+    const sessionEvents = await fetch(info.url + '/api/events', { headers: sessionHeaders, signal: AbortSignal.timeout(5000) });
+    const stream = sessionEvents.body!.getReader();
+    await stream.read();
+    const logout = await fetch(info.url + '/api/logout', { method: 'POST', headers: sessionHeaders });
+    check(logout.status === 204 && logout.headers.get('set-cookie')?.includes('Max-Age=0') === true &&
+      (await stream.read()).done && (await fetch(info.url + '/api/dashboard', { headers: sessionHeaders })).status === 401,
+      'logout clears the cookie, revokes the session and closes its event stream');
     const wrong = await webFetch(info.url + '/api/dashboard', undefined, { ...accounts[1], token: '0'.repeat(64) });
     equal(wrong.status, 401, 'an incorrect token is rejected');
     const viewer = await webFetch(info.url + '/api/dashboard', undefined, accounts[0]);
@@ -1298,7 +1326,11 @@ async function suiteWebServer(): Promise<void> {
     const htmlText = await htmlRes.text();
     check(htmlText.includes('AetherHarness'), 'HTML includes AetherHarness brand');
     check(htmlText.includes('pipeline-flow'), 'HTML includes workflow DAG pipeline view');
-    check(htmlText.includes('选择一个案例运行'), 'HTML starts with a guided scenario picker');
+    check(htmlText.includes('预设案例'), 'the workbench includes the scenario picker');
+    for (const path of ['/runs', '/agents', '/delivery', '/settings']) {
+      const response = await webFetch(info.url + path);
+      equal(response.status, 200, `workspace navigation serves ${path}`);
+    }
 
     // 2. Status API
     const statusRes = await webFetch(`${info.url}/api/status`);
@@ -1370,6 +1402,14 @@ async function suiteWebServer(): Promise<void> {
       'Agent history links to real review evidence and excludes prompt contents');
     equal(detail.run.nodeProgress.n_complexity_gate.branchTaken, 'n_loop_full', 'dashboard reports the actual branch taken');
     check(detail.run.loopRounds[0].criticFeedback && !detail.run.loopRounds[0].passed, 'dashboard includes failed round evidence and diagnosis');
+    const delivery = await (await webFetch(info.url + '/api/dashboard?view=delivery')).json();
+    check(delivery.run.runId === finishedRun.runId &&
+      delivery.runs.find((run: any) => run.runId === finishedRun.runId)?.verificationPassed === true,
+      'delivery selects a completed run and exposes the actual automatic verdict');
+    equal((await webFetch(info.url + '/runs/' + finishedRun.runId + '/delivery')).status, 200,
+      'delivery details can be opened directly');
+    equal((await webFetch(info.url + '/runs/run-999999/delivery')).status, 404,
+      'delivery URLs keep the missing-run boundary');
     equal(detail.run.loopRounds[1].passed, true, 'dashboard includes the successful repair round');
     check(detail.events.some((event: any) => event.kind === 'scheduler' && event.runId === runData.runId && event.data.agentId),
       'dispatch events stay attached to their run');

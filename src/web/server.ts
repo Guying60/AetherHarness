@@ -5,14 +5,15 @@
  * 负责分发 SPA 控制台静态页面并提供任务调度与人在回路决策控制 REST API。
  */
 import { createServer, IncomingMessage, ServerResponse, Server } from 'node:http';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import { Orchestrator, RunSnapshot } from '../orchestrator.js';
 import { DASHBOARD_HTML } from './client.js';
+import { LOGIN_HTML } from './login.js';
 import { LlmConfig } from '../agent/llm/index.js';
 import { OrchestratorEvent } from '../types/index.js';
-import { authenticate, createBootstrapAccount, loadWebAccounts, validateAccounts, type WebAccount } from './accounts.js';
+import { authenticate, authenticateToken, createBootstrapAccount, loadWebAccounts, validateAccounts, type WebAccount } from './accounts.js';
 import {
   MAX_REPOSITORY_GOAL, REPOSITORY_PROJECT_ID, repositoryConfig, type RepositoryConfig
 } from '../scenarios/repository-repair.js';
@@ -28,6 +29,13 @@ export interface WebServerOptions {
 }
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
+const SESSION_AGE_SECONDS = 8 * 60 * 60;
+const LOGIN_ERROR = '请使用控制台账号和访问令牌登录。';
+
+function workspacePath(path: unknown): string {
+  return typeof path === 'string' && path.trim() === path &&
+    /^\/(?:index\.html|agents|settings|delivery|runs(?:\/run-\d+(?:\/delivery)?)?)?$/.test(path) ? path : '/';
+}
 
 function runDetail({ state, ...detail }: RunSnapshot) {
   return detail;
@@ -43,7 +51,8 @@ export class WebServer {
   public readonly port: number;
   public readonly host: string;
   private server?: Server;
-  private readonly sseClients = new Map<ServerResponse, string | undefined>();
+  private readonly sseClients = new Map<ServerResponse, { runId?: string; sessionId?: string }>();
+  private readonly sessions = new Map<string, { account: WebAccount; expiresAt: number; timer: NodeJS.Timeout }>();
   private unsubscribe?: () => void;
   private readonly ownsOrchestrator: boolean;
   private readonly accounts: ReadonlyMap<string, WebAccount>;
@@ -87,6 +96,7 @@ export class WebServer {
   public async stop(): Promise<void> {
     this.unsubscribe?.();
     this.unsubscribe = undefined;
+    for (const id of this.sessions.keys()) this.revokeSession(id);
     for (const client of this.sseClients.keys()) {
       try {
         client.end();
@@ -106,7 +116,7 @@ export class WebServer {
   }
 
   private broadcastSse(event: OrchestratorEvent): void {
-    for (const [client, runId] of this.sseClients) {
+    for (const [client, { runId }] of this.sseClients) {
       if (runId !== undefined && runId !== event.runId) continue;
       try {
         client.write(eventFrame(event, runId !== undefined));
@@ -116,10 +126,10 @@ export class WebServer {
     }
   }
 
-  private openEvents(req: IncomingMessage, res: ServerResponse, runId?: string): void {
+  private openEvents(req: IncomingMessage, res: ServerResponse, runId?: string, sessionId?: string): void {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
+      'Cache-Control': 'no-store',
       'Connection': 'keep-alive'
     });
     res.write('retry: 3000\n\n');
@@ -130,8 +140,19 @@ export class WebServer {
       if (cursor && index < 0) res.write('id:\nevent: reset\ndata: {}\n\n');
       for (const event of history.slice(index + 1)) res.write(eventFrame(event, true));
     }
-    this.sseClients.set(res, runId);
+    this.sseClients.set(res, { runId, sessionId });
     res.on('close', () => this.sseClients.delete(res));
+  }
+
+  private revokeSession(id?: string): void {
+    if (!id || !this.sessions.has(id)) return;
+    clearTimeout(this.sessions.get(id)!.timer);
+    this.sessions.delete(id);
+    for (const [client, subscription] of this.sseClients) {
+      if (subscription.sessionId !== id) continue;
+      this.sseClients.delete(client);
+      client.end();
+    }
   }
 
   private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -156,22 +177,78 @@ export class WebServer {
       return;
     }
 
-    res.setHeader('Vary', 'Authorization');
-    const account = authenticate(this.accounts, req.headers.authorization);
-    if (!account) {
-      res.setHeader('WWW-Authenticate', 'Basic realm="AetherHarness", charset="UTF-8"');
-      this.json(res, 401, { error: '请使用控制台账号和访问令牌登录。' });
-      return;
-    }
-    if (method === 'POST' && account.role !== 'operator') {
-      this.json(res, 403, { error: '此操作需要操作者权限。' });
-      return;
-    }
+    res.setHeader('Vary', 'Authorization, Cookie');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+
+    const address = this.server?.address();
+    const cookieName = 'aether_session_' + (address && typeof address === 'object' ? address.port : this.port);
+    const cookie = req.headers.cookie?.split(';').map(item => item.trim()).find(item => item.startsWith(cookieName + '='));
+    const sessionId = cookie?.slice(cookieName.length + 1);
+    const session = sessionId ? this.sessions.get(sessionId) : undefined;
+    const liveSession = session && session.expiresAt > Date.now() ? session : undefined;
+    if (session && !liveSession) this.revokeSession(sessionId);
+    const account = liveSession?.account ?? (req.headers['sec-fetch-site'] ? undefined : authenticate(this.accounts, req.headers.authorization));
+    const cookieValue = (id: string, age: number) => `${cookieName}=${id}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${age}`;
+    const redirect = (location: string) => {
+      res.writeHead(303, { Location: location, 'Cache-Control': 'no-store' });
+      res.end();
+    };
 
     try {
-      // 1. Dashboard UI
-      const runPage = /^\/runs\/(run-\d+)$/.exec(pathname)?.[1];
-      if (method === 'GET' && (pathname === '/' || pathname === '/index.html' || runPage)) {
+      const runPage = /^\/runs\/(run-\d+)(?:\/delivery)?$/.exec(pathname)?.[1];
+      const dashboardPage = method === 'GET' && workspacePath(pathname) === pathname;
+
+      if (method === 'GET' && pathname === '/login') {
+        if (liveSession) {
+          redirect(workspacePath(url.searchParams.get('next')));
+        } else {
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+          res.end(LOGIN_HTML);
+        }
+        return;
+      }
+      if (method === 'POST' && pathname === '/api/login') {
+        if (req.headers['content-type']?.split(';')[0]?.trim().toLowerCase() !== 'application/json') {
+          this.json(res, 415, { error: '登录请求需要 JSON。' });
+          return;
+        }
+        const { username, token, next } = await this.readJsonBody(req);
+        const authenticated = authenticateToken(this.accounts, username, token);
+        if (!authenticated) {
+          this.json(res, 401, { error: '账号或访问令牌不正确。' });
+          return;
+        }
+        this.revokeSession(sessionId);
+        const id = randomBytes(32).toString('hex');
+        const timeout = SESSION_AGE_SECONDS * 1000;
+        const timer = setTimeout(() => this.revokeSession(id), timeout).unref();
+        this.sessions.set(id, { account: authenticated, expiresAt: Date.now() + timeout, timer });
+        res.setHeader('Set-Cookie', cookieValue(id, SESSION_AGE_SECONDS));
+        this.json(res, 200, { next: workspacePath(next) });
+        return;
+      }
+      if (method === 'POST' && pathname === '/api/logout') {
+        this.revokeSession(sessionId);
+        res.setHeader('Set-Cookie', cookieValue('', 0));
+        res.writeHead(204, { 'Cache-Control': 'no-store' });
+        res.end();
+        return;
+      }
+      if (!account) {
+        if (dashboardPage) {
+          redirect('/login' + (pathname === '/' ? '' : '?next=' + encodeURIComponent(pathname)));
+        } else {
+          this.json(res, 401, { error: LOGIN_ERROR });
+        }
+        return;
+      }
+      if (method === 'POST' && account.role !== 'operator') {
+        this.json(res, 403, { error: '此操作需要操作者权限。' });
+        return;
+      }
+
+      if (dashboardPage) {
         res.writeHead(runPage && !this.orchestrator.getRun(runPage) ? 404 : 200, {
           'Content-Type': 'text/html; charset=utf-8',
           'Cache-Control': 'no-store'
@@ -182,7 +259,7 @@ export class WebServer {
 
       // 2. Server-Sent Events (SSE) stream
       if (method === 'GET' && pathname === '/api/events') {
-        this.openEvents(req, res);
+        this.openEvents(req, res, undefined, liveSession ? sessionId : undefined);
         return;
       }
       const eventRunId = /^\/api\/runs\/(run-\d+)\/events$/.exec(pathname)?.[1];
@@ -191,14 +268,16 @@ export class WebServer {
           this.json(res, 404, { error: '所选运行不存在。' });
           return;
         }
-        this.openEvents(req, res, eventRunId);
+        this.openEvents(req, res, eventRunId, liveSession ? sessionId : undefined);
         return;
       }
 
       if (method === 'GET' && pathname === '/api/dashboard') {
         const { agents, runs, scheduler, pending, tools, llm, knowledgeChunks } = this.orchestrator.getSnapshot();
         const requested = url.searchParams.get('runId');
-        const selected = requested === null ? runs.at(-1) : this.orchestrator.getRun(requested);
+        const selected = requested === null
+          ? (url.searchParams.get('view') === 'delivery' ? runs.findLast(run => run.finishedAt !== undefined) : runs.at(-1))
+          : this.orchestrator.getRun(requested);
         const tasks = this.orchestrator.getTasks().map(task => ({
           id: task.id,
           title: task.title,
@@ -220,8 +299,8 @@ export class WebServer {
             runId, nodeId: node.id, basePriority, effectivePriority, submittedAt
           })),
           optimizations: this.orchestrator.getPromptOptimizations().slice(-12),
-          runs: runs.map(({ runId, taskId, status, startedAt, finishedAt, humanDecision, retryOf }) => ({
-            runId, taskId, status, startedAt, finishedAt, humanDecision, retryOf
+          runs: runs.map(({ runId, taskId, title, status, startedAt, finishedAt, humanDecision, retryOf, verification }) => ({
+            runId, taskId, title, status, startedAt, finishedAt, humanDecision, retryOf, verificationPassed: verification?.passed
           })),
           run: selected ? runDetail(selected) : null,
           events: selected ? this.orchestrator.getEvents(selected.runId) : []
