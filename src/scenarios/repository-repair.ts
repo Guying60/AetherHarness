@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { promisify } from 'node:util';
-import type { ToolInvocationContext } from '../tools/tool-registry.js';
+import { ToolCleanupError, type ToolInvocationContext } from '../tools/tool-registry.js';
 import { containerTestRunner } from '../tools/container-runner.js';
 import type { ToolDefinition, WorkflowDefinition } from '../types/index.js';
 import { asCode, buildRateLimiterWorkflow, rateLimiterDeliveryNodes, type RateLimiterTask } from './rate-limiter.js';
@@ -65,6 +65,7 @@ export function repositoryTools(config: RepositoryConfig): { project: Repository
         id: 'git_read_baseline',
         name: 'Read pinned Git baseline',
         description: 'Read the approved source file from the configured Git commit.',
+        waitForCleanup: true,
         parameters: { type: 'object', properties: {} },
         handler: async (_params, ctx: ToolInvocationContext) => {
           try {
@@ -80,6 +81,7 @@ export function repositoryTools(config: RepositoryConfig): { project: Repository
         id: 'git_check_patch',
         name: 'Check patch against pinned Git index',
         description: 'Run git apply --cached --check with a private temporary index.',
+        waitForCleanup: true,
         parameters: {
           type: 'object', required: ['patch'],
           properties: { patch: { type: 'string', description: 'Generated unified Git patch' } }
@@ -97,7 +99,11 @@ export function repositoryTools(config: RepositoryConfig): { project: Repository
           } catch (cause) {
             throw new Error('Patch did not apply to the pinned Git baseline.', { cause });
           } finally {
-            await rm(temp, { recursive: true, force: true, maxRetries: 2 });
+            try {
+              await rm(temp, { recursive: true, force: true, maxRetries: 2 });
+            } catch (cause) {
+              throw new ToolCleanupError('Could not remove the temporary Git index.', { cause });
+            }
           }
         }
       }

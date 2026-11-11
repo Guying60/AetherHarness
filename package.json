@@ -1,6 +1,6 @@
 {
   "name": "aether-harness",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "AetherHarness / DSH-Orchestrator — multi-agent self-healing orchestration, dynamic scheduling, 3-tier verification and dual Web/TUI presentation platform",
   "type": "module",
   "main": "dist/src/index.js",
@@ -9,7 +9,7 @@
     "aether": "dist/src/cli.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.3"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",

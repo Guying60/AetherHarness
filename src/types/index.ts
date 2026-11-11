@@ -137,6 +137,8 @@ export interface ToolDefinition {
   parameters: ToolParameterSchema;
   /** When true the handler runs in an isolated vm context with a hard timeout. */
   isSandboxed?: boolean;
+  /** The handler observes cancellation and settles after bounded process or file cleanup. */
+  waitForCleanup?: boolean;
   timeoutMs?: number;
   handler: (params: any, context?: any) => Promise<any>;
 }
@@ -228,6 +230,8 @@ export type ExecutionStatus =
   | 'pending'
   | 'running'
   | 'paused'
+  | 'cancelling'
+  | 'cancelled'
   | 'completed'
   | 'failed'
   | 'needs_human'

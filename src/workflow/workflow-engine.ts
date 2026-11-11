@@ -26,13 +26,14 @@ import {
   VerificationSpec
 } from '../types/index.js';
 import { AgentRegistry } from '../agent/agent-registry.js';
-import { ToolRegistry } from '../tools/tool-registry.js';
+import { ToolCleanupError, ToolRegistry } from '../tools/tool-registry.js';
 import { DynamicScheduler } from '../scheduler/dynamic-scheduler.js';
 import { VerificationEngine } from '../verification/verification-engine.js';
 import { SelfLoopEngine, SelfLoopIterationRecord } from '../selfloop/self-loop-engine.js';
 import { FeedbackOptimizer } from '../optimization/feedback-optimizer.js';
 
 export interface WorkflowHooks {
+  signal?: AbortSignal;
   rootRunId?: string;
   onNodeStart?: (node: WorkflowNode, record: NodeExecutionRecord) => void;
   onNodeEnd?: (node: WorkflowNode, record: NodeExecutionRecord) => void;
@@ -265,6 +266,10 @@ export class WorkflowEngine {
     let currentNodeId: string | null = workflow.entryNodeId;
 
     while (currentNodeId && state.status === 'running') {
+      if (hooks.signal?.aborted) {
+        state.status = 'cancelled';
+        break;
+      }
       if (Date.now() > deadline) {
         state.status = 'failed';
         hooks.onLog?.(`workflow deadline exceeded after ${workflow.timeoutMs ?? DEFAULT_RUN_TIMEOUT_MS}ms`);
@@ -290,6 +295,10 @@ export class WorkflowEngine {
 
       const record = await this.executeNode(node, state, hooks, { deadline, taskIdByNode, workflow, depth: hooks.depth });
 
+      if (hooks.signal?.aborted) {
+        state.status = 'cancelled';
+        break;
+      }
       if (Date.now() >= deadline && record.status !== 'failed') {
         state.status = 'failed';
         hooks.onLog?.('workflow deadline exceeded');
@@ -342,11 +351,14 @@ export class WorkflowEngine {
     };
 
     try {
+      hooks.signal?.throwIfAborted();
       const input = node.inputTransformer ? node.inputTransformer(state.context) : this.snapshotContext(state.context);
       record.input = input;
       hooks.onNodeStart?.(node, record);
       const budget = Math.floor(deadline - Date.now());
       if (budget <= 0) throw new Error(`node '${node.id}' exceeded its execution budget`);
+      const deadlineSignal = AbortSignal.timeout(budget);
+      const nodeSignal = hooks.signal ? AbortSignal.any([hooks.signal, deadlineSignal]) : deadlineSignal;
       let output: any = null;
 
       switch (node.type) {
@@ -359,7 +371,9 @@ export class WorkflowEngine {
         // --------------------------------------------------------- tool
         case 'tool': {
           if (!node.toolId) throw new Error(`node '${node.id}' missing toolId`);
-          output = await this.toolRegistry.invoke(node.toolId, input, { timeoutMs: Math.min(budget, node.timeoutMs ?? 4000) });
+          output = await this.toolRegistry.invoke(node.toolId, input, {
+            timeoutMs: Math.min(budget, node.timeoutMs ?? 4000), signal: hooks.signal
+          });
           break;
         }
 
@@ -434,6 +448,7 @@ export class WorkflowEngine {
           const subState = await subEngine.execute(sub, input as Record<string, any>, {
             runId: `${state.workflowExecutionId}-${node.id}`,
             rootRunId: hooks.rootRunId ?? state.workflowExecutionId,
+            signal: hooks.signal,
             deadline,
             depth: depth + 1,
             onNodeStart: (child, record) => hooks.onNodeStart?.(scopedNode(child), scopedRecord(record)),
@@ -457,7 +472,7 @@ export class WorkflowEngine {
           const targetKey = node.verifyTargetKey ?? 'lastOutput';
           const target = state.context[targetKey];
           const result = await this.verificationEngine.verify(target, node.verificationSpec, state.context, {
-            signal: AbortSignal.timeout(budget)
+            signal: nodeSignal
           });
 
           record.verification = result;
@@ -523,7 +538,7 @@ export class WorkflowEngine {
               workflowExecutionId: state.workflowExecutionId,
               optimizer: this.optimizer,
               targetAgentId: targetNode.agentId,
-              signal: AbortSignal.timeout(budget),
+              signal: nodeSignal,
               onVerify: rec => {
                 hooks.onLoopIteration?.(node, rec);
                 hooks.onLog?.(
@@ -591,6 +606,7 @@ export class WorkflowEngine {
           throw new Error(`node '${node.id}' has unsupported type '${(node as any).type}'`);
       }
 
+      hooks.signal?.throwIfAborted();
       record.status = 'completed';
       record.output = output;
       record.endTime = Date.now();
@@ -598,10 +614,11 @@ export class WorkflowEngine {
       if (node.outputKey) state.context[node.outputKey] = output;
       if (node.type !== 'verification' && node.type !== 'self_loop') state.context.lastOutput = output;
     } catch (err: any) {
-      record.status = 'failed';
+      if (err instanceof ToolCleanupError) record.meta = { ...record.meta, cleanupFailed: true };
+      record.status = hooks.signal?.aborted && !record.meta?.cleanupFailed ? 'cancelled' : 'failed';
       record.error = err?.message ?? String(err);
       record.endTime = Date.now();
-      hooks.onLog?.(`node ${node.id} failed: ${record.error}`, { nodeId: node.id });
+      hooks.onLog?.(`node ${node.id} ${record.status}: ${record.error}`, { nodeId: node.id });
     }
 
     this.appendRecord(state, record);
@@ -639,10 +656,11 @@ export class WorkflowEngine {
       const failedRules = Array.isArray(state.context.__failedRules) ? state.context.__failedRules : nodeContextFailures(state);
 
       const controller = new AbortController();
+      const signal = hooks.signal ? AbortSignal.any([hooks.signal, controller.signal]) : controller.signal;
       const request = {
         taskId: `${state.workflowExecutionId}-${node.id}-i${state.context.__loopIteration ?? 1}`,
         agentId: agent.id,
-        signal: controller.signal,
+        signal,
         input: { ...state.context, goal: state.context.goal ?? node.description ?? node.name },
         context: state.context,
         iteration: typeof state.context.__loopIteration === 'number' ? state.context.__loopIteration : 1,
@@ -685,7 +703,8 @@ export class WorkflowEngine {
           taskIdByNode?.set(node.id, scheduledTask.id);
           return res.output;
         },
-        deadline
+        deadline,
+        hooks.signal
       );
     }
 

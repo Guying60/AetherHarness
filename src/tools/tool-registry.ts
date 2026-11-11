@@ -39,6 +39,8 @@ export interface ToolMetrics {
 
 const DEFAULT_TIMEOUT_MS = 5000;
 
+export class ToolCleanupError extends Error {}
+
 export class ToolRegistry {
   private tools: Map<string, ToolDefinition> = new Map();
   private metrics: Map<string, ToolMetrics> = new Map();
@@ -141,8 +143,7 @@ export class ToolRegistry {
   }
 
   /**
-   * Invoke a tool. Always resolves or rejects within `timeoutMs`, and never leaves a
-   * dangling timer behind (the previous implementation leaked one per call).
+   * Invoke a tool with a deadline. Process-backed handlers can finish their bounded cleanup before settling.
    */
   public async invoke(toolId: string, params: any, context?: ToolInvocationContext): Promise<any> {
     const tool = this.tools.get(toolId);
@@ -177,13 +178,20 @@ export class ToolRegistry {
       if (typeof timer.unref === 'function') timer.unref();
     });
 
+    let execution: Promise<any> | undefined;
     try {
       const ctx: ToolInvocationContext = { ...context, timeoutMs, signal: controller.signal };
-      const result = await Promise.race([Promise.resolve(tool.handler(params, ctx)), abort]);
+      execution = Promise.resolve(tool.handler(params, ctx));
+      const result = await Promise.race([execution, abort]);
       metrics.successes++;
       return result;
     } catch (err) {
       metrics.failures++;
+      if (controller.signal.aborted && tool.waitForCleanup) {
+        await execution?.catch(error => {
+          if (error instanceof ToolCleanupError) throw error;
+        });
+      }
       throw err;
     } finally {
       if (timer) clearTimeout(timer);

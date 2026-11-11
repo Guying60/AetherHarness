@@ -137,7 +137,7 @@ export const DASHBOARD_HTML = /* html */ `<!doctype html>
   <div class="shell">
     <a class="brand" href="/"><span class="mark" aria-hidden="true">◈</span>AetherHarness</a>
     <nav aria-label="工作台导航"><a href="#scenarios">选择案例</a><a href="#execution">运行详情</a><a href="#team-title">Agent 中心</a><a href="#settings">系统设置</a></nav>
-    <span id="connection" class="badge" role="status">正在连接</span>
+    <div class="row"><span id="session-account" class="small muted"></span><span id="connection" class="badge" role="status">正在连接</span></div>
   </div>
 </header>
 <main id="top" class="shell">

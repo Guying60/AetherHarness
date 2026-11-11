@@ -16,6 +16,7 @@
 import { ScheduledTask, SchedulerStats, WorkflowNode } from '../types/index.js';
 import { AgentRegistry } from '../agent/agent-registry.js';
 import { BaseAgent } from '../agent/base-agent.js';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 export interface SchedulerOptions {
   /** aging period tau in ms */
@@ -27,8 +28,6 @@ export interface SchedulerOptions {
 }
 
 export type SchedulerEvent = (message: string, data?: Record<string, any>) => void;
-
-const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, Math.max(1, ms)));
 
 export class DynamicScheduler {
   private queue: ScheduledTask[] = [];
@@ -124,11 +123,12 @@ export class DynamicScheduler {
    * Wait until `taskId` is the highest effective-priority dispatchable task AND an agent
    * slot is free, then reserve that slot.
    */
-  public async acquire(taskId: string, runDeadline = Infinity): Promise<{ task: ScheduledTask; agent: BaseAgent }> {
+  public async acquire(taskId: string, runDeadline = Infinity, signal?: AbortSignal): Promise<{ task: ScheduledTask; agent: BaseAgent }> {
     const start = Date.now();
     const deadline = Math.min(start + this.maxWaitMs, runDeadline);
 
     for (;;) {
+      signal?.throwIfAborted();
       const task = this.byId.get(taskId);
       if (!task) throw new Error(`Scheduler: unknown task '${taskId}'`);
       if (task.status === 'running' && task.assignedAgentId) {
@@ -175,7 +175,7 @@ export class DynamicScheduler {
         return { task, agent };
       }
 
-      await sleep(Math.min(this.pollIntervalMs, deadline - now));
+      await sleep(Math.max(1, Math.min(this.pollIntervalMs, deadline - now)), undefined, { signal });
     }
   }
 
@@ -226,17 +226,33 @@ export class DynamicScheduler {
     priority: number,
     dependencies: string[],
     fn: (agent: BaseAgent, task: ScheduledTask) => Promise<T>,
-    deadline?: number
+    deadline?: number,
+    signal?: AbortSignal
   ): Promise<T> {
+    signal?.throwIfAborted();
     const task = this.enqueue(node, runId, workflowExecutionId, priority, dependencies);
-    for (;;) {
-      const { agent } = await this.acquire(task.id, deadline);
-      try {
-        const result = await fn(agent, task);
-        this.release(task.id, true);
-        return result;
-      } catch (err: any) {
-        if (this.release(task.id, false, err?.message) !== 'retrying') throw err;
+    try {
+      for (;;) {
+        const { agent } = await this.acquire(task.id, deadline, signal);
+        try {
+          signal?.throwIfAborted();
+          const result = await fn(agent, task);
+          signal?.throwIfAborted();
+          this.release(task.id, true);
+          return result;
+        } catch (err: any) {
+          signal?.throwIfAborted();
+          if (this.release(task.id, false, err?.message) !== 'retrying') throw err;
+        }
+      }
+    } finally {
+      if (signal?.aborted) {
+        this.queue = this.queue.filter(queued => queued.id !== task.id);
+        this.byId.delete(task.id);
+        if (task.status === 'running' && task.assignedAgentId) {
+          this.inflight.set(task.assignedAgentId, Math.max(0, this.getInflight(task.assignedAgentId) - 1));
+          this.stats.running = Math.max(0, this.stats.running - 1);
+        }
       }
     }
   }

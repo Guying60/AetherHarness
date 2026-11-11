@@ -1,8 +1,10 @@
 # AetherHarness 参赛复现
 
+发布版本为 [AetherHarness v2.2.0](https://github.com/Guying60/AetherHarness/releases/tag/v2.2.0)。评审也可直接使用交付包中的同版源码。
+
 ## 离线演示
 
-在新目录解压源码，安装 Node.js 20+、Git 和 pnpm。以下命令在 Windows PowerShell 使用 `.cmd`，macOS 或 Linux 使用 `pnpm`。
+在新目录解压源码，安装 Node.js 20.3+、Git 和 pnpm。以下命令在 Windows PowerShell 使用 `.cmd`，macOS 或 Linux 使用 `pnpm`。
 
 ```powershell
 pnpm.cmd install --frozen-lockfile
@@ -11,7 +13,9 @@ pnpm.cmd test
 node dist/src/cli.js --web
 ```
 
-打开 [本机工作台](http://127.0.0.1:3300)。依次运行基础验收、边界缺陷自愈和分布式对账阻塞。边界缺陷案例会记录失败、诊断与复验，分布式案例会保留待人工处理的卡片。通过运行摘要下载验收报告。浏览器中的 Agent 历史和系统设置均来自服务当前的有效状态与已保存证据。
+打开 [本机工作台](http://127.0.0.1:3300)，用启动终端显示的临时账号和令牌登录。依次运行基础验收、边界缺陷自愈和分布式对账阻塞。边界缺陷案例会记录失败、诊断与复验，分布式案例会保留待人工处理的卡片。通过运行摘要下载验收报告。浏览器中的 Agent 历史和系统设置均来自服务当前的有效状态与已保存证据。
+
+如需复核操作者与只读查看者的权限差异，按 README 生成两组账号配置。使用操作者提交运行并在摘要中取消，切换查看者后复查报告中的申请账号、时间和备注。查看者可读取证据，写操作由服务端拒绝。
 
 ## 严格 Live 与真实容器
 

@@ -106,7 +106,7 @@ export class BaseAgent {
         iteration: request.iteration ?? 1,
         criticGuidance: request.criticGuidance,
         memory: this.memory.slice(-8).map(m => ({ role: m.role, content: m.content })),
-        callTool: (toolId, params) => this.callTool(toolId, params)
+        callTool: (toolId, params) => this.callTool(toolId, params, request.signal)
       };
 
       const res = await this.brain.think(ctx);
@@ -157,7 +157,7 @@ export class BaseAgent {
   }
 
   /** Invoke an authorized tool and always return a trace instead of throwing. */
-  public async callTool(toolId: string, params: any): Promise<ToolCallTrace> {
+  public async callTool(toolId: string, params: any, signal?: AbortSignal): Promise<ToolCallTrace> {
     const start = Date.now();
 
     if (!this.toolRegistry) {
@@ -168,7 +168,7 @@ export class BaseAgent {
     }
 
     try {
-      const output = await this.toolRegistry.invoke(toolId, params);
+      const output = await this.toolRegistry.invoke(toolId, params, { signal });
       return { toolId, input: params, output, durationMs: Date.now() - start, success: true };
     } catch (err: any) {
       return { toolId, input: params, output: null, durationMs: Date.now() - start, success: false, error: err?.message ?? String(err) };

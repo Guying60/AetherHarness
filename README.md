@@ -175,7 +175,21 @@ CPA 等兼容端点也可使用 `OPENAI_API_KEY`、`OPENAI_BASE_URL` 和 `CHAT_M
 pnpm run web       # 启动零依赖 Web 控制台（浏览器打开 http://127.0.0.1:3300）
 ```
 
-Web 控制台只监听本机回环地址。运行和 Agent 接口返回用于展示的字段，模型密钥、系统提示和 Agent 内存留在进程内。
+Web 控制台只监听本机回环地址。打开页面后，在浏览器登录框使用终端本次启动显示的临时账号与访问令牌。运行和 Agent 接口返回用于展示的字段，模型密钥、系统提示和 Agent 内存留在进程内。
+
+多人在同一台机器上复核时，可用 `AETHER_ACCOUNTS_FILE` 指定长期账号。操作者可运行、取消任务和处理人工卡片，查看者可读取运行与下载证据。账号配置只保存令牌散列，生成的访问令牌通过可信方式交给各自的使用者。配置变更在重启后生效。
+
+```powershell
+npm.cmd run build
+$operator = node scripts/create-web-account.mjs engineer operator | ConvertFrom-Json
+$viewer = node scripts/create-web-account.mjs reviewer viewer | ConvertFrom-Json
+New-Item -ItemType Directory -Path .aether -Force | Out-Null
+@($operator.account, $viewer.account) | ConvertTo-Json | Set-Content -Encoding utf8NoBOM .aether/web-accounts.json
+$env:AETHER_ACCOUNTS_FILE = (Resolve-Path .aether/web-accounts.json).Path
+node dist/src/cli.js --web
+```
+
+使用 `$operator.token` 或 `$viewer.token` 作为各自账号的浏览器密码。切换账号可使用独立的浏览器配置文件或无痕窗口。
 
 Web 启动入口默认将运行、最近 100 条运行事件、验收轮次、补丁和人工决策保存到 `.aether/runs`。可通过 `AETHER_DATA_DIR` 指定目录，每个目录由一个服务进程使用。写入采用原子替换，正常停止会等待当前运行结束。
 
@@ -188,6 +202,7 @@ Web 启动入口默认将运行、最近 100 条运行事件、验收轮次、�
 3. 点击 **并发运行全部案例**。通过「运行历史」切换案例，在「执行日志」查看派发 Agent、优先级和等待时间，在「团队、调度与工具」查看并发负载、工具调用与提示词优化记录。
 4. 打开「Agent 中心」查看注册版本和近期参与的运行。打开「系统设置」查看实际生效的模型、工具权限、超时、并发上限和重试策略。
 5. 在运行摘要下载验收报告（JSON），可核对执行状态、自动验收结论、交付状态与补丁 SHA-256。人工处理可附备注，报告保留操作与证据。
+6. 操作者可以在待执行或运行中的摘要点击 **取消运行**。排队任务会从相应队列移除，正在执行的模型请求和隔离工具会收到取消信号。回收结束后报告记录账号、申请时间、备注及终止状态。
 
 工作流预览和执行状态来自同一份后端定义。离线模式便于复现演示。配置 `DEEPSEEK_API_KEY` 后运行 `pnpm run web --live` 可启用大模型推理。
 

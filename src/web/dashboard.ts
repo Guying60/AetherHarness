@@ -4,6 +4,7 @@ import type { OrchestratorEvent, VerificationResult, WorkflowDefinition, Workflo
 type Snapshot = ReturnType<Orchestrator['getSnapshot']>;
 type RunSummary = Pick<RunSnapshot, 'runId' | 'taskId' | 'status' | 'startedAt' | 'finishedAt' | 'humanDecision' | 'retryOf'>;
 interface DashboardData {
+  account: { username: string; role: 'operator' | 'viewer' };
   tasks: Array<{ id: string; title: string; description: string; prompt: string; difficulty: string; workflow: WorkflowDefinition }>;
   repository: ReturnType<Orchestrator['getProject']>;
   persistentStorage: boolean;
@@ -60,6 +61,7 @@ export function dashboard(): void {
   };
   const statusNames: Record<string, [string, string]> = {
     pending: ['待执行', ''], running: ['运行中', 'active'], paused: ['已暂停', 'warn'],
+    cancelling: ['正在取消', 'warn'], cancelled: ['已取消', ''],
     completed: ['已完成', 'good'], failed: ['执行失败', 'bad'], needs_human: ['待人工决策', 'warn'],
     skipped: ['未进入', ''], retry: ['已发起重试', 'active'], review: ['草稿待复审', 'warn'], abort: ['已终止', 'bad']
   };
@@ -85,7 +87,7 @@ export function dashboard(): void {
   const stateBadge = (status: string) => badge(...(statusNames[status] ?? [status, '']));
   const empty = (message: string) => '<p class="empty">' + esc(message) + '</p>';
   const nodeName = (id: string, fallback?: string) => nodeNames[id] ?? fallback ?? id;
-  const active = (run: RunSummary) => run.status === 'pending' || run.status === 'running';
+  const active = (run: RunSummary) => run.status === 'pending' || run.status === 'running' || run.status === 'cancelling';
   const routeRun = () => /^\/runs\/(run-\d+)$/.exec(location.pathname)?.[1];
 
   let data: DashboardData | undefined;
@@ -151,19 +153,23 @@ export function dashboard(): void {
     const live = !data.llm.label.startsWith('offline');
     const busy = data.runs.some(active);
     const telemetry = data.llm.telemetry;
+    const canOperate = data.account.role === 'operator';
+    get('session-account').textContent = data.account.username + ' · ' + (canOperate ? '操作者' : '只读');
     get('storage-status').textContent = data.persistentStorage
       ? 'AetherHarness · 历史运行、验收证据与补丁已启用本地持久化。'
       : 'AetherHarness · 当前服务使用进程内运行历史。';
     get('mode').textContent = live ? '实时模型 · ' + data.llm.label + (telemetry ?
       ' · 调用 ' + telemetry.calls + ' 次 · 降级 ' + telemetry.fallbacks + ' 次' : '') :
       '离线演示 · 无需 API 密钥。参赛演示可启用大模型。';
+    get<HTMLButtonElement>('run-all').hidden = !canOperate;
     get<HTMLButtonElement>('run-all').disabled = starting || busy || data.tasks.length === 0;
     const { project, ready, reason } = data.repository;
     get('project-status').textContent = ready && project
       ? project.title + ' · ' + project.filePath + ' @ ' + project.revision.slice(0, 12)
       : reason ?? '仓库任务不可用。';
-    get<HTMLTextAreaElement>('project-goal').disabled = !ready;
-    get<HTMLButtonElement>('project-submit').disabled = starting || !ready ||
+    get('project-form').hidden = !canOperate;
+    get<HTMLTextAreaElement>('project-goal').disabled = !canOperate || !ready;
+    get<HTMLButtonElement>('project-submit').disabled = !canOperate || starting || !ready ||
       data.runs.some(item => item.taskId === project?.id && active(item));
 
     show('scenario-cards', data.tasks.map((item, index) => {
@@ -176,9 +182,9 @@ export function dashboard(): void {
         badge(copy?.label ?? item.difficulty, copy?.color) + '</div><h3>' + esc(title) + '</h3><p class="muted small">' +
         esc(copy?.detail ?? item.description) + '</p>' +
         '<div class="row small muted">最近运行 ' + (latest ? stateBadge(latest.humanDecision ?? latest.status) : '暂无') + '</div>' +
-        '<div class="actions row"><button type="button" class="btn ' + (item.id === 'rl-normal' ? 'primary' : '') +
+        '<div class="actions row">' + (canOperate ? '<button type="button" class="btn ' + (item.id === 'rl-normal' ? 'primary' : '') +
         '" data-run="' + esc(item.id) + '" data-focus="run-' + esc(item.id) + '"' + (starting || running ? ' disabled' : '') +
-        '>' + esc(running ? '案例运行中…' : copy?.action ?? '运行案例') + '</button>' +
+        '>' + esc(running ? '案例运行中…' : copy?.action ?? '运行案例') + '</button>' : '') +
         '<button type="button" class="link" data-preview="' + esc(item.id) + '" data-focus="preview-' + esc(item.id) +
         '" aria-label="预览' + esc(title) + '编排">预览编排</button></div></article>';
     }).join('') || empty('当前服务没有可用的案例。'));
@@ -280,18 +286,27 @@ export function dashboard(): void {
       run.status === 'completed' ? (run.patch?.patch ? '验证通过，补丁可下载。' : '工作流已完成，当前没有可下载的补丁。') :
       run.status === 'pending' ? '正在等待可用的运行名额。' :
       run.status === 'running' ? '节点状态、调度和逐轮验证会随执行更新。' :
+      run.status === 'cancelling' ? '正在停止执行并回收资源。' :
+      run.status === 'cancelled' ? '运行已停止，保留已有执行证据。' :
       run.status === 'failed' ? run.error ?? '执行未完成，请查看执行日志。' :
       '自愈已到达本次预算，请查看阻塞原因并选择下一步。';
     let controls = '';
+    const canOperate = data?.account.role === 'operator';
+    const remark = (label: string) => '<label class="stack small">' + label + '（可选）' +
+      '<input class="select" id="decision-reason" data-focus="decision-reason" maxlength="500" value="' +
+      esc(decisionReason) + '"></label>';
+    if (canOperate && (run.status === 'pending' || run.status === 'running')) {
+      controls = '<div class="inset stack">' + remark('取消备注') +
+        '<button type="button" class="btn danger" data-cancel data-focus="cancel-run"' + (deciding ? ' disabled' : '') +
+        '>取消运行</button></div>';
+    }
     if (run.escalation) {
       const card = run.escalation;
       const blocking = card.contextSnapshot.unresolvedRuleIds as string[] | undefined;
       controls = '<div class="inset decision"><h4>需要人工决策</h4><p class="small">' +
         esc(blocking?.length ? 'Agent 报告当前环境无法满足 ' + blocking.join('、') + '。' : '当前方案仍未达到收敛条件。') +
         '</p><details id="decision-' + esc(run.runId) + '" class="small"><summary>查看决策依据</summary><p>' +
-        esc(card.reason) + '</p></details><div class="stack"><label class="stack small">决策备注（可选）' +
-        '<input class="select" id="decision-reason" data-focus="decision-reason" maxlength="500" value="' +
-        esc(decisionReason) + '"></label>' +
+        esc(card.reason) + '</p></details><div class="stack">' + (canOperate ? remark('决策备注') +
         card.options.map((option, index) => '<div><button type="button" class="btn ' +
           (index === card.recommendedOptionIndex ? 'primary' : index === 2 ? 'danger' : '') + '" data-decision="' + index +
           '" data-focus="decision-' + index + '"' + (deciding || index === 0 && run.retryAvailable === false ? ' disabled' : '') + '>' +
@@ -299,7 +314,7 @@ export function dashboard(): void {
           (index === card.recommendedOptionIndex ? '系统推荐 · ' : '') +
           esc(index === 0 && run.retryAvailable === false ? '当前服务配置与该历史运行不匹配。' :
             index === 2 && run.restored ? '撤销草稿交付，保留本次验收证据。' : actions[index]?.detail) +
-          '</p></div>').join('') + '</div></div>';
+          '</p></div>').join('') : '<p class="small muted">等待操作者处理。</p>') + '</div></div>';
     }
     const retry = data?.runs.find(item => item.retryOf === run.runId);
     show('run-summary', '<div class="row between"><h4>' + esc(title) + '</h4>' + stateBadge(outcome ?? run.status) + '</div>' +
@@ -312,6 +327,8 @@ export function dashboard(): void {
         '<span class="muted small">尚无最终结论</span>') +
       (run.iterations ? '<span class="muted small">已记录 ' + run.iterations + ' 轮</span>' : '') + '</div></div>' +
       '<p class="small muted">' + esc(description) + '</p>' +
+      (run.cancellation ? '<p class="small muted">取消申请 · ' + esc(run.cancellation.actor + ' · ' +
+        time(run.cancellation.requestedAt) + ' · ' + run.cancellation.reason) + '</p>' : '') +
       (run.modelLabel ? '<p class="small muted">运行模型 · ' + esc(run.modelLabel) + '</p>' : '') +
       (run.project ? '<p class="small muted">Git 基线 · <code>' + esc(run.project.revision.slice(0, 12)) + '</code></p>' : '') + brief +
       (outcome === 'retry' && retry ? '<button class="btn" type="button" data-select-run="' + esc(retry.runId) + '">查看本次重试</button>' : '') +
@@ -591,7 +608,7 @@ export function dashboard(): void {
   }
 
   async function start(id: string, goal?: string): Promise<void> {
-    if (starting) return;
+    if (starting || data?.account.role !== 'operator') return;
     starting = true;
     render();
     try {
@@ -611,21 +628,21 @@ export function dashboard(): void {
     }
   }
 
-  async function decide(runId: string, option: number): Promise<void> {
-    if (deciding) return;
+  async function decide(runId: string, option?: number): Promise<void> {
+    if (deciding || data?.account.role !== 'operator') return;
     deciding = runId;
     decisionError = '';
     render();
     try {
-      const result = await request<{ run: NonNullable<DashboardData['run']> }>('/api/runs/' + encodeURIComponent(runId) +
-        '/escalate', { optionIndex: option, reason: decisionReason.trim() });
+      const path = '/api/runs/' + encodeURIComponent(runId) + (option === undefined ? '/cancel' : '/escalate');
+      const result = await request<{ run: NonNullable<DashboardData['run']> }>(path, { optionIndex: option, reason: decisionReason.trim() });
       if (requestedRun === runId) {
         if (result.run.runId !== runId) selectRun(result.run.runId);
         if (data) data.run = result.run;
         if (option === 1) tab = 'artifact';
       }
     } catch (error) {
-      if (requestedRun === runId) decisionError = '决策提交失败。' + (error instanceof Error ? error.message : '');
+      if (requestedRun === runId) decisionError = '操作提交失败。' + (error instanceof Error ? error.message : '');
     } finally {
       deciding = '';
       render();
@@ -683,6 +700,7 @@ export function dashboard(): void {
     const run = data?.run;
     if (!run || run.runId !== requestedRun) return;
     if (action.decision !== undefined) void decide(run.runId, Number(action.decision));
+    if (action.cancel !== undefined) void decide(run.runId);
     const patch = run.patch?.patch;
     if (!patch) return;
     if (action.copy !== undefined) {

@@ -12,6 +12,7 @@ import { Orchestrator, RunSnapshot } from '../orchestrator.js';
 import { DASHBOARD_HTML } from './client.js';
 import { LlmConfig } from '../agent/llm/index.js';
 import { OrchestratorEvent } from '../types/index.js';
+import { authenticate, createBootstrapAccount, loadWebAccounts, validateAccounts, type WebAccount } from './accounts.js';
 import {
   MAX_REPOSITORY_GOAL, REPOSITORY_PROJECT_ID, repositoryConfig, type RepositoryConfig
 } from '../scenarios/repository-repair.js';
@@ -23,6 +24,7 @@ export interface WebServerOptions {
   llm?: LlmConfig;
   project?: RepositoryConfig;
   dataDir?: string;
+  accounts?: WebAccount[];
 }
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
@@ -44,17 +46,23 @@ export class WebServer {
   private readonly sseClients = new Map<ServerResponse, string | undefined>();
   private unsubscribe?: () => void;
   private readonly ownsOrchestrator: boolean;
+  private readonly accounts: ReadonlyMap<string, WebAccount>;
+  private readonly bootstrap?: { username: string; token: string };
 
   constructor(options: WebServerOptions = {}) {
     this.port = options.port ?? (Number(process.env.AETHER_PORT) || 3300);
     this.host = options.host ?? '127.0.0.1';
+    const bootstrap = options.accounts === undefined ? createBootstrapAccount() : undefined;
+    if (bootstrap) this.bootstrap = { username: bootstrap.account.username, token: bootstrap.token };
+    const accounts = bootstrap ? [bootstrap.account] : validateAccounts(options.accounts);
+    this.accounts = new Map(accounts.map(account => [account.username, account]));
     this.ownsOrchestrator = !options.orchestrator;
     this.orchestrator = options.orchestrator ?? new Orchestrator({
       llm: options.llm, project: options.project, dataDir: options.dataDir
     });
   }
 
-  public async start(): Promise<{ port: number; host: string; url: string }> {
+  public async start(): Promise<{ port: number; host: string; url: string; bootstrap?: { username: string; token: string } }> {
     const hostname = this.host === '::1' ? '[::1]' : this.host;
     try {
       if (!LOOPBACK_HOSTS.has(hostname)) throw new Error('The Web console requires a loopback address.');
@@ -66,7 +74,7 @@ export class WebServer {
           const address = this.server?.address();
           const actualPort = typeof address === 'object' && address ? address.port : this.port;
           const url = `http://${hostname}:${actualPort}`;
-          resolve({ port: actualPort, host: this.host, url });
+          resolve({ port: actualPort, host: this.host, url, bootstrap: this.bootstrap });
         });
       });
     } catch (error) {
@@ -137,7 +145,7 @@ export class WebServer {
       this.json(res, 403, { error: '请使用本机控制台地址。' });
       return;
     }
-    if (method === 'POST' && origin && origin !== `http://${host}` && origin !== `https://${host}`) {
+    if (method === 'POST' && (req.headers['sec-fetch-site'] === 'cross-site' || (origin && origin !== `http://${host}`))) {
       this.json(res, 403, { error: '请从控制台页面提交此操作。' });
       return;
     }
@@ -148,13 +156,25 @@ export class WebServer {
       return;
     }
 
+    res.setHeader('Vary', 'Authorization');
+    const account = authenticate(this.accounts, req.headers.authorization);
+    if (!account) {
+      res.setHeader('WWW-Authenticate', 'Basic realm="AetherHarness", charset="UTF-8"');
+      this.json(res, 401, { error: '请使用控制台账号和访问令牌登录。' });
+      return;
+    }
+    if (method === 'POST' && account.role !== 'operator') {
+      this.json(res, 403, { error: '此操作需要操作者权限。' });
+      return;
+    }
+
     try {
       // 1. Dashboard UI
       const runPage = /^\/runs\/(run-\d+)$/.exec(pathname)?.[1];
       if (method === 'GET' && (pathname === '/' || pathname === '/index.html' || runPage)) {
         res.writeHead(runPage && !this.orchestrator.getRun(runPage) ? 404 : 200, {
           'Content-Type': 'text/html; charset=utf-8',
-          'Cache-Control': 'no-cache'
+          'Cache-Control': 'no-store'
         });
         res.end(DASHBOARD_HTML);
         return;
@@ -189,6 +209,7 @@ export class WebServer {
         }));
         this.json(res, 200, {
           tasks, scheduler, tools, llm, knowledgeChunks, settings: this.orchestrator.getSettings(),
+          account: { username: account.username, role: account.role },
           repository: this.orchestrator.getProject(),
           persistentStorage: this.orchestrator.hasPersistentStorage(),
           agents: agents.map(agent => {
@@ -318,7 +339,7 @@ export class WebServer {
           return;
         }
         let runId: string | undefined;
-        this.orchestrator.runProjectTask(goal, id => { runId = id; }).catch(() => {});
+        this.orchestrator.runProjectTask(goal, id => { runId = id; }, account.username).catch(() => {});
         this.json(res, runId ? 202 : 500, runId ? { runId } : { error: '无法创建仓库运行。' });
         return;
       }
@@ -332,7 +353,7 @@ export class WebServer {
 
         if (taskId === 'all') {
           // Trigger all tasks asynchronously so the client gets an immediate response
-          this.orchestrator.runAll(allTasks).catch(err => {
+          this.orchestrator.runAll(allTasks, { requestedBy: account.username }).catch(err => {
             console.error('Task runAll error:', err);
           });
           this.json(res, 200, { success: true, message: 'All tasks dispatched in background' });
@@ -348,10 +369,26 @@ export class WebServer {
         }
 
         let runId: string | undefined;
-        this.orchestrator.runTask(task, { onStart: id => { runId = id; } }).catch(err => {
+        this.orchestrator.runTask(task, { onStart: id => { runId = id; }, requestedBy: account.username }).catch(err => {
           console.error(`Task ${taskId} error:`, err);
         });
         this.json(res, 200, { success: true, taskId: task.id, runId, message: `Task ${task.id} started` });
+        return;
+      }
+
+      const cancelId = /^\/api\/runs\/(run-\d+)\/cancel$/.exec(pathname)?.[1];
+      if (method === 'POST' && cancelId) {
+        if (!this.orchestrator.getRun(cancelId)) {
+          this.json(res, 404, { error: '所选运行不存在。' });
+          return;
+        }
+        const { reason } = await this.readJsonBody(req);
+        if (reason !== undefined && (typeof reason !== 'string' || reason.length > 500)) {
+          this.json(res, 400, { error: '取消备注最多 500 字符。' });
+          return;
+        }
+        const run = this.orchestrator.cancelRun(cancelId, account.username, reason?.trim());
+        this.json(res, run ? 202 : 409, run ? { run: runDetail(run) } : { error: '此运行已无法取消。' });
         return;
       }
 
@@ -385,7 +422,7 @@ export class WebServer {
           this.json(res, 409, { error: '当前服务的任务配置与该历史运行不匹配，请重新配置后重试。' });
           return;
         }
-        const updated = await this.orchestrator.resolveEscalation(runId, optionIndex, 'local Web operator', reason?.trim());
+        const updated = await this.orchestrator.resolveEscalation(runId, optionIndex, account.username, reason?.trim());
         this.json(res, 200, { success: true, run: runDetail(updated ?? run) });
         return;
       }
@@ -443,12 +480,14 @@ async function main(): Promise<void> {
   const port = Number(process.env.AETHER_PORT) || 3300;
   const server = new WebServer({
     port, project: repositoryConfig(process.env),
-    dataDir: resolve(process.env.AETHER_DATA_DIR ?? '.aether/runs')
+    dataDir: resolve(process.env.AETHER_DATA_DIR ?? '.aether/runs'),
+    accounts: loadWebAccounts(process.env.AETHER_ACCOUNTS_FILE)
   });
   const info = await server.start();
   console.log(`\n\x1b[36m⚡ AetherHarness Web 控制台已启动，访问地址：\x1b[1m${info.url}\x1b[0m\n`);
   console.log(`   多智能体协同编排、动态调度、PDCA 自愈与三层可信验证可视化平台`);
   console.log(`   按 Ctrl+C 可停止服务。\n`);
+  if (info.bootstrap) console.log(`本次启动的临时账号 ${info.bootstrap.username}，访问令牌 ${info.bootstrap.token}\n`);
 
   const shutdown = async () => {
     console.log('\n正在优雅关闭 Web 服务...');

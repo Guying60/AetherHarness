@@ -8,8 +8,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { request } from 'node:http';
+import { setTimeout as cancellableDelay } from 'node:timers/promises';
 
-import { ToolRegistry } from '../src/tools/tool-registry.js';
+import { ToolCleanupError, ToolRegistry } from '../src/tools/tool-registry.js';
 import { createBuiltinTools, buildUnifiedDiff } from '../src/tools/builtin-tools.js';
 import { AgentRegistry } from '../src/agent/agent-registry.js';
 import { BaseAgent } from '../src/agent/base-agent.js';
@@ -32,7 +33,8 @@ import { VerificationEngine, auditFor } from '../src/verification/verification-e
 import { SelfLoopEngine } from '../src/selfloop/self-loop-engine.js';
 import { FeedbackOptimizer } from '../src/optimization/feedback-optimizer.js';
 import { Orchestrator } from '../src/orchestrator.js';
-import { WebServer } from '../src/web/server.js';
+import { WebServer as HttpWebServer, WebServerOptions } from '../src/web/server.js';
+import { hashWebToken } from '../src/web/accounts.js';
 import { REPOSITORY_FILE, REPOSITORY_PROJECT_ID } from '../src/scenarios/repository-repair.js';
 import { RunStore } from '../src/store/run-store.js';
 import { resolveLlmConfig } from '../src/agent/llm/index.js';
@@ -54,6 +56,21 @@ let passed = 0;
 let failed = 0;
 const failures: string[] = [];
 let suite = '';
+
+const accounts = [
+  { username: 'reviewer', role: 'viewer' as const, token: 'a'.repeat(64) },
+  { username: 'engineer', role: 'operator' as const, token: 'b'.repeat(64) }
+];
+class WebServer extends HttpWebServer {
+  constructor(options: WebServerOptions) {
+    super({ ...options, accounts: accounts.map(({ token, ...account }) => ({ ...account, tokenHash: hashWebToken(token) })) });
+  }
+}
+function webFetch(url: string, init?: RequestInit, { username, token } = accounts[1]): Promise<Response> {
+  const headers = new Headers(init?.headers);
+  headers.set('Authorization', 'Basic ' + Buffer.from(`${username}:${token}`).toString('base64'));
+  return fetch(url, { ...init, headers });
+}
 
 function describe(name: string): void {
   suite = name;
@@ -1229,7 +1246,7 @@ async function suiteWebServer(): Promise<void> {
   const liveInfo = await live.start();
   try {
     for (const endpoint of ['/api/agents', '/api/status']) {
-      const payload = await (await fetch(liveInfo.url + endpoint)).text();
+      const payload = await (await webFetch(liveInfo.url + endpoint)).text();
       check(!/private-config-probe|"systemPrompt"|"memory"/.test(payload), `${endpoint} never serializes the live provider or agent memory`);
     }
     const foreignHost = await new Promise<number | undefined>((resolve, reject) => {
@@ -1259,9 +1276,22 @@ async function suiteWebServer(): Promise<void> {
 
   try {
     check(info.port > 0, `web server listens on ephemeral port (${info.port})`);
+    for (const path of ['/', '/api/dashboard', '/api/events', '/api/runs/run-01/report']) {
+      const response = await fetch(info.url + path);
+      check(response.status === 401 && response.headers.get('www-authenticate')?.includes('Basic') === true,
+        `${path} challenges unauthenticated clients`);
+    }
+    const wrong = await webFetch(info.url + '/api/dashboard', undefined, { ...accounts[1], token: '0'.repeat(64) });
+    equal(wrong.status, 401, 'an incorrect token is rejected');
+    const viewer = await webFetch(info.url + '/api/dashboard', undefined, accounts[0]);
+    equal((await viewer.json()).account, { username: 'reviewer', role: 'viewer' }, 'authenticated reads identify the viewer role');
+    for (const path of ['/api/tasks/run', '/api/runs', '/api/runs/run-01/escalate', '/api/runs/run-01/cancel']) {
+      const response = await webFetch(info.url + path, { method: 'POST' }, accounts[0]);
+      equal(response.status, 403, `viewers cannot mutate ${path}`);
+    }
 
     // 1. Root HTML
-    const htmlRes = await fetch(`${info.url}/`);
+    const htmlRes = await webFetch(`${info.url}/`);
     equal(htmlRes.status, 200, 'GET / returns 200 OK');
     const contentType = htmlRes.headers.get('content-type') ?? '';
     check(contentType.includes('text/html'), 'GET / serves text/html');
@@ -1271,19 +1301,19 @@ async function suiteWebServer(): Promise<void> {
     check(htmlText.includes('选择一个案例运行'), 'HTML starts with a guided scenario picker');
 
     // 2. Status API
-    const statusRes = await fetch(`${info.url}/api/status`);
+    const statusRes = await webFetch(`${info.url}/api/status`);
     equal(statusRes.status, 200, 'GET /api/status returns 200 OK');
     const statusData = await statusRes.json();
     equal(statusData.status, 'ok', 'status data reports ok');
     check(Array.isArray(statusData.runs), 'status data lists runs');
 
-    const initial = await (await fetch(`${info.url}/api/dashboard`)).json();
+    const initial = await (await webFetch(`${info.url}/api/dashboard`)).json();
     equal(initial.tasks.length, 3, 'dashboard exposes the three actual scenario templates');
     equal(initial.run, null, 'an untouched dashboard has no verification result');
     check(initial.tasks[0].workflow.edges.some((edge: any) => edge.to === 'n_loop_quick'), 'dashboard exposes the real DAG branches');
 
     // 3. Agents API
-    const agentsRes = await fetch(`${info.url}/api/agents`);
+    const agentsRes = await webFetch(`${info.url}/api/agents`);
     equal(agentsRes.status, 200, 'GET /api/agents returns 200 OK');
     const agents = await agentsRes.json();
     equal(agents.length, 6, 'agents endpoint returns all 6 specialized agents');
@@ -1292,14 +1322,14 @@ async function suiteWebServer(): Promise<void> {
 
     // 4. SSE Events endpoint
     const ac = new AbortController();
-    const ssePromise = fetch(`${info.url}/api/events`, { signal: ac.signal });
+    const ssePromise = webFetch(`${info.url}/api/events`, { signal: ac.signal });
     const sseRes = await ssePromise;
     equal(sseRes.status, 200, 'GET /api/events returns 200 OK');
     equal(sseRes.headers.get('content-type'), 'text/event-stream', 'SSE content-type is text/event-stream');
     ac.abort(); // close SSE client
 
     // 5. Trigger task run (rl-normal produces patch)
-    const runRes = await fetch(`${info.url}/api/tasks/run`, {
+    const runRes = await webFetch(`${info.url}/api/tasks/run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ taskId: 'rl-normal' })
@@ -1312,7 +1342,7 @@ async function suiteWebServer(): Promise<void> {
     let finishedRun: any;
     for (let i = 0; i < 40; i++) {
       await new Promise(r => setTimeout(r, 50));
-      const runsRes = await fetch(`${info.url}/api/runs`);
+      const runsRes = await webFetch(`${info.url}/api/runs`);
       const runs = await runsRes.json();
       finishedRun = runs.find((r: any) => r.taskId === 'rl-normal');
       if (finishedRun && finishedRun.status === 'completed') break;
@@ -1322,19 +1352,19 @@ async function suiteWebServer(): Promise<void> {
     check(finishedRun?.patch?.patch?.includes('--- a/'), 'run produced a unified diff patch');
     equal(runData.runId, finishedRun.runId, 'dispatch returns the ID of the run just started');
 
-    const detail = await (await fetch(`${info.url}/api/dashboard?runId=${runData.runId}`)).json();
+    const detail = await (await webFetch(`${info.url}/api/dashboard?runId=${runData.runId}`)).json();
     check(detail.settings.maxConcurrentRuns === 3 && detail.settings.scheduler.maxRetries === 1 &&
       detail.settings.model === null && detail.settings.workflows.some((workflow: any) => workflow.timeoutMs === 30_000),
       'dashboard settings reflect effective scheduler and workflow limits');
     check(detail.run.knowledgeHits.some((hit: any) => hit.content && hit.version),
       'dashboard includes the retrieved text and source version');
-    const reportResponse = await fetch(info.url + '/api/runs/' + runData.runId + '/report');
+    const reportResponse = await webFetch(info.url + '/api/runs/' + runData.runId + '/report');
     const report = await reportResponse.json();
     check(!!reportResponse.headers.get('content-disposition')?.includes('-report.json') &&
       report.verdict === 'passed' && report.delivery.status === 'verified' &&
       /^[a-f0-9]{64}$/.test(report.delivery.sha256) && !report.state && !report.artifact,
       'verified acceptance reports identify the downloadable patch without internal state');
-    const history = await (await fetch(info.url + '/api/agents/reviewer_01/history')).json();
+    const history = await (await webFetch(info.url + '/api/agents/reviewer_01/history')).json();
     check(history.activity.some((entry: any) => entry.runId === runData.runId &&
       entry.reviews.some((review: any) => review.approved === true)) && !JSON.stringify(history).includes('systemPrompt'),
       'Agent history links to real review evidence and excludes prompt contents');
@@ -1343,23 +1373,23 @@ async function suiteWebServer(): Promise<void> {
     equal(detail.run.loopRounds[1].passed, true, 'dashboard includes the successful repair round');
     check(detail.events.some((event: any) => event.kind === 'scheduler' && event.runId === runData.runId && event.data.agentId),
       'dispatch events stay attached to their run');
-    const linked = await fetch(info.url + '/runs/' + runData.runId);
+    const linked = await webFetch(info.url + '/runs/' + runData.runId);
     check(linked.status === 200 && (await linked.text()).includes('pipeline-flow'), 'a run deep link serves the execution dashboard');
-    const missingLink = await fetch(info.url + '/runs/run-999999');
+    const missingLink = await webFetch(info.url + '/runs/run-999999');
     check(missingLink.status === 404 && (await missingLink.text()).includes('pipeline-flow'), 'a missing run link shows the dashboard error state');
-    equal((await fetch(info.url + '/api/runs/run-999999/events')).status, 404, 'a missing run cannot open an event stream');
+    equal((await webFetch(info.url + '/api/runs/run-999999/events')).status, 404, 'a missing run cannot open an event stream');
     const scopedUrl = info.url + '/api/runs/' + runData.runId + '/events';
-    const replay = await readSseEvent(await fetch(scopedUrl, {
+    const replay = await readSseEvent(await webFetch(scopedUrl, {
       headers: { 'Last-Event-ID': detail.events.at(-2).id }, signal: AbortSignal.timeout(5000)
     }));
     equal([replay.id, replay.data.kind], [detail.events.at(-1).id, 'run.finished'], 'SSE replays only events after the supplied cursor');
-    const reset = await readSseEvent(await fetch(scopedUrl, {
+    const reset = await readSseEvent(await webFetch(scopedUrl, {
       headers: { 'Last-Event-ID': 'expired-cursor' }, signal: AbortSignal.timeout(5000)
     }));
     equal(reset.event, 'reset', 'an unavailable SSE cursor requests a snapshot refresh');
 
     // 6. Test Escalation flow via API
-    await fetch(`${info.url}/api/tasks/run`, {
+    await webFetch(`${info.url}/api/tasks/run`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ taskId: 'rl-hard' })
@@ -1368,7 +1398,7 @@ async function suiteWebServer(): Promise<void> {
     let hardRun: any;
     for (let i = 0; i < 40; i++) {
       await new Promise(r => setTimeout(r, 50));
-      const runsRes = await fetch(`${info.url}/api/runs`);
+      const runsRes = await webFetch(`${info.url}/api/runs`);
       const runs = await runsRes.json();
       hardRun = runs.find((r: any) => r.taskId === 'rl-hard');
       if (hardRun && hardRun.status === 'needs_human') break;
@@ -1378,14 +1408,14 @@ async function suiteWebServer(): Promise<void> {
 
     // Resolve escalation via POST /api/runs/:id/escalate
     const decisionUrl = `${info.url}/api/runs/${hardRun.runId}/escalate`;
-    const decide = (optionIndex: number) => fetch(decisionUrl, {
+    const decide = (optionIndex: number) => webFetch(decisionUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ optionIndex, reason: '需要独立集群证据' })
     });
     equal((await decide(99)).status, 400, 'an invalid option cannot accidentally abort a run');
     const hardEvents = server.orchestrator.getEvents(hardRun.runId);
-    const liveEvents = await fetch(info.url + '/api/runs/' + hardRun.runId + '/events', {
+    const liveEvents = await webFetch(info.url + '/api/runs/' + hardRun.runId + '/events', {
       headers: { 'Last-Event-ID': hardEvents.at(-1)!.id! }, signal: AbortSignal.timeout(5000)
     });
     await server.orchestrator.runTask(server.orchestrator.getTasks().find(task => task.id === 'rl-easy')!);
@@ -1401,10 +1431,10 @@ async function suiteWebServer(): Promise<void> {
     const decisionEvent = await readSseEvent(liveEvents);
     check(decisionEvent.id !== hardEvents.at(-1)!.id && decisionEvent.data.runId === hardRun.runId &&
       decisionEvent.data.tag === 'human', 'a resumed run stream delivers new decisions and excludes other runs');
-    const draftReport = await (await fetch(info.url + '/api/runs/' + hardRun.runId + '/report')).json();
+    const draftReport = await (await webFetch(info.url + '/api/runs/' + hardRun.runId + '/report')).json();
     check(draftReport.delivery.status === 'draft' && draftReport.verdict === 'blocked' &&
-      decisionEvent.data.data.actor === 'local Web operator' && decisionEvent.data.data.reason === '需要独立集群证据',
-      'draft reports preserve the failed verdict and audit the local decision');
+      decisionEvent.data.data.actor === 'engineer' && decisionEvent.data.data.reason === '需要独立集群证据',
+      'draft reports preserve the failed verdict and audit the authenticated operator');
     equal((await decide(2)).status, 409, 'a resolved run rejects a second decision');
   } finally {
     await server.stop();
@@ -1458,7 +1488,7 @@ async function suiteRepositoryRepair(): Promise<void> {
     const server = new WebServer({ port: 0, orchestrator });
     const { url } = await server.start();
     try {
-      const submit = (projectId: string, goal: string) => fetch(url + '/api/runs', {
+      const submit = (projectId: string, goal: string) => webFetch(url + '/api/runs', {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ projectId, goal, path: 'untrusted browser path' })
       });
@@ -1473,7 +1503,8 @@ async function suiteRepositoryRepair(): Promise<void> {
       equal(run.project?.revision, revision, 'the run records the pinned commit');
       check(!!run.project && !Object.hasOwn(run.project, 'path'), 'repository metadata omits the absolute host path');
       check(receivedBaseline && run.goal === goal, 'the developer receives the user goal, pinned source and failing rule IDs');
-      check(run.baselineVerification?.passed === false && !!run.plan?.invariants?.length, 'the run retains failed baseline evidence and agent plan');
+      check(run.baselineVerification?.passed === false && !!run.plan?.invariants?.length,
+        'the run retains failed baseline evidence and agent plan' + (run.error ? ` (${run.error})` : ''));
       check(run.loopRounds?.length === 2 && !!run.loopRounds[0].criticFeedback && run.verification?.passed === true,
         'the first candidate is diagnosed and the revised candidate passes');
       const baselineTest = run.nodeProgress?.n_baseline_test;
@@ -1492,6 +1523,54 @@ async function suiteRepositoryRepair(): Promise<void> {
       check(index.equals(readFileSync(join(repo, '.git', 'index'))), 'patch verification leaves the source index untouched');
       const invalid = await orchestrator.tools.invoke('git_check_patch', { patch: 'not a patch' }).catch(() => 'rejected');
       equal(invalid, 'rejected', 'Git rejects an invalid patch');
+
+      if (image) {
+        const runner = orchestrator.tools.get('container_test_runner')!;
+        const containers = (all: boolean) => execFileSync('docker', [
+          'ps', ...(all ? ['-a'] : []), '--filter', 'name=aether-acceptance-', '--format', '{{.Names}}'
+        ], { encoding: 'utf8' }).trim().split(/\r?\n/).filter(Boolean);
+        const initial = new Set(containers(true));
+        orchestrator.tools.register({ ...runner, handler: (params, ctx) => runner.handler({
+          ...params, sourceCode: params.sourceCode + '\n{ const until = Date.now() + 2700; while (Date.now() < until) {} }'
+        }, ctx) });
+        let cancellingId = '';
+        const cancellable = orchestrator.runProjectTask(goal, id => { cancellingId = id; });
+        let observed: string | undefined;
+        for (let attempt = 0; attempt < 30 && !observed; attempt++) {
+          await sleep(60);
+          observed = containers(false).find(name => !initial.has(name));
+        }
+        check(!!observed, 'the cancellation regression observes a running acceptance container');
+        const cancelled = await webFetch(url + '/api/runs/' + cancellingId + '/cancel', {
+          method: 'POST', body: JSON.stringify({ reason: 'stop acceptance container' })
+        });
+        equal(cancelled.status, 202, 'an operator can cancel while Docker is executing');
+        const stopped = await cancellable;
+        check(stopped.status === 'cancelled' && !stopped.patch && stopped.nodeProgress?.n_baseline_test?.status === 'cancelled' &&
+          containers(true).every(name => initial.has(name)), 'cancelled repository runs wait for container removal and withhold delivery');
+        orchestrator.tools.register(runner);
+      }
+
+      const originalRunner = orchestrator.tools.get('container_test_runner')!;
+      let notifyCleanupTest!: () => void;
+      const cleanupTestEntered = new Promise<void>(resolve => { notifyCleanupTest = resolve; });
+      orchestrator.tools.register({ ...originalRunner, handler: async (_params, ctx) => {
+        notifyCleanupTest();
+        try {
+          await cancellableDelay(4000, undefined, { signal: ctx.signal });
+        } catch (cause) {
+          throw new ToolCleanupError('cleanup could not be confirmed', { cause });
+        }
+      } });
+      let cleanupTestId = '';
+      const cleanupTest = orchestrator.runProjectTask(goal, id => { cleanupTestId = id; });
+      await cleanupTestEntered;
+      await webFetch(url + '/api/runs/' + cleanupTestId + '/cancel', { method: 'POST' });
+      const cleanupFailed = await cleanupTest;
+      check(cleanupFailed.status === 'failed' && cleanupFailed.error === 'cleanup could not be confirmed' &&
+        cleanupFailed.cancellation?.actor === 'engineer' && !cleanupFailed.patch,
+        'an unconfirmed cleanup is reported as a failure and preserves the cancellation audit');
+      orchestrator.tools.register(originalRunner);
 
       const checker = orchestrator.tools.get('git_check_patch')!;
       orchestrator.tools.register({ ...checker, handler: async () => { throw new Error('patch check failed'); } });
@@ -1512,6 +1591,66 @@ async function suiteRepositoryRepair(): Promise<void> {
     }
   } finally {
     rmSync(repo, { recursive: true, force: true, maxRetries: 2 });
+  }
+}
+
+async function suiteCancellation(): Promise<void> {
+  describe('[15] authenticated cancellation');
+  const root = mkdtempSync(join(tmpdir(), 'aether-cancellation-'));
+  const orchestrator = new Orchestrator({ dataDir: root, maxConcurrentRuns: 2 });
+  const server = new WebServer({ port: 0, orchestrator });
+  let restored: WebServer | undefined;
+  try {
+    const { url } = await server.start();
+    const agent = orchestrator.agents.get('req_analyst_01')!;
+    agent.profile.maxConcurrency = 1;
+    let entered = 0;
+    agent.setBrain({
+      kind: 'test',
+      name: 'cancellable model',
+      think: async ctx => {
+        entered++;
+        await cancellableDelay(4000, undefined, { signal: ctx.request.signal });
+        return { output: {}, reasoning: 'test task' };
+      }
+    });
+    const task = orchestrator.getTasks()[0];
+    let activeId = '', scheduledId = '', queuedId = '';
+    const active = orchestrator.runTask(task, { onStart: id => { activeId = id; } });
+    const scheduled = orchestrator.runTask(task, { onStart: id => { scheduledId = id; } });
+    const queued = orchestrator.runTask(task, { onStart: id => { queuedId = id; } });
+    check(orchestrator.getRun(queuedId)?.status === 'pending' &&
+      orchestrator.scheduler.getPendingTasks().some(job => job.runId === scheduledId),
+      'the test holds a run in the admission queue and another in the scheduler queue');
+    const cancel = (id: string, reason: unknown = '停止测试') => webFetch(url + '/api/runs/' + id + '/cancel', {
+      method: 'POST', body: JSON.stringify({ reason })
+    });
+    equal((await cancel(activeId, 123)).status, 400, 'cancellation rejects invalid remarks');
+    equal((await cancel(queuedId)).status, 202, 'an operator can cancel an admission-queued run');
+    equal((await cancel(scheduledId)).status, 202, 'an operator can cancel a scheduler-queued run');
+    equal((await cancel(activeId)).status, 202, 'an operator can cancel the running Agent');
+    equal((await cancel(activeId)).status, 409, 'duplicate cancellation cannot change the audit record');
+    const runs = await Promise.all([active, scheduled, queued]);
+    check(runs.every(run => run.status === 'cancelled' && !run.patch && !run.artifact && run.cancellation?.actor === 'engineer'),
+      'all cancelled runs withhold artifacts and record their authenticated operator');
+    check(entered === 1 && agent.currentLoad === 0 && orchestrator.scheduler.getStats().running === 0 &&
+      orchestrator.scheduler.getPendingTasks().length === 0 && orchestrator.scheduler.getStats().retried === 0,
+      'cancellation releases Agent slots, removes both queues and skips retries');
+    check(runs[0].nodeProgress?.n_requirement?.status === 'cancelled' && !runs[2].nodeProgress?.n_requirement,
+      'running and never-started nodes retain distinct evidence');
+    await server.stop();
+    await orchestrator.close();
+    restored = new WebServer({ port: 0, dataDir: root });
+    const info = await restored.start();
+    const report = await (await webFetch(info.url + '/api/runs/' + activeId + '/report')).json();
+    check(report.status === 'cancelled' && report.cancellation?.reason === '停止测试' &&
+      report.events.some((event: any) => event.data?.action === 'cancel' && event.data?.actor === 'engineer'),
+      'cancellation and its reason survive service restart');
+  } finally {
+    await server.stop();
+    await orchestrator.close();
+    await restored?.stop();
+    rmSync(root, { recursive: true, force: true, maxRetries: 2 });
   }
 }
 
@@ -1542,7 +1681,7 @@ async function suitePersistence(): Promise<void> {
 
     server = new WebServer({ port: 0, dataDir });
     let info = await server.start();
-    const detail = await (await fetch(info.url + '/api/dashboard?runId=' + normal.runId)).json();
+    const detail = await (await webFetch(info.url + '/api/dashboard?runId=' + normal.runId)).json();
     check(detail.persistentStorage === true && detail.run.patch.patch === patch, 'a restarted Web server restores the delivered patch');
     equal(detail.run.loopRounds, rounds, 'all recorded verification rounds survive restart');
     check(typeof detail.run.modelLabel === 'string' && detail.run.modelLabel === normal.modelLabel,
@@ -1550,7 +1689,7 @@ async function suitePersistence(): Promise<void> {
     check(detail.events.some((event: any) => event.kind === 'run.finished'), 'execution evidence survives restart');
     equal(detail.events.map((event: any) => event.id), normalEvents.map(event => event.id),
       'event cursors remain stable across restart');
-    const resumed = await readSseEvent(await fetch(info.url + '/api/runs/' + normal.runId + '/events', {
+    const resumed = await readSseEvent(await webFetch(info.url + '/api/runs/' + normal.runId + '/events', {
       headers: { 'Last-Event-ID': normalEvents.at(-2)!.id! }, signal: AbortSignal.timeout(5000)
     }));
     equal(resumed.id, normalEvents.at(-1)!.id, 'SSE can resume using a cursor from a previous service process');
@@ -1569,7 +1708,7 @@ async function suitePersistence(): Promise<void> {
     rmdirSync(stateFile);
     writeFileSync(stateFile, saved);
 
-    const decisions = await Promise.all([1, 2].map(optionIndex => fetch(info.url + '/api/runs/' + hard.runId + '/escalate', {
+    const decisions = await Promise.all([1, 2].map(optionIndex => webFetch(info.url + '/api/runs/' + hard.runId + '/escalate', {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ optionIndex })
     })));
     equal(decisions.map(response => response.status).sort(), [200, 409], 'concurrent human decisions take effect once');
@@ -1606,7 +1745,7 @@ async function suitePersistence(): Promise<void> {
     writeFileSync(stateFile, JSON.stringify(unknown));
     server = new WebServer({ port: 0, dataDir });
     info = await server.start();
-    const conflict = await fetch(info.url + '/api/runs/' + retryCard.runId + '/escalate', {
+    const conflict = await webFetch(info.url + '/api/runs/' + retryCard.runId + '/escalate', {
       method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ optionIndex: 0 })
     });
     check(conflict.status === 409 && !!server.orchestrator.getRun(retryCard.runId)?.escalation,
@@ -1717,6 +1856,7 @@ async function main(): Promise<void> {
   await suiteRepositoryRepair();
   await suitePersistence();
   suiteCpaConfig();
+  await suiteCancellation();
 
   const elapsed = Date.now() - started;
   process.stdout.write('\n' + '='.repeat(64) + '\n');

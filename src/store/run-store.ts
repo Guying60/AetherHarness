@@ -13,7 +13,7 @@ export interface StoredRuns {
   events: Record<string, OrchestratorEvent[]>;
 }
 
-const statuses = new Set(['pending', 'running', 'paused', 'completed', 'failed', 'needs_human', 'skipped']);
+const statuses = new Set(['pending', 'running', 'paused', 'cancelling', 'cancelled', 'completed', 'failed', 'needs_human', 'skipped']);
 
 export class RunStore {
   private readonly file: string;

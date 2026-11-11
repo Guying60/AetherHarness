@@ -84,11 +84,13 @@ export interface RunSnapshot {
   retryAvailable?: boolean;
   restored?: boolean;
   modelLabel?: string;
+  requestedBy?: string;
+  cancellation?: { actor: string; reason: string; requestedAt: number };
 }
 
 export type EventListener = (event: OrchestratorEvent) => void;
 type RunTask = RateLimiterTask & { repository?: true };
-type RunOptions = { maxIterationsOverride?: number; retryOf?: string; onStart?: (runId: string) => void };
+type RunOptions = { maxIterationsOverride?: number; retryOf?: string; onStart?: (runId: string) => void; requestedBy?: string };
 
 export interface OrchestratorOptions {
   onEvent?: EventListener;
@@ -128,7 +130,8 @@ export class Orchestrator {
   private escalationsRaised = 0;
   private readonly maxConcurrentRuns: number;
   private runningCount = 0;
-  private readonly runQueue: Array<() => void> = [];
+  private readonly runQueue = new Map<string, (reserved: boolean) => void>();
+  private readonly runControllers = new Map<string, AbortController>();
   private llmApplied?: AppliedLlm;
   private llmLabel = 'offline · deterministic brains';
   private readonly repository?: RepositoryProject;
@@ -233,21 +236,24 @@ export class Orchestrator {
           this.events.set(runId, events);
         }
         for (const run of this.getRuns()) {
-          if (!['pending', 'running', 'paused'].includes(run.status)) continue;
+          if (!['pending', 'running', 'paused', 'cancelling'].includes(run.status)) continue;
+          const interruptedCancellation = run.status === 'cancelling';
           run.status = 'failed';
-          run.error = 'The previous service stopped during this run. Start a new run to continue.';
+          run.error = interruptedCancellation
+            ? 'The previous service stopped during cancellation. Resource cleanup could not be confirmed.'
+            : 'The previous service stopped during this run. Start a new run to continue.';
           run.summary = run.error;
           run.finishedAt = Date.now();
           run.patch = undefined;
           if (run.state) {
-            run.state.status = 'failed';
+            run.state.status = run.status;
             run.state.endTime = run.finishedAt;
             run.state.currentActiveNodes = [];
           }
           for (const progress of Object.values(run.nodeProgress ?? {})) {
-            if (progress.status === 'running') Object.assign(progress, { status: 'failed', error: run.error, endTime: run.finishedAt });
+            if (progress.status === 'running') Object.assign(progress, { status: run.status, error: run.error, endTime: run.finishedAt });
           }
-          this.emit('run.finished', run.runId, run.error, 'run', { status: 'failed' });
+          this.emit('run.finished', run.runId, run.summary, 'run', { status: run.status });
         }
         if (upgradedEvents) this.persist();
       } catch (error) {
@@ -419,12 +425,12 @@ Edge cases:
     return { project: this.repository, ready: reason === undefined, reason };
   }
 
-  public runProjectTask(goal: string, onStart?: RunOptions['onStart']): Promise<RunSnapshot> {
+  public runProjectTask(goal: string, onStart?: RunOptions['onStart'], requestedBy?: string): Promise<RunSnapshot> {
     const { project, reason } = this.getProject();
     if (!project || reason) throw new Error(reason ?? 'No configured repository.');
     const prompt = goal.trim();
     if (!prompt || prompt.length > MAX_REPOSITORY_GOAL) throw new Error('Invalid repository task description.');
-    return this.runTask(this.projectTask(prompt), { onStart });
+    return this.runTask(this.projectTask(prompt), { onStart, requestedBy });
   }
 
   private projectTask(prompt: string): RunTask {
@@ -473,28 +479,35 @@ Edge cases:
       project: task.repository ? this.repository : undefined,
       goal: task.repository ? task.prompt : undefined,
       retryAvailable: true,
-      modelLabel: this.llmLabel
+      modelLabel: this.llmLabel,
+      requestedBy: options.requestedBy
     };
     this.runs.set(runId, snapshot);
     this.taskByRun.set(runId, task);
     this.runOrder.push(runId);
+    const controller = new AbortController();
+    this.runControllers.set(runId, controller);
+    let cleanupFailure: string | undefined;
 
     let slotReserved = false;
     try {
       options.onStart?.(runId);
+      controller.signal.throwIfAborted();
       if (this.runningCount < this.maxConcurrentRuns) {
         this.runningCount++;
+        slotReserved = true;
       } else {
-        const ready = new Promise<void>(resolve => this.runQueue.push(resolve));
+        const ready = new Promise<boolean>(resolve => this.runQueue.set(runId, resolve));
         this.emit('log', runId, 'Waiting for a run slot', 'run', { status: 'pending' });
-        await ready;
+        slotReserved = await ready;
       }
-      slotReserved = true;
+      controller.signal.throwIfAborted();
       snapshot.status = 'running';
       snapshot.startedAt = Date.now();
       this.emit('run.started', runId, `${task.title} [${task.difficulty}]`, 'run', {
         taskId: task.id,
-        nodes: workflow.nodes.length
+        nodes: workflow.nodes.length,
+        actor: options.requestedBy
       });
 
       const citations = this.knowledge.query(task.prompt, 2);
@@ -520,6 +533,7 @@ Edge cases:
       };
       const state = await this.workflow.execute(workflow, initialInput, {
         runId,
+        signal: controller.signal,
         onNodeStart: (node, record) => {
           nodeProgress[node.id] = { status: 'running', startTime: record.startTime, nodeName: node.name, toolId: node.toolId };
           this.emit('node.started', runId, `${node.name} (${node.type})`, 'node', { nodeId: node.id });
@@ -534,6 +548,7 @@ Edge cases:
             if (node.id === 'n_architecture') snapshot.plan = { ...snapshot.plan, invariants: record.output?.invariants };
           }
           const meta = record.meta;
+          if (meta?.cleanupFailed) cleanupFailure = error;
           const detail =
             meta?.iterations !== undefined
               ? ` · iterations=${meta.iterations} score=${(Number(meta.score ?? 0) * 100).toFixed(1)}%`
@@ -561,6 +576,7 @@ Edge cases:
       });
 
       snapshot.state = state;
+      controller.signal.throwIfAborted();
       snapshot.status = state.status;
       snapshot.finishedAt = Date.now();
       if (state.status === 'failed') {
@@ -595,17 +611,30 @@ Edge cases:
         iterations: snapshot.iterations
       });
     } catch (err: any) {
-      snapshot.status = 'failed';
-      snapshot.error = err?.message ?? String(err);
+      const cancellationRequested = controller.signal.aborted;
+      const cancelled = cancellationRequested && !cleanupFailure;
+      snapshot.status = cancelled ? 'cancelled' : 'failed';
+      snapshot.error = cancelled ? undefined : cleanupFailure ?? err?.message ?? String(err);
       snapshot.finishedAt = Date.now();
-      snapshot.summary = `Run failed: ${snapshot.error}`;
+      snapshot.summary = cancelled ? 'Run cancelled by an operator.' : `Run failed: ${snapshot.error}`;
+      if (cancellationRequested) {
+        if (snapshot.state) snapshot.state.status = snapshot.status;
+        snapshot.artifact = undefined;
+        for (const progress of Object.values(nodeProgress)) {
+          if (progress.status === 'running') Object.assign(progress, { status: snapshot.status, endTime: snapshot.finishedAt });
+        }
+      }
       snapshot.patch = undefined;
-      this.emit('run.finished', runId, `${task.title} → failed: ${snapshot.error}`, 'run');
+      this.emit('run.finished', runId, snapshot.summary, 'run', { status: snapshot.status });
     } finally {
+      this.runControllers.delete(runId);
+      this.runQueue.delete(runId);
       if (slotReserved) {
-        const next = this.runQueue.shift();
-        if (next) next();
-        else this.runningCount--;
+        const next = this.runQueue.entries().next().value;
+        if (next) {
+          this.runQueue.delete(next[0]);
+          next[1](true);
+        } else this.runningCount--;
         if (this.runningCount === 0) this.idleWaiters.splice(0).forEach(resolve => resolve());
       }
     }
@@ -613,10 +642,32 @@ Edge cases:
     return snapshot;
   }
 
+  public cancelRun(runId: string, actor: string, reason?: string): RunSnapshot | undefined {
+    const run = this.runs.get(runId);
+    const controller = this.runControllers.get(runId);
+    if (!run || !controller || (run.status !== 'pending' && run.status !== 'running')) return undefined;
+
+    const prior = run.status;
+    run.status = 'cancelling';
+    run.cancellation = { actor, reason: reason || 'Operator requested cancellation.', requestedAt: Date.now() };
+    try {
+      this.emit('log', runId, 'Operator requested cancellation', 'human', { ...run.cancellation, action: 'cancel' });
+    } catch (error) {
+      run.status = prior;
+      run.cancellation = undefined;
+      throw error;
+    }
+    const queued = this.runQueue.get(runId);
+    this.runQueue.delete(runId);
+    controller.abort(new Error('Run cancelled by an operator.'));
+    queued?.(false);
+    return run;
+  }
+
   /** Run several tasks concurrently — this is what makes the scheduler visible. */
   public async runAll(
     tasks: RateLimiterTask[],
-    options: { concurrency?: number } = {}
+    options: { concurrency?: number; requestedBy?: string } = {}
   ): Promise<RunSnapshot[]> {
     const limit = Math.max(1, Math.min(options.concurrency ?? this.maxConcurrentRuns, tasks.length));
     const results: RunSnapshot[] = new Array(tasks.length);
@@ -626,7 +677,7 @@ Edge cases:
       for (;;) {
         const index = cursor++;
         if (index >= tasks.length) return;
-        results[index] = await this.runTask(tasks[index]);
+        results[index] = await this.runTask(tasks[index], { requestedBy: options.requestedBy });
       }
     };
 
@@ -668,6 +719,7 @@ Edge cases:
         return await this.runTask(task!, {
           maxIterationsOverride: budget * 2,
           retryOf: runId,
+          requestedBy: actor,
           onStart: retryRunId => this.emit('log', runId, 'human decision: retry with a doubled iteration budget', 'human', { ...decision, retryRunId })
         });
       }

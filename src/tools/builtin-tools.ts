@@ -270,6 +270,7 @@ export function createBuiltinTools(): ToolDefinition[] {
       },
       isSandboxed: true,
       timeoutMs: 4000,
+      waitForCleanup: true,
       handler: async (params: { testCode: string; sourceCode: string; bindings?: string[] }, ctx?: ToolInvocationContext) => {
         if (Buffer.byteLength(params.testCode) + Buffer.byteLength(params.sourceCode) > MAX_SOURCE_BYTES) {
           throw new Error('test payload too large');
@@ -285,12 +286,16 @@ export function createBuiltinTools(): ToolDefinition[] {
             signal: ctx?.signal
           });
           child.once('message', resolve);
-          child.once('error', reject);
-          child.once('exit', (code, signal) =>
-            reject(new Error(`test runner exited without a report (${signal ?? code})`))
+          let processError: Error | undefined;
+          child.once('error', error => { processError = error; });
+          child.once('close', (code, signal) =>
+            reject(processError ?? new Error(`test runner exited without a report (${signal ?? code})`))
           );
           child.send({ testCode: params.testCode, sourceCode: params.sourceCode, bindings: params.bindings, timeoutMs }, err => {
-            if (err) reject(err);
+            if (err) {
+              processError = err;
+              child.kill();
+            }
           });
         });
       }

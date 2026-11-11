@@ -14,7 +14,7 @@
  */
 import { VerificationSpec, VerificationResult, VerificationTierResult } from '../types/index.js';
 import { AgentRegistry } from '../agent/agent-registry.js';
-import { ToolRegistry } from '../tools/tool-registry.js';
+import { ToolCleanupError, ToolRegistry } from '../tools/tool-registry.js';
 
 export interface AuditSignal {
   /** rule id, e.g. REV-001 — used as a repair key downstream */
@@ -227,6 +227,7 @@ export class VerificationEngine {
 
           if (!passedAll) blocking.push(`Tier-2: ${report.failed}/${report.total} assertions failed`);
         } catch (err: any) {
+          if (err instanceof ToolCleanupError) throw err;
           opts.signal?.throwIfAborted();
           if (spec.executableSandboxCheck.toolId) throw err;
           sandboxScore = 0;

@@ -13,6 +13,7 @@
 import { TuiApp } from './tui/app.js';
 import { runHeadless } from './demo.js';
 import { WebServer } from './web/server.js';
+import { loadWebAccounts } from './web/accounts.js';
 import { style } from './tui/ansi.js';
 import { LlmConfig, isLlmConfigured, resolveLlmConfig } from './agent/llm/index.js';
 import { repositoryConfig } from './scenarios/repository-repair.js';
@@ -191,7 +192,8 @@ async function main(): Promise<void> {
   if (args.web) {
     const server = new WebServer({
       port: args.port, llm, project: repositoryConfig(process.env),
-      dataDir: resolve(process.env.AETHER_DATA_DIR ?? '.aether/runs')
+      dataDir: resolve(process.env.AETHER_DATA_DIR ?? '.aether/runs'),
+      accounts: loadWebAccounts(process.env.AETHER_ACCOUNTS_FILE)
     });
     const info = await server.start();
     process.stdout.write(
@@ -199,6 +201,7 @@ async function main(): Promise<void> {
         `   多智能体协同编排、动态调度、PDCA 自愈与三层可信验证可视化平台\n` +
         `   按 Ctrl+C 可停止服务。\n\n`
     );
+    if (info.bootstrap) process.stdout.write(`本次启动的临时账号 ${info.bootstrap.username}，访问令牌 ${info.bootstrap.token}\n\n`);
 
     const shutdown = async () => {
       process.stdout.write('\nShutting down web server...\n');
