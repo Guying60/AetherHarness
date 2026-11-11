@@ -58,9 +58,9 @@ function flagOrUndefined(raw: string | undefined): boolean | undefined {
 
 export function resolveLlmConfig(overrides: LlmConfig = {}): LlmConfig {
   return {
-    apiKey: overrides.apiKey ?? process.env.DEEPSEEK_API_KEY ?? process.env.AETHER_LLM_API_KEY,
-    baseUrl: overrides.baseUrl ?? process.env.DEEPSEEK_BASE_URL ?? process.env.AETHER_LLM_BASE_URL,
-    model: overrides.model ?? process.env.DEEPSEEK_MODEL ?? process.env.AETHER_LLM_MODEL,
+    apiKey: overrides.apiKey ?? process.env.DEEPSEEK_API_KEY ?? process.env.AETHER_LLM_API_KEY ?? process.env.OPENAI_API_KEY,
+    baseUrl: overrides.baseUrl ?? process.env.DEEPSEEK_BASE_URL ?? process.env.AETHER_LLM_BASE_URL ?? process.env.OPENAI_BASE_URL,
+    model: overrides.model ?? process.env.DEEPSEEK_MODEL ?? process.env.AETHER_LLM_MODEL ?? process.env.CHAT_MODEL,
     temperature: overrides.temperature,
     maxTokens: overrides.maxTokens,
     timeoutMs: overrides.timeoutMs ?? numberOrUndefined(process.env.AETHER_LLM_TIMEOUT_MS),

@@ -16,6 +16,7 @@ import { WebServer } from './web/server.js';
 import { style } from './tui/ansi.js';
 import { LlmConfig, isLlmConfigured, resolveLlmConfig } from './agent/llm/index.js';
 import { repositoryConfig } from './scenarios/repository-repair.js';
+import { resolve } from 'node:path';
 
 interface Args {
   auto: boolean;
@@ -149,9 +150,9 @@ function buildLlmConfig(args: Args): LlmConfig | undefined {
   });
 
   if (!isLlmConfigured(config)) {
-    if (config.fallbackToOffline === false) throw new Error('Strict live mode requires DEEPSEEK_API_KEY or AETHER_LLM_API_KEY.');
+    if (config.fallbackToOffline === false) throw new Error('Strict live mode requires DEEPSEEK_API_KEY, AETHER_LLM_API_KEY or OPENAI_API_KEY.');
     process.stderr.write(
-      `${style.yellow}--live was requested but DEEPSEEK_API_KEY is not set.${style.reset}\n` +
+      `${style.yellow}--live was requested but no model API key is configured.${style.reset}\n` +
         `  Falling back to the offline deterministic brains.\n` +
         `  PowerShell:  $env:DEEPSEEK_API_KEY="sk-..."\n` +
         `  bash:        export DEEPSEEK_API_KEY=sk-...\n\n`
@@ -188,7 +189,10 @@ async function main(): Promise<void> {
   }
 
   if (args.web) {
-    const server = new WebServer({ port: args.port, llm, project: repositoryConfig(process.env) });
+    const server = new WebServer({
+      port: args.port, llm, project: repositoryConfig(process.env),
+      dataDir: resolve(process.env.AETHER_DATA_DIR ?? '.aether/runs')
+    });
     const info = await server.start();
     process.stdout.write(
       `\n${style.cyan}⚡ AetherHarness Web 控制台已启动，访问地址：${style.bold}${info.url}${style.reset}\n` +

@@ -3,7 +3,7 @@
  * contract the platform now enforces. No test framework: a deterministic runner keeps the
  * dependency count at zero and the failure output readable.
  */
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, unlinkSync, rmdirSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -34,6 +34,8 @@ import { FeedbackOptimizer } from '../src/optimization/feedback-optimizer.js';
 import { Orchestrator } from '../src/orchestrator.js';
 import { WebServer } from '../src/web/server.js';
 import { REPOSITORY_FILE, REPOSITORY_PROJECT_ID } from '../src/scenarios/repository-repair.js';
+import { RunStore } from '../src/store/run-store.js';
+import { resolveLlmConfig } from '../src/agent/llm/index.js';
 import { AgentProfile, VerificationSpec, WorkflowDefinition } from '../src/types/index.js';
 import {
   BASE_FEATURES,
@@ -1416,6 +1418,176 @@ async function suiteRepositoryRepair(): Promise<void> {
   }
 }
 
+async function suitePersistence(): Promise<void> {
+  describe('[13] persistent runs and human decisions');
+  const root = mkdtempSync(join(tmpdir(), 'aether-history-test-'));
+  const dataDir = join(root, 'runs');
+  let server: WebServer | undefined;
+  try {
+    server = new WebServer({ port: 0, dataDir });
+    await server.start();
+    let locked = false;
+    try { new RunStore(dataDir); } catch { locked = true; }
+    check(locked, 'a second service cannot share the same run storage');
+    const orchestrator = server.orchestrator;
+    const tasks = orchestrator.getTasks();
+    const normal = await orchestrator.runTask(tasks.find(task => task.id === 'rl-normal')!);
+    const hard = await orchestrator.runTask(tasks.find(task => task.id === 'rl-hard')!);
+    const patch = normal.patch?.patch;
+    const rounds = normal.loopRounds;
+    await server.stop();
+
+    server = new WebServer({ port: 0, dataDir });
+    let info = await server.start();
+    const detail = await (await fetch(info.url + '/api/dashboard?runId=' + normal.runId)).json();
+    check(detail.persistentStorage === true && detail.run.patch.patch === patch, 'a restarted Web server restores the delivered patch');
+    equal(detail.run.loopRounds, rounds, 'all recorded verification rounds survive restart');
+    check(typeof detail.run.modelLabel === 'string' && detail.run.modelLabel === normal.modelLabel,
+      'the original model source remains attached to a restored run');
+    check(detail.events.some((event: any) => event.kind === 'run.finished'), 'execution evidence survives restart');
+    const restored = server.orchestrator.getRun(hard.runId)!;
+    check(restored.status === 'needs_human' && !!restored.escalation && restored.retryAvailable === true,
+      'a human escalation survives restart with its retry action');
+
+    const stateFile = join(dataDir, 'state.json');
+    const saved = readFileSync(stateFile, 'utf8');
+    unlinkSync(stateFile);
+    mkdirSync(stateFile);
+    const failedDecision = await server.orchestrator.resolveEscalation(hard.runId, 1).catch(() => 'failed');
+    check(failedDecision === 'failed' && restored.status === 'needs_human' && !!restored.escalation && !restored.humanDecision,
+      'a failed durable decision restores the pending human card');
+    rmdirSync(stateFile);
+    writeFileSync(stateFile, saved);
+
+    const decisions = await Promise.all([1, 2].map(optionIndex => fetch(info.url + '/api/runs/' + hard.runId + '/escalate', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ optionIndex })
+    })));
+    equal(decisions.map(response => response.status).sort(), [200, 409], 'concurrent human decisions take effect once');
+    check(restored.humanDecision === 'review' && restored.verification?.passed === false && !!restored.patch,
+      'reviewing a restored draft keeps the failed verdict and creates its baseline patch');
+    const next = await server.orchestrator.runTask(tasks[0]);
+    check(Number(next.runId.slice(4)) > Number(hard.runId.slice(4)), 'restored run IDs are never reused');
+    const retryCard = await server.orchestrator.runTask(tasks.find(task => task.id === 'rl-hard')!);
+    await server.stop();
+
+    server = new WebServer({ port: 0, dataDir });
+    info = await server.start();
+    const retried = await server.orchestrator.resolveEscalation(retryCard.runId, 0);
+    check(retried?.retryOf === retryCard.runId && retried.status === 'needs_human',
+      'a restored human card can create a linked retry using the trusted task definition');
+    await server.stop();
+
+    server = new WebServer({ port: 0, dataDir });
+    await server.start();
+    equal(server.orchestrator.getRun(hard.runId)?.humanDecision, 'review', 'human review remains recorded after another restart');
+    equal(server.orchestrator.getRun(retried!.runId)?.retryOf, retryCard.runId, 'retry ancestry remains recorded after restart');
+    const abort = await server.orchestrator.resolveEscalation(retried!.runId, 2);
+    check(abort?.humanDecision === 'abort' && !abort.artifact && !abort.patch,
+      'a restored escalation can revoke draft delivery');
+    await server.stop();
+
+    const unknown = JSON.parse(readFileSync(stateFile, 'utf8'));
+    const savedCard = unknown.runs.find((run: any) => run.runId === retryCard.runId);
+    savedCard.status = 'needs_human';
+    savedCard.escalation = hard.escalation;
+    savedCard.humanDecision = undefined;
+    savedCard.project = { id: REPOSITORY_PROJECT_ID, revision: '0'.repeat(40), runnerImage: 'sha256:' + '0'.repeat(64), filePath: REPOSITORY_FILE };
+    savedCard.goal = 'stored repository repair';
+    writeFileSync(stateFile, JSON.stringify(unknown));
+    server = new WebServer({ port: 0, dataDir });
+    info = await server.start();
+    const conflict = await fetch(info.url + '/api/runs/' + retryCard.runId + '/escalate', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ optionIndex: 0 })
+    });
+    check(conflict.status === 409 && !!server.orchestrator.getRun(retryCard.runId)?.escalation,
+      'a historical repository cannot retry against a different service configuration');
+    await server.stop();
+
+    const crashDir = join(root, 'crash');
+    const moduleUrl = new URL('../src/orchestrator.js', import.meta.url).href;
+    const crashScript = `import { Orchestrator } from ${JSON.stringify(moduleUrl)};
+const orchestrator = new Orchestrator({dataDir:${JSON.stringify(crashDir)}});
+void orchestrator.runTask(orchestrator.getTasks()[0]);
+process.exit(0);`;
+    execFileSync(process.execPath, ['--input-type=module', '-e', crashScript], { stdio: 'pipe' });
+    const recovered = new Orchestrator({ dataDir: crashDir });
+    const interrupted = recovered.getRuns()[0];
+    check(interrupted?.status === 'failed' && !!interrupted.error?.includes('previous service'),
+      'an abrupt process exit becomes an interrupted run with explicit failure');
+    check(Object.values(interrupted.nodeProgress ?? {}).every(node => node.status !== 'running'),
+      'recovered node states cannot remain running');
+    await recovered.close();
+
+    writeFileSync(join(crashDir, 'state.json'), '{broken json');
+    let corrupt = false;
+    try { new Orchestrator({ dataDir: crashDir }); } catch { corrupt = true; }
+    check(corrupt && readFileSync(join(crashDir, 'state.json'), 'utf8') === '{broken json' &&
+      !existsSync(join(crashDir, 'owner.lock')), 'corrupt storage is preserved and its startup lock is released');
+
+    const invalidServer = new WebServer({ host: '0.0.0.0', port: 0, dataDir: join(root, 'invalid-host') });
+    await invalidServer.start().catch(() => {});
+    check(!existsSync(join(root, 'invalid-host', 'owner.lock')), 'a failed Web startup releases its storage lock');
+
+    const privateDir = join(root, 'private');
+    const privateRun = new Orchestrator({
+      dataDir: privateDir, llm: { apiKey: 'private-storage-test-key', provider: new MockLlmProvider(makeRoleHandler()), fallbackToOffline: false }
+    });
+    await privateRun.runTask(privateRun.getTasks()[0]);
+    await privateRun.close();
+    check(!readFileSync(join(privateDir, 'state.json'), 'utf8').includes('private-storage-test-key'),
+      'model credentials stay outside persisted run state');
+
+    const drainingDir = join(root, 'draining');
+    const draining = new WebServer({ port: 0, dataDir: drainingDir });
+    await draining.start();
+    const active = draining.orchestrator.runTask(draining.orchestrator.getTasks()[0]);
+    await draining.stop();
+    const drained = await active;
+    const drainStore = new RunStore(drainingDir);
+    check(drained.status === 'completed' && drainStore.load().runs[0]?.status === 'completed',
+      'graceful shutdown waits for active work before closing persistent storage');
+    drainStore.close();
+
+    const memory = new WebServer({ port: 0 });
+    await memory.start();
+    await memory.stop();
+    await memory.start();
+    const memoryRun = await memory.orchestrator.runTask(memory.orchestrator.getTasks()[0]);
+    equal(memoryRun.status, 'completed', 'the existing memory-only Web server remains restartable');
+    await memory.stop();
+  } finally {
+    await server?.stop();
+    rmSync(root, { recursive: true, force: true, maxRetries: 2 });
+  }
+}
+
+function suiteCpaConfig(): void {
+  describe('[14] CPA environment aliases');
+  const names = [
+    'DEEPSEEK_API_KEY', 'DEEPSEEK_BASE_URL', 'DEEPSEEK_MODEL',
+    'AETHER_LLM_API_KEY', 'AETHER_LLM_BASE_URL', 'AETHER_LLM_MODEL',
+    'OPENAI_API_KEY', 'OPENAI_BASE_URL', 'CHAT_MODEL'
+  ];
+  const previous = names.map(name => process.env[name]);
+  try {
+    names.forEach(name => delete process.env[name]);
+    process.env.OPENAI_API_KEY = 'alias-test-key';
+    process.env.OPENAI_BASE_URL = 'http://127.0.0.1:8317/v1';
+    process.env.CHAT_MODEL = 'alias-test-model';
+    const alias = resolveLlmConfig();
+    equal([alias.apiKey, alias.baseUrl, alias.model],
+      ['alias-test-key', 'http://127.0.0.1:8317/v1', 'alias-test-model'], 'CPA environment names reach the normal model configuration');
+    process.env.DEEPSEEK_MODEL = 'existing-model';
+    equal(resolveLlmConfig().model, 'existing-model', 'existing provider variables keep their precedence');
+    equal(resolveLlmConfig({ model: 'explicit-model' }).model, 'explicit-model', 'explicit model configuration keeps its precedence');
+  } finally {
+    names.forEach((name, index) => {
+      if (previous[index] === undefined) delete process.env[name];
+      else process.env[name] = previous[index];
+    });
+  }
+}
+
 async function main(): Promise<void> {
   const started = Date.now();
   process.stdout.write('\n=== AetherHarness test suite ===\n');
@@ -1433,6 +1605,8 @@ async function main(): Promise<void> {
   await suiteLlm();
   await suiteWebServer();
   await suiteRepositoryRepair();
+  await suitePersistence();
+  suiteCpaConfig();
 
   const elapsed = Date.now() - started;
   process.stdout.write('\n' + '='.repeat(64) + '\n');

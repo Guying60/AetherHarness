@@ -28,6 +28,7 @@ import { VerificationEngine } from './verification/verification-engine.js';
 import { SelfLoopEngine, SelfLoopIterationRecord } from './selfloop/self-loop-engine.js';
 import { FeedbackOptimizer } from './optimization/feedback-optimizer.js';
 import { WorkflowEngine } from './workflow/workflow-engine.js';
+import { RunStore } from './store/run-store.js';
 import {
   RateLimiterTask,
   asCode,
@@ -76,6 +77,9 @@ export interface RunSnapshot {
   goal?: string;
   baselineVerification?: VerificationResult;
   plan?: { acceptanceCriteria?: string[]; invariants?: string[] };
+  retryAvailable?: boolean;
+  restored?: boolean;
+  modelLabel?: string;
 }
 
 export type EventListener = (event: OrchestratorEvent) => void;
@@ -87,6 +91,7 @@ export interface OrchestratorOptions {
   schedulerOptions?: ConstructorParameters<typeof DynamicScheduler>[1];
   maxConcurrentRuns?: number;
   project?: RepositoryConfig;
+  dataDir?: string;
   /**
    * When provided (and configured), every agent with an LLM spec runs on the remote model
    * with the deterministic brain as a fallback. Omit it to stay fully offline.
@@ -111,6 +116,10 @@ export class Orchestrator {
   private taskById: Map<string, RateLimiterTask> = new Map();
   private taskByRun = new Map<string, RunTask>();
   private listeners: Set<EventListener> = new Set();
+  private readonly events = new Map<string, OrchestratorEvent[]>();
+  private store?: RunStore;
+  private closing = false;
+  private readonly idleWaiters: Array<() => void> = [];
   private counter = 0;
   private escalationsRaised = 0;
   private readonly maxConcurrentRuns: number;
@@ -192,6 +201,44 @@ export class Orchestrator {
     }
 
     if (options.onEvent) this.listeners.add(options.onEvent);
+    if (options.dataDir) {
+      this.store = new RunStore(options.dataDir);
+      try {
+        const stored = this.store.load();
+        for (const run of stored.runs) {
+          this.runs.set(run.runId, run);
+          this.runOrder.push(run.runId);
+          this.counter = Math.max(this.counter, Number(run.runId.slice(4)));
+          const task = run.project
+            ? this.restoredProjectTask(run)
+            : this.taskById.get(run.taskId);
+          if (task) this.taskByRun.set(run.runId, task);
+          run.retryAvailable = !!task;
+          run.restored = true;
+        }
+        for (const [runId, events] of Object.entries(stored.events)) this.events.set(runId, events);
+        for (const run of this.getRuns()) {
+          if (!['pending', 'running', 'paused'].includes(run.status)) continue;
+          run.status = 'failed';
+          run.error = 'The previous service stopped during this run. Start a new run to continue.';
+          run.summary = run.error;
+          run.finishedAt = Date.now();
+          run.patch = undefined;
+          if (run.state) {
+            run.state.status = 'failed';
+            run.state.endTime = run.finishedAt;
+            run.state.currentActiveNodes = [];
+          }
+          for (const progress of Object.values(run.nodeProgress ?? {})) {
+            if (progress.status === 'running') Object.assign(progress, { status: 'failed', error: run.error, endTime: run.finishedAt });
+          }
+          this.emit('run.finished', run.runId, run.error, 'run', { status: 'failed' });
+        }
+      } catch (error) {
+        this.store.close();
+        throw error;
+      }
+    }
   }
 
   // ------------------------------------------------------------------ events
@@ -209,6 +256,16 @@ export class Orchestrator {
     data?: Record<string, any>
   ): void {
     const event: OrchestratorEvent = { at: Date.now(), runId, kind, message, tag, data };
+    const previous = this.events.get(runId);
+    const history = [...(previous ?? []), event].slice(-100);
+    this.events.set(runId, history);
+    try {
+      if (kind !== 'scheduler') this.persist();
+    } catch (error) {
+      if (previous) this.events.set(runId, previous);
+      else this.events.delete(runId);
+      throw error;
+    }
     for (const l of this.listeners) {
       try {
         l(event);
@@ -216,6 +273,24 @@ export class Orchestrator {
         /* a broken listener must never break a run */
       }
     }
+  }
+
+  private persist(): void {
+    this.store?.save({ version: 1, runs: this.getRuns(), events: Object.fromEntries(this.events) });
+  }
+
+  public getEvents(runId: string): OrchestratorEvent[] {
+    return [...(this.events.get(runId) ?? [])];
+  }
+
+  public hasPersistentStorage(): boolean {
+    return !!this.store;
+  }
+
+  public async close(): Promise<void> {
+    this.closing = true;
+    if (this.runningCount > 0) await new Promise<void>(resolve => this.idleWaiters.push(resolve));
+    this.store?.close();
   }
 
   // ------------------------------------------------------------------- setup
@@ -312,11 +387,25 @@ Edge cases:
     if (!project || reason) throw new Error(reason ?? 'No configured repository.');
     const prompt = goal.trim();
     if (!prompt || prompt.length > MAX_REPOSITORY_GOAL) throw new Error('Invalid repository task description.');
+    return this.runTask(this.projectTask(prompt), { onStart });
+  }
+
+  private projectTask(prompt: string): RunTask {
+    const project = this.repository!;
     const template = this.taskById.get('rl-normal')!;
-    return this.runTask({
+    return {
       ...template, repository: true, id: project.id, title: project.title, prompt,
       description: `Repair ${project.filePath} at ${project.revision} against the fixed acceptance suite.`
-    }, { onStart });
+    };
+  }
+
+  private restoredProjectTask(run: RunSnapshot): RunTask | undefined {
+    const project = this.repository;
+    if (project && this.strictLive && run.goal &&
+      run.project?.id === project.id && run.project.revision === project.revision &&
+      run.project.runnerImage === project.runnerImage && run.project.filePath === project.filePath) {
+      return this.projectTask(run.goal);
+    }
   }
 
   private buildWorkflow(task: RunTask, maxIterationsOverride?: number): WorkflowDefinition {
@@ -327,6 +416,7 @@ Edge cases:
   }
 
   public async runTask(task: RunTask, options: RunOptions = {}): Promise<RunSnapshot> {
+    if (this.closing) throw new Error('The orchestrator is shutting down.');
     const runId = `run-${(++this.counter).toString().padStart(2, '0')}`;
     const workflow = this.buildWorkflow(task, options.maxIterationsOverride);
 
@@ -344,7 +434,9 @@ Edge cases:
       loopRounds,
       retryOf: options.retryOf,
       project: task.repository ? this.repository : undefined,
-      goal: task.repository ? task.prompt : undefined
+      goal: task.repository ? task.prompt : undefined,
+      retryAvailable: true,
+      modelLabel: this.llmLabel
     };
     this.runs.set(runId, snapshot);
     this.taskByRun.set(runId, task);
@@ -465,12 +557,14 @@ Edge cases:
       snapshot.error = err?.message ?? String(err);
       snapshot.finishedAt = Date.now();
       snapshot.summary = `Run failed: ${snapshot.error}`;
+      snapshot.patch = undefined;
       this.emit('run.finished', runId, `${task.title} → failed: ${snapshot.error}`, 'run');
     } finally {
       if (slotReserved) {
         const next = this.runQueue.shift();
         if (next) next();
         else this.runningCount--;
+        if (this.runningCount === 0) this.idleWaiters.splice(0).forEach(resolve => resolve());
       }
     }
 
@@ -512,51 +606,64 @@ Edge cases:
     if (!run.escalation || !Number.isInteger(optionIndex) || !run.escalation.options[optionIndex]) return run;
 
     const task = this.taskByRun.get(runId);
+    if (optionIndex === 0 && !task) throw new Error('The saved task configuration is unavailable for retry.');
+    const previous = {
+      status: run.status, escalation: run.escalation, humanDecision: run.humanDecision,
+      summary: run.summary, artifact: run.artifact, patch: run.patch,
+      state: run.state && { ...run.state }
+    };
     run.escalation = undefined;
 
-    if (optionIndex === 0) {
-      run.status = 'completed';
-      run.humanDecision = 'retry';
-      run.summary = 'Escalation resolved by a human: re-running with a doubled budget.';
-      if (!task) return run;
-      const budget = Math.max(...run.workflow.nodes.map(node => node.selfLoopConfig?.maxIterations ?? 0));
-      this.emit('log', runId, 'human decision: retry with a doubled iteration budget', 'human');
-      return this.runTask(task, { maxIterationsOverride: budget * 2, retryOf: runId });
-    }
-
-    if (optionIndex === 1) {
-      const artifact = run.artifact ?? asCode(run.state?.context.finalCode ?? '');
-
-      const patchTool = this.tools.get('git_patch_manager');
-      if (patchTool && artifact) {
-        try {
-          const patchRes: any = await this.tools.invoke('git_patch_manager', {
-            originalContent: String(run.state?.context.seedSource ?? '// placeholder\n'),
-            updatedContent: artifact,
-            filePath: 'src/rate-limiter.js'
-          });
-          if (run.project && patchRes.patch) await this.tools.invoke('git_check_patch', { patch: patchRes.patch });
-          run.patch = patchRes;
-        } catch {
-          /* the acceptance itself still stands */
-        }
+    try {
+      if (optionIndex === 0) {
+        run.status = 'completed';
+        run.humanDecision = 'retry';
+        run.summary = 'Escalation resolved by a human: re-running with a doubled budget.';
+        const budget = Math.max(...run.workflow.nodes.map(node => node.selfLoopConfig?.maxIterations ?? 0));
+        return await this.runTask(task!, {
+          maxIterationsOverride: budget * 2,
+          retryOf: runId,
+          onStart: retryRunId => this.emit('log', runId, 'human decision: retry with a doubled iteration budget', 'human', { retryRunId })
+        });
       }
 
-      run.status = 'completed';
-      run.humanDecision = 'review';
-      run.summary = this.buildSummary(run, 'Human review requested for the draft; the automated verification verdict is unchanged.');
-      this.emit('log', runId, 'human decision: send current draft for review', 'human');
-      return run;
-    }
+      if (optionIndex === 1) {
+        const artifact = run.artifact ?? asCode(run.state?.context.finalCode ?? '');
 
-    run.status = 'failed';
-    run.humanDecision = 'abort';
-    const rolledBack = run.state && this.workflow.rollback(run.state.workflowExecutionId, run.state);
-    run.artifact = undefined;
-    run.patch = undefined;
-    run.summary = rolledBack ? 'Aborted by a human and rolled back to the last checkpoint.' : 'Aborted by a human.';
-    this.emit('log', runId, run.summary, 'human');
-    return run;
+        const patchTool = this.tools.get('git_patch_manager');
+        if (patchTool && artifact) {
+          try {
+            const patchRes: any = await this.tools.invoke('git_patch_manager', {
+              originalContent: String(run.state?.context.seedSource ?? '// placeholder\n'),
+              updatedContent: artifact,
+              filePath: 'src/rate-limiter.js'
+            });
+            if (run.project && patchRes.patch) await this.tools.invoke('git_check_patch', { patch: patchRes.patch });
+            run.patch = patchRes;
+          } catch {
+            /* the acceptance itself still stands */
+          }
+        }
+
+        run.status = 'completed';
+        run.humanDecision = 'review';
+        run.summary = this.buildSummary(run, 'Human review requested for the draft; the automated verification verdict is unchanged.');
+        this.emit('log', runId, 'human decision: send current draft for review', 'human');
+        return run;
+      }
+
+      run.status = 'failed';
+      run.humanDecision = 'abort';
+      const rolledBack = run.state && this.workflow.rollback(run.state.workflowExecutionId, run.state);
+      run.artifact = undefined;
+      run.patch = undefined;
+      run.summary = rolledBack ? 'Aborted by a human and rolled back to the last checkpoint.' : 'Aborted by a human.';
+      this.emit('log', runId, run.summary, 'human');
+      return run;
+    } catch (error) {
+      Object.assign(run, previous);
+      throw error;
+    }
   }
 
   // ----------------------------------------------------------------- summary

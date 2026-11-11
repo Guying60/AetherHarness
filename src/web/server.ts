@@ -6,6 +6,7 @@
  */
 import { createServer, IncomingMessage, ServerResponse, Server } from 'node:http';
 import { pathToFileURL } from 'node:url';
+import { resolve } from 'node:path';
 import { Orchestrator, RunSnapshot } from '../orchestrator.js';
 import { DASHBOARD_HTML } from './client.js';
 import { LlmConfig } from '../agent/llm/index.js';
@@ -20,6 +21,7 @@ export interface WebServerOptions {
   orchestrator?: Orchestrator;
   llm?: LlmConfig;
   project?: RepositoryConfig;
+  dataDir?: string;
 }
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
@@ -34,37 +36,42 @@ export class WebServer {
   public readonly host: string;
   private server?: Server;
   private sseClients: Set<ServerResponse> = new Set();
-  private events = new Map<string, OrchestratorEvent[]>();
   private unsubscribe?: () => void;
+  private readonly ownsOrchestrator: boolean;
 
   constructor(options: WebServerOptions = {}) {
     this.port = options.port ?? (Number(process.env.AETHER_PORT) || 3300);
     this.host = options.host ?? '127.0.0.1';
-    this.orchestrator = options.orchestrator ?? new Orchestrator({ llm: options.llm, project: options.project });
+    this.ownsOrchestrator = !options.orchestrator;
+    this.orchestrator = options.orchestrator ?? new Orchestrator({
+      llm: options.llm, project: options.project, dataDir: options.dataDir
+    });
 
     // Hook into orchestrator events to broadcast via SSE
     this.unsubscribe = this.orchestrator.subscribe(event => {
-      const history = this.events.get(event.runId) ?? [];
-      history.push(event);
-      if (history.length > 100) history.shift();
-      this.events.set(event.runId, history);
       this.broadcastSse(event);
     });
   }
 
   public async start(): Promise<{ port: number; host: string; url: string }> {
     const hostname = this.host === '::1' ? '[::1]' : this.host;
-    if (!LOOPBACK_HOSTS.has(hostname)) throw new Error('The Web console requires a loopback address.');
-    return new Promise((resolve, reject) => {
-      this.server = createServer((req, res) => this.handleRequest(req, res));
-      this.server.on('error', reject);
-      this.server.listen(this.port, this.host, () => {
-        const address = this.server?.address();
-        const actualPort = typeof address === 'object' && address ? address.port : this.port;
-        const url = `http://${hostname}:${actualPort}`;
-        resolve({ port: actualPort, host: this.host, url });
+    try {
+      if (!LOOPBACK_HOSTS.has(hostname)) throw new Error('The Web console requires a loopback address.');
+      return await new Promise((resolve, reject) => {
+        this.server = createServer((req, res) => this.handleRequest(req, res));
+        this.server.on('error', reject);
+        this.server.listen(this.port, this.host, () => {
+          const address = this.server?.address();
+          const actualPort = typeof address === 'object' && address ? address.port : this.port;
+          const url = `http://${hostname}:${actualPort}`;
+          resolve({ port: actualPort, host: this.host, url });
+        });
       });
-    });
+    } catch (error) {
+      this.server = undefined;
+      if (this.ownsOrchestrator && this.orchestrator.hasPersistentStorage()) await this.orchestrator.close();
+      throw error;
+    }
   }
 
   public async stop(): Promise<void> {
@@ -84,6 +91,7 @@ export class WebServer {
       });
       this.server = undefined;
     }
+    if (this.ownsOrchestrator && this.orchestrator.hasPersistentStorage()) await this.orchestrator.close();
   }
 
   private broadcastSse(event: OrchestratorEvent): void {
@@ -161,6 +169,7 @@ export class WebServer {
         this.json(res, 200, {
           tasks, scheduler, tools, llm, knowledgeChunks,
           repository: this.orchestrator.getProject(),
+          persistentStorage: this.orchestrator.hasPersistentStorage(),
           agents: agents.map(agent => {
             const profile = this.orchestrator.agents.get(agent.id)!.profile;
             return { ...agent, version: profile.version, toolIds: profile.toolIds, capabilities: profile.capabilities };
@@ -173,7 +182,7 @@ export class WebServer {
             runId, taskId, status, startedAt, finishedAt, humanDecision, retryOf
           })),
           run: selected ? runDetail(selected) : null,
-          events: selected ? this.events.get(selected.runId) ?? [] : []
+          events: selected ? this.orchestrator.getEvents(selected.runId) : []
         });
         return;
       }
@@ -292,6 +301,10 @@ export class WebServer {
           this.json(res, 400, { error: '请选择卡片中的有效决策。' });
           return;
         }
+        if (optionIndex === 0 && run.retryAvailable === false) {
+          this.json(res, 409, { error: '当前服务的任务配置与该历史运行不匹配，请重新配置后重试。' });
+          return;
+        }
         const updated = await this.orchestrator.resolveEscalation(runId, optionIndex);
         this.json(res, 200, { success: true, run: runDetail(updated ?? run) });
         return;
@@ -348,7 +361,10 @@ export class WebServer {
 /** 独立运行入口 */
 async function main(): Promise<void> {
   const port = Number(process.env.AETHER_PORT) || 3300;
-  const server = new WebServer({ port, project: repositoryConfig(process.env) });
+  const server = new WebServer({
+    port, project: repositoryConfig(process.env),
+    dataDir: resolve(process.env.AETHER_DATA_DIR ?? '.aether/runs')
+  });
   const info = await server.start();
   console.log(`\n\x1b[36m⚡ AetherHarness Web 控制台已启动，访问地址：\x1b[1m${info.url}\x1b[0m\n`);
   console.log(`   多智能体协同编排、动态调度、PDCA 自愈与三层可信验证可视化平台`);

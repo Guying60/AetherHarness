@@ -6,6 +6,7 @@ type RunSummary = Pick<RunSnapshot, 'runId' | 'taskId' | 'status' | 'startedAt' 
 interface DashboardData {
   tasks: Array<{ id: string; title: string; description: string; prompt: string; difficulty: string; workflow: WorkflowDefinition }>;
   repository: ReturnType<Orchestrator['getProject']>;
+  persistentStorage: boolean;
   agents: Array<Snapshot['agents'][number] & { version: string; toolIds: string[]; capabilities: Record<string, number> }>;
   scheduler: Snapshot['scheduler'];
   pending: Array<{ runId: string; nodeId: string; basePriority: number; effectivePriority: number; submittedAt: number }>;
@@ -131,6 +132,9 @@ export function dashboard(): void {
     const live = !data.llm.label.startsWith('offline');
     const busy = data.runs.some(active);
     const telemetry = data.llm.telemetry;
+    get('storage-status').textContent = data.persistentStorage
+      ? 'AetherHarness · 历史运行、验收证据与补丁已启用本地持久化。'
+      : 'AetherHarness · 当前服务使用进程内运行历史。';
     get('mode').textContent = live ? '实时模型 · ' + data.llm.label + (telemetry ?
       ' · 调用 ' + telemetry.calls + ' 次 · 降级 ' + telemetry.fallbacks + ' 次' : '') :
       '离线演示 · 无需 API 密钥。参赛演示可启用大模型。';
@@ -253,9 +257,12 @@ export function dashboard(): void {
         esc(card.reason) + '</p></details><div class="stack">' +
         card.options.map((option, index) => '<div><button type="button" class="btn ' +
           (index === card.recommendedOptionIndex ? 'primary' : index === 2 ? 'danger' : '') + '" data-decision="' + index +
-          '" data-focus="decision-' + index + '"' + (deciding ? ' disabled' : '') + '>' +
-          esc(actions[index]?.label ?? option) + '</button><p class="small muted">' +
-          (index === card.recommendedOptionIndex ? '系统推荐 · ' : '') + esc(actions[index]?.detail) + '</p></div>').join('') + '</div></div>';
+          '" data-focus="decision-' + index + '"' + (deciding || index === 0 && run.retryAvailable === false ? ' disabled' : '') + '>' +
+          esc(index === 2 && run.restored ? '终止并撤销草稿' : actions[index]?.label ?? option) + '</button><p class="small muted">' +
+          (index === card.recommendedOptionIndex ? '系统推荐 · ' : '') +
+          esc(index === 0 && run.retryAvailable === false ? '当前服务配置与该历史运行不匹配。' :
+            index === 2 && run.restored ? '撤销草稿交付，保留本次验收证据。' : actions[index]?.detail) +
+          '</p></div>').join('') + '</div></div>';
     }
     const retry = data?.runs.find(item => item.retryOf === run.runId);
     show('run-summary', '<div class="row between"><h4>' + esc(title) + '</h4>' + stateBadge(outcome ?? run.status) + '</div>' +
@@ -268,6 +275,7 @@ export function dashboard(): void {
         '<span class="muted small">尚无最终结论</span>') +
       (run.iterations ? '<span class="muted small">已记录 ' + run.iterations + ' 轮</span>' : '') + '</div></div>' +
       '<p class="small muted">' + esc(description) + '</p>' +
+      (run.modelLabel ? '<p class="small muted">运行模型 · ' + esc(run.modelLabel) + '</p>' : '') +
       (run.project ? '<p class="small muted">Git 基线 · <code>' + esc(run.project.revision.slice(0, 12)) + '</code></p>' : '') + brief +
       (outcome === 'retry' && retry ? '<button class="btn" type="button" data-select-run="' + esc(retry.runId) + '">查看本次重试</button>' : '') +
       (run.patch?.patch ? '<button class="btn" type="button" data-tab="artifact" data-focus="open-artifact">查看' +

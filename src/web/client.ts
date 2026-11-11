@@ -203,7 +203,7 @@ export const DASHBOARD_HTML = /* html */ `<!doctype html>
     <div id="team" class="team" aria-label="Agent 团队"></div>
     <div id="system" class="stack" style="margin-top:12px"></div>
   </section>
-  <footer class="footer muted small">AetherHarness · Agent 编排工作台 · 当前服务重启后会清空运行历史。</footer>
+  <footer id="storage-status" class="footer muted small">正在读取运行存储状态…</footer>
 </main>
 <script>(${dashboard.toString()})();</script>
 </body>
