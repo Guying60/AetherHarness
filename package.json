@@ -12,17 +12,18 @@
     "node": ">=20.3"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && npm run build:editor",
+    "build:editor": "esbuild src/web/flow-editor.tsx --bundle --minify --format=esm --outdir=dist/src/assets --define:process.env.NODE_ENV=\"'production'\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "tsc -p tsconfig.json && node dist/src/cli.js",
     "tui": "node dist/src/cli.js",
     "auto": "node dist/src/cli.js --auto",
     "live": "node dist/src/cli.js --live",
     "preview": "node dist/src/cli.js --frames 3",
-    "web": "tsc -p tsconfig.json && node dist/src/cli.js --web",
+    "web": "npm run build && node dist/src/cli.js --web",
     "demo": "tsc -p tsconfig.json && node dist/src/demo.js",
     "headless": "node dist/src/demo.js",
-    "test": "tsc -p tsconfig.json && node dist/tests/run-tests.js"
+    "test": "npm run build && node dist/tests/run-tests.js && node dist/tests/studio-tests.js && node dist/tests/workflow-studio-tests.js"
   },
   "keywords": [
     "multi-agent",
@@ -38,6 +39,14 @@
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "esbuild": "^0.28.2",
     "typescript": "7.0.2"
+  },
+  "dependencies": {
+    "@xyflow/react": "^12.12.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
   }
 }

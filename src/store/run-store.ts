@@ -1,9 +1,4 @@
-import {
-  closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync,
-  renameSync, unlinkSync, writeFileSync
-} from 'node:fs';
-import { randomUUID } from 'node:crypto';
-import { join, resolve } from 'node:path';
+import { JsonStore } from './json-store.js';
 import type { RunSnapshot } from '../orchestrator.js';
 import type { OrchestratorEvent } from '../types/index.js';
 
@@ -16,36 +11,11 @@ export interface StoredRuns {
 const statuses = new Set(['pending', 'running', 'paused', 'cancelling', 'cancelled', 'completed', 'failed', 'needs_human', 'skipped']);
 
 export class RunStore {
-  private readonly file: string;
-  private readonly lock: string;
-  private readonly owner = { pid: process.pid, token: randomUUID() };
-  private closed = false;
-
-  constructor(directory: string) {
-    const root = resolve(directory);
-    mkdirSync(root, { recursive: true, mode: 0o700 });
-    this.file = join(root, 'state.json');
-    this.lock = join(root, 'owner.lock');
-    if (existsSync(this.lock)) {
-      const owner = JSON.parse(readFileSync(this.lock, 'utf8'));
-      if (!Number.isSafeInteger(owner.pid) || owner.pid < 1) throw new Error('Invalid run storage owner.');
-      let running = true;
-      try {
-        process.kill(owner.pid, 0);
-      } catch (error: any) {
-        if (error.code === 'ESRCH') running = false;
-        else throw error;
-      }
-      if (running) throw new Error('Run storage is already open in another service.');
-      unlinkSync(this.lock);
-    }
-    writeFileSync(this.lock, JSON.stringify(this.owner), { flag: 'wx', mode: 0o600 });
-  }
-
+  private readonly storage: JsonStore;
+  constructor(directory: string) { this.storage = new JsonStore(directory); }
   public load(): StoredRuns {
-    if (!existsSync(this.file)) return { version: 1, runs: [], events: {} };
     try {
-      const data = JSON.parse(readFileSync(this.file, 'utf8'));
+      const data = this.storage.read<StoredRuns>({ version: 1, runs: [], events: {} });
       if (data.version !== 1 || !Array.isArray(data.runs) || !data.events || typeof data.events !== 'object' || Array.isArray(data.events)) {
         throw new Error('Unsupported run storage format.');
       }
@@ -71,31 +41,6 @@ export class RunStore {
     }
   }
 
-  public save(data: StoredRuns): void {
-    if (this.closed) throw new Error('Run storage is closed.');
-    const temp = this.file + '.' + randomUUID() + '.tmp';
-    let descriptor: number | undefined;
-    try {
-      // shortcut: synchronous whole-file snapshots suit a single local service; use a journal for large histories.
-      descriptor = openSync(temp, 'wx', 0o600);
-      writeFileSync(descriptor, JSON.stringify(data));
-      fsyncSync(descriptor);
-      closeSync(descriptor);
-      descriptor = undefined;
-      renameSync(temp, this.file);
-    } catch (cause) {
-      throw new Error('Run evidence could not be saved.', { cause });
-    } finally {
-      if (descriptor !== undefined) closeSync(descriptor);
-      if (existsSync(temp)) unlinkSync(temp);
-    }
-  }
-
-  public close(): void {
-    if (this.closed) return;
-    const owner = JSON.parse(readFileSync(this.lock, 'utf8'));
-    if (owner.token !== this.owner.token) throw new Error('Run storage ownership changed.');
-    unlinkSync(this.lock);
-    this.closed = true;
-  }
+  public save(data: StoredRuns): void { this.storage.save(data); }
+  public close(): void { this.storage.close(); }
 }

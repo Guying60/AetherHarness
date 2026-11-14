@@ -10,6 +10,7 @@
  * - per-tool reliability metrics are recorded here so the optimizer reads real numbers
  */
 import { ToolDefinition } from '../types/index.js';
+import { trace } from '../workflow/execution-context.js';
 
 export interface McpToolDeclaration {
   name: string;
@@ -45,7 +46,15 @@ export class ToolRegistry {
   private tools: Map<string, ToolDefinition> = new Map();
   private metrics: Map<string, ToolMetrics> = new Map();
 
+  constructor(private readonly scope?: { parent: ToolRegistry; allowed: ReadonlySet<string> }) {}
+
+  /** The server constructs this scope; user input is never used as invocation authority. */
+  public scoped(allowed: string[]): ToolRegistry {
+    return new ToolRegistry({ parent: this, allowed: new Set(allowed.filter(id => this.has(id))) });
+  }
+
   public register(tool: ToolDefinition): void {
+    if (this.scope) throw new Error('A scoped tool registry is read-only.');
     if (!tool.id) throw new Error('ToolDefinition.id is required');
     if (typeof tool.handler !== 'function') throw new Error(`Tool '${tool.id}' has no handler`);
     this.tools.set(tool.id, tool);
@@ -73,15 +82,17 @@ export class ToolRegistry {
   }
 
   public get(toolId: string): ToolDefinition | undefined {
+    if (this.scope) return this.scope.allowed.has(toolId) ? this.scope.parent.get(toolId) : undefined;
     return this.tools.get(toolId);
   }
 
   public getAll(): ToolDefinition[] {
+    if (this.scope) return this.scope.parent.getAll().filter(t => this.scope!.allowed.has(t.id));
     return Array.from(this.tools.values());
   }
 
   public has(toolId: string): boolean {
-    return this.tools.has(toolId);
+    return this.get(toolId) !== undefined;
   }
 
   private metricsFor(toolId: string): ToolMetrics {
@@ -146,6 +157,18 @@ export class ToolRegistry {
    * Invoke a tool with a deadline. Process-backed handlers can finish their bounded cleanup before settling.
    */
   public async invoke(toolId: string, params: any, context?: ToolInvocationContext): Promise<any> {
+    if (this.scope) return this.invokeInner(toolId, params, context);
+    const started = Date.now(); trace('tool.started', { toolId, input: params });
+    try {
+      const output = await this.invokeInner(toolId, params, context);
+      trace('tool.finished', { toolId, output, success: true, durationMs: Date.now() - started }); return output;
+    } catch (error: any) { trace('tool.finished', { toolId, success: false, error: error.message, durationMs: Date.now() - started }); throw error; }
+  }
+  private async invokeInner(toolId: string, params: any, context?: ToolInvocationContext): Promise<any> {
+    if (this.scope) {
+      if (!this.scope.allowed.has(toolId)) { trace('tool.denied', { toolId, input: params, reason: 'Run policy' }); throw new Error(`Tool '${toolId}' is denied by the frozen run policy.`); }
+      return this.scope.parent.invoke(toolId, params, context);
+    }
     const tool = this.tools.get(toolId);
     if (!tool) throw new Error(`Tool '${toolId}' not found in registry`);
 

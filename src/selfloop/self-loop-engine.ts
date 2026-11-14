@@ -33,6 +33,8 @@ export interface SelfLoopIterationRecord {
   criticFeedback?: string;
   criticAgentId?: string;
   durationMs: number;
+  verificationStartedAt?: number;
+  verificationFinishedAt?: number;
   score: number;
   passed: boolean;
   /** this revision scored lower than the best one seen so far */
@@ -129,7 +131,8 @@ function dedupe(list: RuleFailure[]): RuleFailure[] {
 export class SelfLoopEngine {
   constructor(
     private agentRegistry: AgentRegistry,
-    private verificationEngine: VerificationEngine
+    private verificationEngine: VerificationEngine,
+    private executeAgent?: import('../types/index.js').AgentExecutor
   ) {}
 
   public async runLoop(
@@ -184,7 +187,9 @@ export class SelfLoopEngine {
       }
 
       // 2. CHECK
+      const verificationStartedAt = Date.now();
       const verification = await this.verificationEngine.verify(output, spec, iterationInput, { iteration, signal: options.signal });
+      const verificationFinishedAt = Date.now();
       finalVerification = verification;
       previousVerification = verification;
 
@@ -205,6 +210,8 @@ export class SelfLoopEngine {
         cumulativeFailureIds: [],
         criticFeedback: undefined,
         durationMs: Date.now() - started,
+        verificationStartedAt,
+        verificationFinishedAt,
         score: verification.score,
         passed: verification.passed,
         regression: regressed,
@@ -227,7 +234,7 @@ export class SelfLoopEngine {
 
       const criticAgent = this.agentRegistry.get(config.criticAgentId);
       if (criticAgent) {
-        const criticRes = await criticAgent.execute({
+        const criticRes = await (this.executeAgent ?? (request => criticAgent.execute(request)))({
           taskId: `${workflowExecutionId}-critic-i${iteration}`,
           agentId: criticAgent.id,
           signal: options.signal,

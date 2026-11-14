@@ -3,8 +3,7 @@
 > 面向多智能体协同的自愈编排与可信调度平台
 > **Take as little human attention as possible, give as much value as possible.**
 
-一个零运行时依赖的 TypeScript 平台：声明式 DAG 工作流 + 负载感知调度 + PDCA 自愈循环 + 三层可信验证，
-自带交互式终端 UI（TUI）。
+一个 TypeScript 平台，提供声明式 DAG 工作流、负载感知调度、PDCA 自愈循环、三层验收、Web 控制台和交互式终端 UI（TUI）。工作流设计器使用本地打包的 React Flow。
 
 ---
 
@@ -12,8 +11,8 @@
 
 ```bash
 node -v            # 需要 >= 20
-pnpm install       # 或 npm install —— 只装 typescript 与 @types/node 两个 devDependency
-pnpm build         # tsc → dist/
+pnpm install       # 或 npm install
+pnpm build         # 编译服务端并打包工作流设计器
 pnpm start         # 交互式 TUI
 ```
 
@@ -28,6 +27,36 @@ pnpm start         # 交互式 TUI
 | `pnpm test` | 验证核心引擎、LLM 降级与 Web 接口契约 |
 
 运行环境变量：`AETHER_SIM_LATENCY_MS=0` 可关闭模拟的模型延迟（默认 55ms，见下文"诚实声明"）。
+
+### 自定义 Agent 与团队（产品升级第一部分）
+
+Web 导航中的 **Agent 中心**（`/studio/agents`）与 **团队**（`/teams`）支持创建、编辑、复制、停启用、归档、草稿与固定版本。系统定义只读，可复制成自己的角色。Developer 和 Tester 创建模板可直接选用。
+
+使用服务端已有模型配置启动：`npm.cmd run web -- --live --no-fallback`。API Key 只在服务端环境中配置。未配置模型时仍可管理定义，但自定义测试会明确拒绝运行，不会降级到预设响应。
+
+1. 分别创建 Developer、Tester，配置指令、能力、工具白名单和输入输出 Schema，保存固定版本。
+2. 创建团队，选择每位成员的固定版本和分工，按成员顺序生成交接关系，保存团队版本。
+3. 展开“真实测试与执行预览”，填写 JSON 输入并运行。后一位成员会收到原始输入和 `previous`（上一位输出）。
+4. 查看实际输入、输出、工具调用和耗时；运行历史可追溯完整配置快照。编辑、停用或归档定义不会改变已接收的运行。
+
+定义保存在 `AETHER_DATA_DIR/studio/state.json`，默认是 `.aether/runs/studio/state.json`；运行证据继续使用原存储。删除采用归档，保留历史引用。保存冲突返回 `409`，原编辑内容留在页面中。
+
+当前团队支持顺序交接，或按能力选择一名成员；协调人用于分工说明，不会自主委派。自定义 Agent 和普通 Tool 节点仅能使用平台许可且在团队与成员白名单内的工具。容器验收和补丁交付由各自的服务端契约授权。
+
+实现与验收记录见 [PHASE1_ACCEPTANCE.md](PHASE1_ACCEPTANCE.md)。`npm.cmd test` 会同时运行原有回归和 Studio 专项检查。
+
+### 工作流设计器与执行追踪
+
+1. 进入 **工作流**（`/workflows`），选择 Developer 和 Tester 所在的固定团队版本。
+2. 展开“模板与版本”，选择 **Developer + Tester 修复循环**，点击“从模板新建”。选择循环节点后可更换成员、调整输入映射、最大轮数和收敛阈值。
+3. 点击“校验”和“保存固定版本”，填写测试输入后运行。调试区展示真实节点执行、模型与工具事件、每轮验收与反馈，以及运行使用的版本快照。
+4. 在运行记录里打开报告或返回设计器。历史版本可独立运行，草稿可以继续编辑。
+
+编排器支持条件分支、并行汇合、固定版本子工作流、单节点测试、发布和模板 JSON 导入导出。并行分支引用同一团队版本的子工作流，全部成功后才汇合。模板导入要求目标服务已有同 ID、同版本、同指纹的依赖。工作流定义保存在 `AETHER_DATA_DIR/workflows/state.json`。
+
+普通修复模板使用静态规则和 Tester 审查。需要功能验收和补丁时，配置 `AETHER_PROJECT_REPO`、`AETHER_PROJECT_BASE` 和 `AETHER_RUNNER_IMAGE`，选择 **固定仓库修复与补丁交付** 模板，并输入限流器修复目标。服务端用固定套件在容器里验收；候选通过后等待审批，批准后才生成补丁并在固定基线执行 `git apply --cached --check`。可以在运行详情下载验证通过的补丁与报告。
+
+实现边界和验证记录见 [工作流验收](WORKFLOW_STUDIO_ACCEPTANCE.md)。
 
 ### Windows / PowerShell 常见问题
 
@@ -172,12 +201,12 @@ CPA 等兼容端点也可使用 `OPENAI_API_KEY`、`OPENAI_BASE_URL` 和 `CHAT_M
 ### 1. Web 可视化控制台 (Web Dashboard)
 
 ```bash
-pnpm run web       # 启动零依赖 Web 控制台（浏览器打开 http://127.0.0.1:3300）
+pnpm run web       # 启动 Web 控制台（浏览器打开 http://127.0.0.1:3300）
 ```
 
 Web 控制台只监听本机回环地址。打开页面后，在登录页输入终端本次启动显示的临时账号与访问令牌。浏览器会话最长有效 8 小时，右上角可退出登录。运行和 Agent 接口返回用于展示的字段，模型密钥、系统提示和 Agent 内存留在进程内。
 
-控制台提供五个独立入口。工作台（`/`）用于创建仓库任务、运行预设和查看最近记录。任务执行（`/runs`）展示流程、实时日志、工具调用及任务上下文。Agent 中心（`/agents`）展示角色、负载和活动历史。验收与交付（`/delivery`）展示真实断言、Diff、补丁和 JSON 报告。系统设置（`/settings`）展示已生效的模型、权限、策略及运行环境，配置变更通过服务启动参数或工作流模板完成。单次运行的交付可直接打开 `/runs/:id/delivery`。
+控制台按工作区组织功能。工作台（`/`）用于创建仓库任务、运行预设和查看最近记录。任务执行（`/runs`）展示流程、实时日志、工具调用及任务上下文。Agent 中心（`/agents`）展示角色、负载和活动历史。验收与交付（`/delivery`）展示真实断言、Diff、补丁和 JSON 报告。系统设置（`/settings`）展示已生效的模型、权限、策略及运行环境，配置变更通过服务启动参数或工作流模板完成。单次运行的交付可直接打开 `/runs/:id/delivery`。
 
 多人在同一台机器上复核时，可用 `AETHER_ACCOUNTS_FILE` 指定长期账号。操作者可运行、取消任务和处理人工卡片，查看者可读取运行与下载证据。账号配置只保存令牌散列，生成的访问令牌通过可信方式交给各自的使用者。配置变更在重启后生效。
 

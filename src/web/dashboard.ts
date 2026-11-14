@@ -19,7 +19,12 @@ interface DashboardData {
   knowledgeChunks: number;
   optimizations: ReturnType<Orchestrator['getPromptOptimizations']>;
   runs: RunSummary[];
-  run: Omit<RunSnapshot, 'state'> | null;
+  run: (Omit<RunSnapshot, 'state' | 'definitions' | 'requestKey'> & { design?: {
+    kind: string; executionHash: string;
+      workflow?: { id: string; revision: number; hash: string; name: string };
+    team?: { id: string; revision: number; hash: string; name: string };
+    agents: Array<{ id: string; memberId: string; revision: number; hash: string; name: string }>;
+  } }) | null;
   events: OrchestratorEvent[];
   settings: ReturnType<Orchestrator['getSettings']>;
 }
@@ -320,7 +325,7 @@ export function dashboard(): void {
       detail = '<div class="inspector small"><p><strong>' + esc(nodeName(selected.id, selected.name)) +
         '</strong> · ' + esc(nodeTypes[selected.type] ?? selected.type) + '</p>' +
         '<p class="muted">' + esc(selected.description) + '</p>' +
-        (selected.agentId ? '<p>配置 Agent · ' + esc(agentName(selected.agentId)) + '</p>' : '') +
+        (selected.agentId ? '<p>配置 Agent · ' + esc(run?.design?.agents.find(agent => agent.memberId === selected.agentId)?.name ?? agentName(selected.agentId)) + '</p>' : '') +
         (selected.toolId ? '<p>调用工具 · ' + esc(tools[selected.toolId] ?? selected.toolId) + '</p>' : '') +
         (config ? '<p>轮数上限 ' + config.maxIterations + ' · 收敛阈值 ' + pct(config.convergenceThreshold) +
           ' · 诊断 Agent ' + esc(agentName(config.criticAgentId)) + '</p>' : '') +
@@ -335,6 +340,9 @@ export function dashboard(): void {
           stateBadge(child.status) + (child.error ? ' ' + esc(child.error) : '') + '</li>'
         ).join('') + '</ul>' : '') + '</div>';
     }
+    const attempts = run?.attempts?.filter(attempt => attempt.nodeId === nodeId) ?? [];
+    detail += attempts.map(attempt => '<details class="small"><summary>查看实际输入与输出</summary><pre class="codeblock">' +
+      esc(JSON.stringify({ input: attempt.input, output: attempt.output, error: attempt.error, meta: attempt.meta }, null, 2)) + '</pre></details>').join('');
     show('node-inspector', '<div class="stack">' + (insideLoop.length ?
       '<div><p class="muted small">自愈循环内部 · 开发、验证、诊断后决定是否重试</p><div class="subnodes">' +
       insideLoop.map(nodeButton).join('') + '</div></div>' : '') + detail + '</div>');
@@ -390,6 +398,14 @@ export function dashboard(): void {
           '</p></div>').join('') : '<p class="small muted">等待操作者处理。</p>') + '</div></div>';
     }
     const retry = data?.runs.find(item => item.retryOf === run.runId);
+    const design = run.design;
+    const lineage = design ? '<div class="inset stack"><h4>固定版本</h4>' +
+      (design.workflow ? '<p>' + esc(design.workflow.name) + ' · 工作流 v' + design.workflow.revision + '</p>' : '') +
+      (design.team ? '<p>' + esc(design.team.name) + ' · v' + design.team.revision + '</p>' : '') +
+      design.agents.map(agent => '<p class="small">' + esc(agent.memberId + ' · ' + agent.name) + ' · v' + agent.revision + '</p>').join('') +
+      '<details class="small"><summary>执行快照指纹</summary><pre>' + esc(design.executionHash) + '</pre></details>' +
+      (canOperate ? '<a class="link" href="' + (design.workflow ? '/workflows/' + esc(design.workflow.id) : design.team ? '/teams/' + esc(design.team.id) : '/studio/agents/' + esc(design.agents[0].id)) +
+        '?run=' + esc(run.runId) + '">查看固定配置与测试证据</a>' : '') + '</div>' : '';
     show('run-summary', '<div class="row between"><h4>' + esc(title) + '</h4>' + stateBadge(outcome ?? run.status) + '</div>' +
       '<p class="muted small mono">' + esc(run.runId) + ' · ' + time(run.startedAt) +
       (run.finishedAt ? ' · ' + duration(run.finishedAt - run.startedAt) : '') + '</p>' +
@@ -399,7 +415,7 @@ export function dashboard(): void {
       (v ? badge(v.passed ? '通过' : '阻塞', v.passed ? 'good' : 'bad') + ' <strong>' + pct(v.score) + '</strong>' :
         '<span class="muted small">尚无最终结论</span>') +
       (run.iterations ? '<span class="muted small">已记录 ' + run.iterations + ' 轮</span>' : '') + '</div></div>' +
-      '<p class="small muted">' + esc(description) + '</p>' +
+      '<p class="small muted">' + esc(description) + '</p>' + lineage +
       (run.cancellation ? '<p class="small muted">取消申请 · ' + esc(run.cancellation.actor + ' · ' +
         time(run.cancellation.requestedAt) + ' · ' + run.cancellation.reason) + '</p>' : '') +
       (run.modelLabel ? '<p class="small muted">运行模型 · ' + esc(run.modelLabel) + '</p>' : '') +
@@ -430,7 +446,7 @@ export function dashboard(): void {
       }
     }
     show('run-agents', participation.size ? '<ul class="plain-list record-list">' + [...participation].map(([id, labels]) =>
-      '<li><strong>' + esc(agentName(id)) + '</strong><p class="muted small">' + esc([...labels].join('、')) +
+      '<li><strong>' + esc(run?.design?.agents.find(agent => agent.id === id)?.name ?? agentName(id)) + '</strong><p class="muted small">' + esc([...labels].join('、')) +
       '</p></li>').join('') + '</ul>' : empty('暂无本次运行的派发或审查记录。'));
   }
 
@@ -492,15 +508,20 @@ export function dashboard(): void {
       return;
     }
     if (tab === 'tools') {
+      const agentCalls = (run.attempts ?? []).flatMap(attempt => (attempt.meta?.toolCalls ?? []).map((call: any) => ({ ...call, nodeName: attempt.nodeName })));
       const calls = Object.entries(run.nodeProgress ?? {}).filter(([, item]) => !!item.toolId);
       const tests = (run.loopRounds ?? []).filter(round => !!round.verification.sandboxTestResult);
       const baseline = run.baselineVerification?.sandboxTestResult;
-      show(evidence, '<div class="stack"><h3>本次运行的工具与测试</h3>' + (calls.length || tests.length || baseline ?
+      show(evidence, '<div class="stack"><h3>本次运行的工具与测试</h3>' + (calls.length || tests.length || baseline || agentCalls.length ?
         '<ul class="plain-list record-list">' + calls.map(([id, item]) => '<li><div class="row between"><strong>' +
           esc(tools[item.toolId!] ?? item.toolId) + '</strong>' + stateBadge(item.status) + '</div><p class="small muted">' +
           esc(nodeName(id.split('/').at(-1)!, item.nodeName)) + ' · ' + time(item.startTime) +
           (item.endTime !== undefined ? ' · ' + duration(item.endTime - item.startTime) : '') +
           '</p>' + (item.error ? '<p>' + esc(item.error) + '</p>' : '') + '</li>').join('') +
+        agentCalls.map(call => '<li><div class="row between"><strong>' + esc(tools[call.toolId] ?? call.toolId) + '</strong>' +
+          badge(call.success ? '调用成功' : '调用失败／拒绝', call.success ? 'good' : 'bad') + '</div><p class="small muted">' +
+          esc(call.nodeName) + ' · ' + duration(call.durationMs) + '</p><details><summary>调用证据</summary><pre class="codeblock">' +
+          esc(JSON.stringify(call, null, 2)) + '</pre></details></li>').join('') +
         (baseline ? '<li><strong>基线沙箱测试</strong><p class="small muted">' + esc(baseline.output) + '</p></li>' : '') +
         tests.map(round => '<li><strong>第 ' + round.iteration + ' 轮沙箱测试</strong><p class="small muted">' +
           esc(round.verification.sandboxTestResult?.output) + '</p></li>').join('') + '</ul>' :

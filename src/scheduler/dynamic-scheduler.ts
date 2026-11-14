@@ -34,6 +34,8 @@ export class DynamicScheduler {
   private byId: Map<string, ScheduledTask> = new Map();
   private completedIds: Set<string> = new Set();
   private inflight: Map<string, number> = new Map();
+  private scopes = new Map<string, AgentRegistry>();
+  private reservations = new Map<string, { key: string; limit: number }>();
 
   private readonly agingIntervalMs: number;
   private readonly maxRetries: number;
@@ -132,7 +134,7 @@ export class DynamicScheduler {
       const task = this.byId.get(taskId);
       if (!task) throw new Error(`Scheduler: unknown task '${taskId}'`);
       if (task.status === 'running' && task.assignedAgentId) {
-        const agent = this.agentRegistry.get(task.assignedAgentId);
+        const agent = (this.scopes.get(task.id) ?? this.agentRegistry).get(task.assignedAgentId);
         if (agent) return { task, agent };
       }
 
@@ -160,7 +162,9 @@ export class DynamicScheduler {
         task.startedAt = now;
         task.assignedAgentId = agent.id;
         task.attempts++;
-        this.inflight.set(agent.id, this.getInflight(agent.id) + 1);
+        const key = agent.profile.capacityKey ?? agent.id;
+        this.reservations.set(task.id, { key, limit: agent.profile.maxConcurrency });
+        this.inflight.set(key, this.getInflight(key) + 1);
         this.queue = this.queue.filter(t => t.id !== taskId);
 
         const wait = now - task.submittedAt;
@@ -170,7 +174,7 @@ export class DynamicScheduler {
 
         this.onEvent?.(
           `dispatch ${task.node.name} → ${agent.profile.name} (p${priority}${wait > 50 ? `, waited ${wait}ms` : ''})`,
-          { taskId, runId: task.runId, nodeId: task.node.id, agentId: agent.id, priority, wait }
+          { taskId, runId: task.runId, nodeId: task.node.id, agentId: key, instanceId: agent.id, priority, wait }
         );
         return { task, agent };
       }
@@ -184,9 +188,10 @@ export class DynamicScheduler {
     const task = this.byId.get(taskId);
     if (!task) return 'failed';
 
-    if (task.assignedAgentId) {
-      const next = Math.max(0, this.getInflight(task.assignedAgentId) - 1);
-      this.inflight.set(task.assignedAgentId, next);
+    const reservation = this.reservations.get(taskId);
+    if (reservation) {
+      this.inflight.set(reservation.key, Math.max(0, this.getInflight(reservation.key) - 1));
+      this.reservations.delete(taskId);
     }
     this.stats.running = Math.max(0, this.stats.running - 1);
 
@@ -198,13 +203,14 @@ export class DynamicScheduler {
       return 'completed';
     }
 
-    if (task.attempts <= this.maxRetries) {
+    const maxRetries = task.node.maxRetries ?? this.maxRetries;
+    if (task.attempts <= maxRetries) {
       task.status = 'queued';
       task.assignedAgentId = undefined;
       task.submittedAt = Date.now();
       this.queue.push(task);
       this.stats.retried++;
-      this.onEvent?.(`retry ${task.node.name} (attempt ${task.attempts + 1}/${this.maxRetries + 1})${error ? `: ${error}` : ''}`, {
+      this.onEvent?.(`retry ${task.node.name} (attempt ${task.attempts + 1}/${maxRetries + 1})${error ? `: ${error}` : ''}`, {
         taskId, runId: task.runId, nodeId: task.node.id
       });
       return 'retrying';
@@ -227,10 +233,12 @@ export class DynamicScheduler {
     dependencies: string[],
     fn: (agent: BaseAgent, task: ScheduledTask) => Promise<T>,
     deadline?: number,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    scope?: AgentRegistry
   ): Promise<T> {
     signal?.throwIfAborted();
     const task = this.enqueue(node, runId, workflowExecutionId, priority, dependencies);
+    if (scope) this.scopes.set(task.id, scope);
     try {
       for (;;) {
         const { agent } = await this.acquire(task.id, deadline, signal);
@@ -246,11 +254,14 @@ export class DynamicScheduler {
         }
       }
     } finally {
+      this.scopes.delete(task.id);
       if (signal?.aborted) {
         this.queue = this.queue.filter(queued => queued.id !== task.id);
         this.byId.delete(task.id);
         if (task.status === 'running' && task.assignedAgentId) {
-          this.inflight.set(task.assignedAgentId, Math.max(0, this.getInflight(task.assignedAgentId) - 1));
+          const reservation = this.reservations.get(task.id);
+          if (reservation) this.inflight.set(reservation.key, Math.max(0, this.getInflight(reservation.key) - 1));
+          this.reservations.delete(task.id);
           this.stats.running = Math.max(0, this.stats.running - 1);
         }
       }
@@ -270,16 +281,17 @@ export class DynamicScheduler {
 
   private pickAgent(task: ScheduledTask): BaseAgent | undefined {
     const node = task.node;
+    const registry = this.scopes.get(task.id) ?? this.agentRegistry;
 
     if (node.agentId) {
-      const agent = this.agentRegistry.get(node.agentId);
+      const agent = registry.get(node.agentId);
       if (agent && this.hasSlot(agent)) return agent;
       if (!node.agentCapability) return undefined;
       // explicit pin has no room: fall through to capability routing as a fail-over
     }
 
     const capability = node.agentCapability;
-    const candidates = this.agentRegistry
+    const candidates = registry
       .getAll()
       .filter(a => this.hasSlot(a))
       .filter(a => (capability ? (a.profile.capabilities[capability] ?? 0) >= 0.5 : true));
@@ -288,7 +300,7 @@ export class DynamicScheduler {
 
     const score = (a: BaseAgent) => {
       const cap = capability ? (a.profile.capabilities[capability] ?? 0) : 0.5;
-      const load = this.getInflight(a.id) / Math.max(1, a.profile.maxConcurrency);
+      const load = this.getInflight(a.profile.capacityKey ?? a.id) / Math.max(1, a.profile.maxConcurrency);
       return cap * 0.7 + (1 - load) * 0.3;
     };
 
@@ -297,6 +309,8 @@ export class DynamicScheduler {
   }
 
   private hasSlot(agent: BaseAgent): boolean {
-    return agent.hasCapacity() && this.getInflight(agent.id) < agent.profile.maxConcurrency;
+    const key = agent.profile.capacityKey ?? agent.id;
+    const limit = Math.min(agent.profile.maxConcurrency, ...Array.from(this.reservations.values()).filter(r => r.key === key).map(r => r.limit));
+    return agent.hasCapacity() && this.getInflight(key) < limit;
   }
 }

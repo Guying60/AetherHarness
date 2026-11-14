@@ -13,6 +13,7 @@ import {
 } from '../types/index.js';
 import { ToolRegistry } from '../tools/tool-registry.js';
 import { AgentBrain, BrainContext, DeterministicBrain, estimateTokens } from './brain.js';
+import { executionContext, trace } from '../workflow/execution-context.js';
 
 export interface AgentMemoryEntry {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -62,7 +63,7 @@ export class BaseAgent {
 
   public addMemory(entry: Omit<AgentMemoryEntry, 'timestamp'>): void {
     this.memory.push({ ...entry, timestamp: Date.now() });
-    while (this.memory.length > MEMORY_WINDOW) this.memory.shift();
+    while (this.memory.length > (this.profile.memoryWindow ?? MEMORY_WINDOW)) this.memory.shift();
   }
 
   public getMemories(): AgentMemoryEntry[] {
@@ -83,10 +84,19 @@ export class BaseAgent {
   }
 
   public async execute(request: AgentExecutionRequest): Promise<AgentExecutionResult> {
+    return executionContext.run({ ...executionContext.getStore(), memberId: this.id }, async () => {
+      trace('agent.started', { agentId: this.profile.capacityKey ?? this.id, input: request.input, iteration: request.iteration });
+      const result = await this.executeImpl(request);
+      trace('agent.finished', { agentId: this.profile.capacityKey ?? this.id, result });
+      return result;
+    });
+  }
+  private async executeImpl(request: AgentExecutionRequest): Promise<AgentExecutionResult> {
     const startTime = Date.now();
     let slotReserved = false;
 
     const failedRules: RuleFailure[] = request.failedRules ?? [];
+    const toolCalls: ToolCallTrace[] = [];
 
     try {
       request.signal?.throwIfAborted();
@@ -105,8 +115,12 @@ export class BaseAgent {
         failedRules,
         iteration: request.iteration ?? 1,
         criticGuidance: request.criticGuidance,
-        memory: this.memory.slice(-8).map(m => ({ role: m.role, content: m.content })),
-        callTool: (toolId, params) => this.callTool(toolId, params, request.signal)
+        memory: (this.profile.memoryWindow === 0 ? [] : this.memory.slice(-(this.profile.memoryWindow ?? 8))).map(m => ({ role: m.role, content: m.content })),
+        callTool: async (toolId, params) => {
+          const trace = await this.callTool(toolId, params, request.signal);
+          toolCalls.push(trace);
+          return trace;
+        }
       };
 
       const res = await this.brain.think(ctx);
@@ -132,7 +146,7 @@ export class BaseAgent {
         success: true,
         output: res.output,
         reasoning,
-        toolCalls: res.toolCalls ?? [],
+        toolCalls: toolCalls.length ? toolCalls : res.toolCalls ?? [],
         confidence: res.confidence ?? 0.9,
         tokensUsed,
         durationMs: Date.now() - startTime
@@ -145,7 +159,7 @@ export class BaseAgent {
         success: false,
         output: null,
         reasoning: `Agent execution failed: ${message}`,
-        toolCalls: [],
+        toolCalls,
         confidence: 0,
         tokensUsed: estimateTokens(message),
         durationMs: Date.now() - startTime,
@@ -164,11 +178,12 @@ export class BaseAgent {
       return { toolId, input: params, output: null, durationMs: 0, success: false, error: `ToolRegistry not bound to agent ${this.profile.id}` };
     }
     if (!this.profile.toolIds.includes(toolId)) {
+      trace('tool.denied', { toolId, input: params, reason: 'Agent whitelist' });
       return { toolId, input: params, output: null, durationMs: 0, success: false, error: `Tool '${toolId}' is not authorized for agent '${this.profile.id}'` };
     }
 
     try {
-      const output = await this.toolRegistry.invoke(toolId, params, { signal });
+      const output = await this.toolRegistry.invoke(toolId, params, { signal, memberId: this.id });
       return { toolId, input: params, output, durationMs: Date.now() - start, success: true };
     } catch (err: any) {
       return { toolId, input: params, output: null, durationMs: Date.now() - start, success: false, error: err?.message ?? String(err) };

@@ -26,5 +26,10 @@ export * from './optimization/feedback-optimizer.js';
 export * from './scenarios/rate-limiter.js';
 
 export * from './orchestrator.js';
+export * from './studio/definitions.js';
+export * from './studio/catalog.js';
+export * from './studio/service.js';
+export * from './studio/graph.js';
+export * from './studio/workflow-store.js';
 export * from './tui/ansi.js';
 export * from './demo.js';

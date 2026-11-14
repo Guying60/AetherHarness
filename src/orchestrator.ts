@@ -10,6 +10,10 @@
  * lines in the demo). Here every module is on the critical path.
  */
 import { randomUUID } from 'node:crypto';
+import { StudioService, PreparedStudioRun } from './studio/service.js';
+import type { StudioSnapshot } from './studio/definitions.js';
+import { hash, StudioError, clone, object, text } from './studio/definitions.js';
+import { executionContext } from './workflow/execution-context.js';
 import {
   ExecutionStatus,
   HumanEscalationRequest,
@@ -44,6 +48,7 @@ import {
 } from './scenarios/repository-repair.js';
 import {
   AppliedLlm,
+  LlmProvider,
   LlmConfig,
   LlmTelemetry,
   applyLlm,
@@ -54,12 +59,21 @@ import {
 } from './agent/llm/index.js';
 
 export interface RunSnapshot {
+  resumeRecords?: Record<string, { record: NodeExecutionRecord; context: Record<string, any> }>;
+  runInput?: Record<string, any>;
+  activeElapsedMs?: number;
+  approvals?: Array<{ id: string; nodeId: string; message: string; input: unknown; inputHash: string; createdAt: number; expiresAt: number;
+    status: 'pending' | 'approved' | 'rejected' | 'expired'; actor?: string; reason?: string; decidedAt?: number; decisionKey?: string }>;
   runId: string;
   taskId: string;
   title: string;
   difficulty: string;
   status: ExecutionStatus;
   workflow: WorkflowDefinition;
+  definitions?: StudioSnapshot;
+  attempts?: NodeExecutionRecord[];
+  result?: unknown;
+  requestKey?: { actor: string; key: string; hash: string };
   state?: WorkflowExecutionState;
   startedAt: number;
   finishedAt?: number;
@@ -89,8 +103,9 @@ export interface RunSnapshot {
 }
 
 export type EventListener = (event: OrchestratorEvent) => void;
-type RunTask = RateLimiterTask & { repository?: true };
-type RunOptions = { maxIterationsOverride?: number; retryOf?: string; onStart?: (runId: string) => void; requestedBy?: string };
+type RunTask = RateLimiterTask & { repository?: true; studio?: never };
+type StudioTask = { id: string; title: string; prompt: string; difficulty: string; repository?: never; studio: PreparedStudioRun };
+type RunOptions = { maxIterationsOverride?: number; retryOf?: string; onStart?: (runId: string) => void; requestedBy?: string; resume?: RunSnapshot };
 
 export interface OrchestratorOptions {
   onEvent?: EventListener;
@@ -116,6 +131,7 @@ export class Orchestrator {
   public readonly scheduler: DynamicScheduler;
   public readonly optimizer: FeedbackOptimizer;
   public readonly workflow: WorkflowEngine;
+  public readonly studio: StudioService;
 
   private runs: Map<string, RunSnapshot> = new Map();
   private runOrder: string[] = [];
@@ -179,12 +195,13 @@ export class Orchestrator {
     let team = offlineTeam;
 
     const config = options.llm && resolveLlmConfig(options.llm);
+    let provider: LlmProvider | undefined;
     this.strictLive = config?.fallbackToOffline === false;
     if (config && !isLlmConfigured(config) && config.fallbackToOffline === false) {
       throw new Error('Strict live mode requires a configured model provider.');
     }
     if (config && isLlmConfigured(config)) {
-      const provider = createProviderFromConfig(config);
+      provider = createProviderFromConfig(config);
       if (provider instanceof DeepSeekProvider) this.llmPolicy = provider.getPolicy();
       this.llmApplied = applyLlm(offlineTeam, provider, {
         fallbackToOffline: config.fallbackToOffline ?? true,
@@ -219,7 +236,7 @@ export class Orchestrator {
           this.runs.set(run.runId, run);
           this.runOrder.push(run.runId);
           this.counter = Math.max(this.counter, Number(run.runId.slice(4)));
-          const task = run.project
+          const task = run.definitions ? undefined : run.project
             ? this.restoredProjectTask(run)
             : this.taskById.get(run.taskId);
           if (task) this.taskByRun.set(run.runId, task);
@@ -236,6 +253,7 @@ export class Orchestrator {
           this.events.set(runId, events);
         }
         for (const run of this.getRuns()) {
+          if (run.status === 'paused' && run.definitions?.workflow && run.approvals?.some(a => ['pending', 'approved'].includes(a.status))) continue;
           if (!['pending', 'running', 'paused', 'cancelling'].includes(run.status)) continue;
           const interruptedCancellation = run.status === 'cancelling';
           run.status = 'failed';
@@ -253,6 +271,9 @@ export class Orchestrator {
           for (const progress of Object.values(run.nodeProgress ?? {})) {
             if (progress.status === 'running') Object.assign(progress, { status: run.status, error: run.error, endTime: run.finishedAt });
           }
+          for (const attempt of run.attempts ?? []) {
+            if (attempt.status === 'running') Object.assign(attempt, { status: run.status, error: run.error, endTime: run.finishedAt });
+          }
           this.emit('run.finished', run.runId, run.summary, 'run', { status: run.status });
         }
         if (upgradedEvents) this.persist();
@@ -260,6 +281,12 @@ export class Orchestrator {
         this.store.close();
         throw error;
       }
+    }
+    try {
+      this.studio = new StudioService(this.tools, this.agents.getAll().map(a => a.profile), provider, config, options.dataDir, this.repository);
+    } catch (error) {
+      this.store?.close();
+      throw error;
     }
   }
 
@@ -277,9 +304,9 @@ export class Orchestrator {
     tag?: string,
     data?: Record<string, any>
   ): void {
-    const event: OrchestratorEvent = { id: randomUUID(), at: Date.now(), runId, kind, message, tag, data };
     const previous = this.events.get(runId);
-    const history = [...(previous ?? []), event].slice(-100);
+    const event: OrchestratorEvent = { schemaVersion: 1, seq: (previous?.at(-1)?.seq ?? previous?.length ?? 0) + 1, id: randomUUID(), at: Date.now(), runId, kind, message, tag, data };
+    const history = this.runs.get(runId)?.definitions ? [...(previous ?? []), event] : [...(previous ?? []), event].slice(-100);
     this.events.set(runId, history);
     try {
       if (kind !== 'scheduler') this.persist();
@@ -313,6 +340,7 @@ export class Orchestrator {
     this.closing = true;
     if (this.runningCount > 0) await new Promise<void>(resolve => this.idleWaiters.push(resolve));
     this.store?.close();
+    this.studio.close();
   }
 
   // ------------------------------------------------------------------- setup
@@ -458,14 +486,36 @@ Edge cases:
     return task.repository ? buildRepositoryWorkflow(effective) : buildRateLimiterWorkflow(effective);
   }
 
-  public async runTask(task: RunTask, options: RunOptions = {}): Promise<RunSnapshot> {
-    if (this.closing) throw new Error('The orchestrator is shutting down.');
-    const runId = `run-${(++this.counter).toString().padStart(2, '0')}`;
-    const workflow = this.buildWorkflow(task, options.maxIterationsOverride);
+  public runStudio(body: unknown, options: Pick<RunOptions, 'onStart' | 'requestedBy'> = {}): Promise<RunSnapshot> {
+    const prepared = this.studio.prepare(body);
+    return this.executeTask({ id: prepared.workflow.id, title: prepared.title, difficulty: 'custom',
+      prompt: typeof prepared.input.goal === 'string' ? prepared.input.goal : 'Agent/team test', studio: prepared }, options);
+  }
 
-    const nodeProgress: NonNullable<RunSnapshot['nodeProgress']> = {};
-    const loopRounds: NonNullable<RunSnapshot['loopRounds']> = [];
-    const snapshot: RunSnapshot = {
+  public runTask(task: RunTask, options: RunOptions = {}): Promise<RunSnapshot> {
+    return this.executeTask(task, options);
+  }
+
+  private async executeTask(task: RunTask | StudioTask, options: RunOptions): Promise<RunSnapshot> {
+    if (this.closing) throw new Error('The orchestrator is shutting down.');
+    const runId = options.resume?.runId ?? `run-${(++this.counter).toString().padStart(2, '0')}`;
+    const workflow = task.studio?.workflow ?? this.buildWorkflow(task as RunTask, options.maxIterationsOverride);
+    const auxiliaryAgent: import('./types/index.js').AgentExecutor = async request => {
+      const studio = task.studio!;
+      const context = executionContext.getStore();
+      const nodeId = (context?.nodePath ?? 'verification') + '/' + (request.taskId.includes('critic') ? 'critic' : 'audit') + '/' + request.agentId;
+      return executionContext.run({ ...context, nodePath: nodeId, attemptId: randomUUID(), iteration: request.iteration }, () =>
+        this.scheduler.run({ id: nodeId, name: nodeId, type: 'agent', agentId: request.agentId, maxRetries: 0 }, runId, runId, 5, [],
+          agent => agent.execute(request), Date.now() + 120000, request.signal, studio.agents));
+    };
+    const verification = task.studio ? new VerificationEngine(task.studio.agents, task.studio.verificationTools ?? task.studio.tools, auxiliaryAgent) : this.verification;
+    const engine = task.studio ? new WorkflowEngine({ agentRegistry: task.studio.agents, toolRegistry: task.studio.tools,
+      scheduler: this.scheduler, verificationEngine: verification, selfLoopEngine: new SelfLoopEngine(task.studio.agents, verification, auxiliaryAgent),
+      subworkflowRegistry: task.studio.subworkflows, approvedSubworkflowTools: task.studio.approvedSubworkflowTools }) : this.workflow;
+
+    const nodeProgress: NonNullable<RunSnapshot['nodeProgress']> = options.resume?.nodeProgress ?? {};
+    const loopRounds: NonNullable<RunSnapshot['loopRounds']> = options.resume?.loopRounds ?? [];
+    const snapshot: RunSnapshot = options.resume ?? {
       runId,
       taskId: task.id,
       title: task.title,
@@ -478,13 +528,19 @@ Edge cases:
       retryOf: options.retryOf,
       project: task.repository ? this.repository : undefined,
       goal: task.repository ? task.prompt : undefined,
-      retryAvailable: true,
-      modelLabel: this.llmLabel,
+      retryAvailable: !task.studio,
+      definitions: task.studio ? this.studio.safe(task.studio.snapshot) : undefined,
+      attempts: task.studio ? [] : undefined,
+      resumeRecords: task.studio ? {} : undefined,
+      runInput: task.studio ? clone(task.studio.input) : undefined,
+      approvals: task.studio ? [] : undefined,
+      modelLabel: task.studio ? this.studio.model.label + ' (no fallback)' : this.llmLabel,
       requestedBy: options.requestedBy
     };
     this.runs.set(runId, snapshot);
-    this.taskByRun.set(runId, task);
-    this.runOrder.push(runId);
+    if (!task.studio) this.taskByRun.set(runId, task);
+    if (!options.resume) this.runOrder.push(runId);
+    snapshot.status = 'pending'; snapshot.finishedAt = undefined;
     const controller = new AbortController();
     this.runControllers.set(runId, controller);
     let cleanupFailure: string | undefined;
@@ -503,14 +559,14 @@ Edge cases:
       }
       controller.signal.throwIfAborted();
       snapshot.status = 'running';
-      snapshot.startedAt = Date.now();
+      if (!options.resume) snapshot.startedAt = Date.now();
       this.emit('run.started', runId, `${task.title} [${task.difficulty}]`, 'run', {
         taskId: task.id,
         nodes: workflow.nodes.length,
         actor: options.requestedBy
       });
 
-      const citations = this.knowledge.query(task.prompt, 2);
+      const citations = task.studio ? [] : this.knowledge.query(task.prompt, 2);
       snapshot.citations = citations.map(c => c.citation);
       snapshot.knowledgeHits = citations.map(({ chunk, citation }) => ({
         id: chunk.id, title: chunk.title, content: chunk.content, version: chunk.metadata.version, citation
@@ -522,7 +578,7 @@ Edge cases:
         );
       }
 
-      const initialInput = {
+      const initialInput = task.studio ? { input: task.studio.input } : {
         goal: task.prompt,
         taskId: task.id,
         difficulty: task.difficulty,
@@ -531,14 +587,37 @@ Edge cases:
         knowledgeCitations: snapshot.citations,
         knowledgeHits: snapshot.knowledgeHits
       };
-      const state = await this.workflow.execute(workflow, initialInput, {
+      const activeStarted = Date.now();
+      const state = await executionContext.run(task.studio ? { emit: (kind, data) => this.emit(kind as OrchestratorEvent['kind'], runId, kind, 'studio', this.studio.safe(data)) } : {}, () => engine.execute(workflow, initialInput, {
         runId,
         signal: controller.signal,
+        deadline: activeStarted + Math.max(1, (workflow.timeoutMs ?? 120000) - (snapshot.activeElapsedMs ?? 0)),
+        resumeRecords: options.resume ? clone(snapshot.resumeRecords ?? {}) : undefined,
+        onCheckpoint: task.studio ? (id, record, context) => { snapshot.resumeRecords![id] = this.studio.safe({ record, context }); } : undefined,
+        requestApproval: task.studio ? (node, input) => {
+          const inputHash = hash(input);
+          let approval = snapshot.approvals!.find(a => a.nodeId === node.id && a.inputHash === inputHash);
+          if (approval && approval.status === 'pending' && Date.now() > approval.expiresAt) approval.status = 'expired';
+          if (!approval) {
+            approval = { id: randomUUID(), nodeId: node.id, message: node.approval!.message, input: this.studio.safe(input), inputHash,
+              createdAt: Date.now(), expiresAt: Date.now() + node.approval!.expiresInMs, status: 'pending' };
+            snapshot.approvals!.push(approval); this.emit('approval.requested', runId, approval.message, 'approval', { ...approval });
+          }
+          return approval;
+        } : undefined,
         onNodeStart: (node, record) => {
+          if (task.studio) snapshot.attempts!.push(this.studio.safe(record));
           nodeProgress[node.id] = { status: 'running', startTime: record.startTime, nodeName: node.name, toolId: node.toolId };
           this.emit('node.started', runId, `${node.name} (${node.type})`, 'node', { nodeId: node.id });
         },
         onNodeEnd: (node, record) => {
+          if (task.studio) {
+            const attempt = snapshot.attempts!.findLast(a => a.nodeId === record.nodeId && a.status === 'running');
+            const evidence = this.studio.safe(record);
+            if (evidence.meta?.approvedDelivery && evidence.output?.patch?.patch !== record.output?.patch?.patch) evidence.meta.approvedDelivery = false;
+            if (attempt) Object.assign(attempt, evidence);
+            else snapshot.attempts!.push(evidence);
+          }
           const { status, startTime, endTime, branchTaken, error } = record;
           nodeProgress[node.id] = { status, startTime, endTime, branchTaken, error, nodeName: node.name, toolId: node.toolId };
           if (task.repository && status === 'completed') {
@@ -569,16 +648,18 @@ Edge cases:
         onLoopIteration: (node, { output, ...round }) => {
           loopRounds.push({ nodeId: node.id, ...round });
           snapshot.iterations = round.iteration;
+          if (task.studio) this.emit('loop.iteration', runId, `${node.id} / ${round.iteration}`, 'loop', this.studio.safe({ nodeId: node.id, output, ...round, candidateHash: hash(output) }));
         },
         onLog: (message, data) => {
-          this.emit('log', runId, message, 'engine', data);
+          this.emit('log', runId, task.studio ? this.studio.redact(message) : message, 'engine', task.studio && data ? this.studio.safe(data) : data);
         }
-      });
+      }));
+      snapshot.activeElapsedMs = (snapshot.activeElapsedMs ?? 0) + Date.now() - activeStarted;
 
-      snapshot.state = state;
+      snapshot.state = task.studio ? this.studio.safe(state) : state;
       controller.signal.throwIfAborted();
       snapshot.status = state.status;
-      snapshot.finishedAt = Date.now();
+      snapshot.finishedAt = state.status === 'paused' ? undefined : Date.now();
       if (state.status === 'failed') {
         snapshot.error = Object.values(nodeProgress).find(node => node.error)?.error;
       }
@@ -587,11 +668,19 @@ Edge cases:
       snapshot.verification = task.repository && !snapshot.loopRounds?.length
         ? undefined
         : (ctx.lastVerification as VerificationResult) ?? undefined;
-      snapshot.artifact = asCode(ctx.finalCode ?? ctx.lastOutput);
+      if (task.studio) snapshot.result = this.studio.safe(ctx.lastOutput);
+      else snapshot.artifact = asCode(ctx.finalCode ?? ctx.lastOutput);
       snapshot.iterations = Object.values(state.iterationCounts).reduce((a, b) => Math.max(a, b), 0) || undefined;
 
       const patch = (task.repository ? ctx.delivery?.patch : ctx.patch) as RunSnapshot['patch'] | undefined;
-      if (state.status === 'completed' && patch?.patch) snapshot.patch = patch;
+      if (!task.studio && state.status === 'completed' && patch?.patch) snapshot.patch = patch;
+      const delivery = snapshot.attempts?.findLast(record => record.status === 'completed' && record.meta?.approvedDelivery)?.output;
+      if (state.status === 'completed' && delivery?.lastVerification?.passed && delivery.patch?.patch) {
+        snapshot.project = this.repository;
+        snapshot.verification = delivery.lastVerification;
+        snapshot.artifact = asCode(delivery.finalCode);
+        snapshot.patch = delivery.patch;
+      }
 
       if (state.status === 'needs_human' && state.humanEscalation) {
         snapshot.escalation = state.humanEscalation;
@@ -605,7 +694,7 @@ Edge cases:
         );
       }
 
-      snapshot.summary = this.buildSummary(snapshot);
+      snapshot.summary = task.studio ? `${task.studio.snapshot.kind} 执行 ${state.status}；${snapshot.verification ? '验收结论见固定验证配置与执行证据。' : '此运行未进行正式交付验收。'}` : this.buildSummary(snapshot);
       this.emit('run.finished', runId, `${task.title} → ${state.status}`, 'run', {
         status: state.status,
         iterations: snapshot.iterations
@@ -614,7 +703,7 @@ Edge cases:
       const cancellationRequested = controller.signal.aborted;
       const cancelled = cancellationRequested && !cleanupFailure;
       snapshot.status = cancelled ? 'cancelled' : 'failed';
-      snapshot.error = cancelled ? undefined : cleanupFailure ?? err?.message ?? String(err);
+      snapshot.error = cancelled ? undefined : cleanupFailure ?? (task.studio ? this.studio.redact(err?.message ?? String(err)) : err?.message ?? String(err));
       snapshot.finishedAt = Date.now();
       snapshot.summary = cancelled ? 'Run cancelled by an operator.' : `Run failed: ${snapshot.error}`;
       if (cancellationRequested) {
@@ -644,6 +733,14 @@ Edge cases:
 
   public cancelRun(runId: string, actor: string, reason?: string): RunSnapshot | undefined {
     const run = this.runs.get(runId);
+    if (run?.status === 'paused' && run.definitions?.workflow) {
+      const previous = { status: run.status, finishedAt: run.finishedAt, cancellation: run.cancellation, approvals: clone(run.approvals) };
+      run.status = 'cancelled'; run.finishedAt = Date.now(); run.cancellation = { actor, reason: reason ?? '取消审批等待', requestedAt: Date.now() };
+      for (const approval of run.approvals ?? []) if (approval.status === 'pending') { approval.status = 'rejected'; approval.actor = actor; approval.reason = reason; }
+      try { this.emit('run.finished', runId, '取消审批等待', 'run', { status: 'cancelled' }); }
+      catch (error) { Object.assign(run, previous); throw error; }
+      return run;
+    }
     const controller = this.runControllers.get(runId);
     if (!run || !controller || (run.status !== 'pending' && run.status !== 'running')) return undefined;
 
@@ -662,6 +759,46 @@ Edge cases:
     controller.abort(new Error('Run cancelled by an operator.'));
     queued?.(false);
     return run;
+  }
+
+  public decideApproval(runId: string, approvalId: string, body: unknown, actor: string): RunSnapshot {
+    object(body, 'decision', ['decision', 'reason', 'key']); text(body.key, 'key', 100); text(body.reason ?? '', 'reason', 2000, true);
+    if (!['approve', 'reject'].includes(body.decision)) throw new StudioError(422, 'DECISION', '请选择 approve 或 reject。');
+    const run = this.getRun(runId), approval = run?.approvals?.find(a => a.id === approvalId);
+    if (!run || !approval || !run.definitions?.workflow) throw new StudioError(404, 'NOT_FOUND', '审批不存在。');
+    const status = body.decision === 'approve' ? 'approved' : 'rejected';
+    if (approval.decisionKey === body.key && approval.status === status && approval.actor === actor && approval.reason === (body.reason ?? '')) {
+      if (status === 'approved' && run.status === 'paused' && run.approvals?.at(-1) === approval) this.resumeStudio(run, actor);
+      return run;
+    }
+    if (run.status !== 'paused' || approval.status !== 'pending') throw new StudioError(409, 'APPROVAL_CONFLICT', '审批已被处理或运行已结束。');
+    if (Date.now() > approval.expiresAt) {
+      const previous = { status: run.status, error: run.error, finishedAt: run.finishedAt };
+      approval.status = 'expired'; run.status = 'failed'; run.error = '审批已过期'; run.finishedAt = Date.now();
+      try { this.emit('approval.resolved', runId, run.error, 'approval', { approvalId, status: 'expired' }); }
+      catch (error) { approval.status = 'pending'; Object.assign(run, previous); throw error; }
+      throw new StudioError(409, 'APPROVAL_EXPIRED', run.error);
+    }
+    // Resolve frozen dependencies before committing a decision; configuration failure leaves it pending.
+    const prepared = status === 'approved' ? this.studio.prepareWorkflow({ kind: 'workflow', workflowRef: { id: run.definitions.workflow.id, revision: run.definitions.workflow.revision },
+      input: run.runInput }, run.definitions) : undefined;
+    const previous = clone(approval);
+    const previousRun = { status: run.status, error: run.error, finishedAt: run.finishedAt };
+    Object.assign(approval, { status, actor, reason: body.reason ?? '', decidedAt: Date.now(), decisionKey: body.key });
+    if (status === 'rejected') { run.status = 'failed'; run.error = '操作者拒绝审批'; run.finishedAt = Date.now(); }
+    try { this.emit('approval.resolved', runId, `审批 ${status}`, 'approval', { ...approval }); }
+    catch (error) {
+      run.approvals![run.approvals!.indexOf(approval)] = previous;
+      Object.assign(run, previousRun);
+      throw error;
+    }
+    if (status === 'approved') this.resumeStudio(run, actor, prepared);
+    return run;
+  }
+  private resumeStudio(run: RunSnapshot, actor: string, prepared?: PreparedStudioRun) {
+    const workflow = run.definitions!.workflow!;
+    const studio = prepared ?? this.studio.prepareWorkflow({ kind: 'workflow', workflowRef: { id: workflow.id, revision: workflow.revision }, input: run.runInput }, run.definitions);
+    void this.executeTask({ id: studio.workflow.id, title: studio.title, difficulty: 'custom', prompt: '', studio }, { resume: run, requestedBy: actor }).catch(() => {});
   }
 
   /** Run several tasks concurrently — this is what makes the scheduler visible. */

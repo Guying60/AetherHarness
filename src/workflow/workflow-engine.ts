@@ -31,8 +31,15 @@ import { DynamicScheduler } from '../scheduler/dynamic-scheduler.js';
 import { VerificationEngine } from '../verification/verification-engine.js';
 import { SelfLoopEngine, SelfLoopIterationRecord } from '../selfloop/self-loop-engine.js';
 import { FeedbackOptimizer } from '../optimization/feedback-optimizer.js';
+import { validateValue } from '../studio/definitions.js';
+import { executionContext } from './execution-context.js';
+import { randomUUID } from 'node:crypto';
 
 export interface WorkflowHooks {
+  pathPrefix?: string;
+  resumeRecords?: Record<string, { record: NodeExecutionRecord; context: Record<string, any> }>;
+  onCheckpoint?: (nodeId: string, record: NodeExecutionRecord, context: Record<string, any>) => void;
+  requestApproval?: (node: WorkflowNode, input: any) => { id: string; status: 'pending' | 'approved' | 'rejected' | 'expired' };
   signal?: AbortSignal;
   rootRunId?: string;
   onNodeStart?: (node: WorkflowNode, record: NodeExecutionRecord) => void;
@@ -49,6 +56,7 @@ export interface WorkflowEngineOptions {
   selfLoopEngine?: SelfLoopEngine;
   optimizer?: FeedbackOptimizer;
   subworkflowRegistry?: Map<string, WorkflowDefinition>;
+  approvedSubworkflowTools?: Map<string, ToolRegistry>;
 }
 
 export interface ValidationResult {
@@ -74,6 +82,7 @@ export class WorkflowEngine {
   private selfLoopEngine?: SelfLoopEngine;
   private optimizer?: FeedbackOptimizer;
   private subworkflowRegistry: Map<string, WorkflowDefinition>;
+  private approvedSubworkflowTools?: Map<string, ToolRegistry>;
 
   /** executionId -> stack of context checkpoints (most recent last) */
   private checkpoints: Map<string, Array<Record<string, any>>> = new Map();
@@ -86,6 +95,7 @@ export class WorkflowEngine {
     this.selfLoopEngine = options.selfLoopEngine;
     this.optimizer = options.optimizer;
     this.subworkflowRegistry = options.subworkflowRegistry ?? new Map();
+    this.approvedSubworkflowTools = options.approvedSubworkflowTools;
   }
 
   public registerSubworkflow(def: WorkflowDefinition): void {
@@ -112,7 +122,14 @@ export class WorkflowEngine {
     // per-node contract checks — a node that cannot execute is a definition error
     for (const node of workflow.nodes) {
       switch (node.type) {
+        case 'transform': break;
+        case 'human_approval':
+          if (!node.approval) errors.push(`approval node '${node.id}' needs approval configuration`);
+          break;
         case 'agent':
+          if (node.maxRetries !== undefined && (!Number.isSafeInteger(node.maxRetries) || node.maxRetries < 0 || node.maxRetries > 10)) {
+            errors.push(`agent node '${node.id}' maxRetries must be an integer from 0 to 10`);
+          }
           if (!node.agentId && !node.agentCapability) {
             errors.push(`agent node '${node.id}' needs agentId or agentCapability`);
           }
@@ -308,6 +325,7 @@ export class WorkflowEngine {
         state.status = 'failed';
         break;
       }
+      if (record.status === 'paused') { state.status = 'paused'; break; }
       if (record.status === 'needs_human') {
         state.status = 'needs_human';
         state.humanEscalation = (record as any).escalation as HumanEscalationRequest | undefined;
@@ -324,7 +342,12 @@ export class WorkflowEngine {
     return state;
   }
 
-  public async executeNode(
+  public executeNode(node: WorkflowNode, state: WorkflowExecutionState, hooks: WorkflowHooks = {},
+    internal: { deadline?: number; taskIdByNode?: Map<string, string>; depth?: number; workflow?: WorkflowDefinition } = {}): Promise<NodeExecutionRecord> {
+    return executionContext.run({ ...executionContext.getStore(), nodePath: (hooks.pathPrefix ?? '') + node.id,
+      iteration: state.context.__loopIteration, attemptId: randomUUID() }, () => this.executeNodeInternal(node, state, hooks, internal));
+  }
+  private async executeNodeInternal(
     node: WorkflowNode,
     state: WorkflowExecutionState,
     hooks: WorkflowHooks = {},
@@ -340,6 +363,12 @@ export class WorkflowEngine {
     const depth = internal.depth ?? 0;
 
     if (depth > MAX_NESTING) throw new Error(`workflow nesting deeper than ${MAX_NESTING}`);
+    const resumed = hooks.resumeRecords?.[node.id];
+    if (resumed?.record.status === 'completed') {
+      Object.assign(state.context, deepClone(resumed.context));
+      this.appendRecord(state, deepClone(resumed.record));
+      return deepClone(resumed.record);
+    }
 
     const record: NodeExecutionRecord = {
       nodeId: node.id,
@@ -348,6 +377,7 @@ export class WorkflowEngine {
       startTime: started,
       input: null,
       output: null
+      ,meta: { attemptId: executionContext.getStore()?.attemptId, iteration: executionContext.getStore()?.iteration }
     };
 
     try {
@@ -362,9 +392,22 @@ export class WorkflowEngine {
       let output: any = null;
 
       switch (node.type) {
+        case 'transform': {
+          if (node.outputSchema) validateValue(input, node.outputSchema, 'workflow.output');
+          output = input;
+          break;
+        }
+        case 'human_approval': {
+          if (!hooks.requestApproval) throw new Error('Approval service is not configured');
+          const decision = hooks.requestApproval(node, input);
+          if (decision.status === 'rejected' || decision.status === 'expired') throw new Error(`Approval ${decision.status}`);
+          output = { ...decision, input };
+          if (decision.status === 'pending') record.status = 'paused';
+          break;
+        }
         // -------------------------------------------------------- agent
         case 'agent': {
-          output = await this.runAgentNode(node, state, deadline, internal.taskIdByNode, hooks);
+          output = await this.runAgentNode(node, state, deadline, internal.taskIdByNode, hooks, input, record);
           break;
         }
 
@@ -372,7 +415,7 @@ export class WorkflowEngine {
         case 'tool': {
           if (!node.toolId) throw new Error(`node '${node.id}' missing toolId`);
           output = await this.toolRegistry.invoke(node.toolId, input, {
-            timeoutMs: Math.min(budget, node.timeoutMs ?? 4000), signal: hooks.signal
+              timeoutMs: Math.min(budget, node.timeoutMs ?? 4000), signal: nodeSignal, memberId: node.toolMemberId
           });
           break;
         }
@@ -420,7 +463,8 @@ export class WorkflowEngine {
               `parallel group '${node.id}' child failures: ${settled.filter(s => !s.ok).map(s => `${s.childId}: ${s.error}`).join('; ')}`
             );
           }
-          output = { parallelCompleted: true, children: settled };
+          output = { parallelCompleted: true, children: settled, branches: Object.fromEntries(results.map((result, i) =>
+            [String(i + 1), result.status === 'fulfilled' ? result.value.record.output : null])) };
           break;
         }
 
@@ -429,15 +473,23 @@ export class WorkflowEngine {
           if (!node.subworkflowId) throw new Error(`node '${node.id}' missing subworkflowId`);
           const sub = this.subworkflowRegistry.get(node.subworkflowId);
           if (!sub) throw new Error(`subworkflow '${node.subworkflowId}' not registered`);
+          const approvedTools = this.approvedSubworkflowTools?.get(node.subworkflowId);
+          if (approvedTools) {
+            if (!node.approval || !hooks.requestApproval) throw new Error('Approval service is not configured');
+            const decision = hooks.requestApproval(node, input);
+            if (decision.status === 'pending') { record.status = 'paused'; output = decision; break; }
+            if (decision.status !== 'approved') throw new Error(`Approval ${decision.status}`);
+          }
 
           const subEngine = new WorkflowEngine({
             agentRegistry: this.agentRegistry,
-            toolRegistry: this.toolRegistry,
+            toolRegistry: approvedTools ?? this.toolRegistry,
             scheduler: this.scheduler,
             verificationEngine: this.verificationEngine,
             selfLoopEngine: this.selfLoopEngine,
             optimizer: this.optimizer,
-            subworkflowRegistry: this.subworkflowRegistry
+            subworkflowRegistry: this.subworkflowRegistry,
+            approvedSubworkflowTools: this.approvedSubworkflowTools
           });
           const prefix = (id: string) => `${node.id}/${id}`;
           const scopedNode = (child: WorkflowNode) => ({ ...child, id: prefix(child.id) });
@@ -451,16 +503,23 @@ export class WorkflowEngine {
             signal: hooks.signal,
             deadline,
             depth: depth + 1,
+            pathPrefix: (hooks.pathPrefix ?? '') + node.id + '/',
             onNodeStart: (child, record) => hooks.onNodeStart?.(scopedNode(child), scopedRecord(record)),
             onNodeEnd: (child, record) => hooks.onNodeEnd?.(scopedNode(child), scopedRecord(record)),
+            resumeRecords: Object.fromEntries(Object.entries(hooks.resumeRecords ?? {}).filter(([key]) => key.startsWith(node.id + '/')).map(([key, value]) => [key.slice(node.id.length + 1), value])),
+            onCheckpoint: (id, record, context) => hooks.onCheckpoint?.(prefix(id), scopedRecord(record), context),
+            requestApproval: hooks.requestApproval ? (child, input) => hooks.requestApproval!(scopedNode(child), input) : undefined,
+            onLoopIteration: (child, round) => hooks.onLoopIteration?.(scopedNode(child), round),
             onLog: (message, data) => hooks.onLog?.(message,
               typeof data?.nodeId === 'string' ? { ...data, nodeId: prefix(data.nodeId) } : data)
           });
+          if (subState.status === 'paused') { record.status = 'paused'; output = null; break; }
           if (subState.status !== 'completed') {
             const failure = Object.values(subState.nodeRecords).flat().find(child => child.error)?.error;
             throw new Error(`subworkflow '${node.subworkflowId}' ended with status '${subState.status}'${failure ? ': ' + failure : ''}`);
           }
-          output = subState.context;
+          output = node.subworkflowOutputOnly ? subState.context.lastOutput : subState.context;
+          if (approvedTools) record.meta = { ...record.meta, approvedDelivery: true };
           break;
         }
 
@@ -470,7 +529,7 @@ export class WorkflowEngine {
           if (!node.verificationSpec) throw new Error(`verification node '${node.id}' missing verificationSpec`);
 
           const targetKey = node.verifyTargetKey ?? 'lastOutput';
-          const target = state.context[targetKey];
+          const target = node.verifyInputTarget ? input : state.context[targetKey];
           const result = await this.verificationEngine.verify(target, node.verificationSpec, state.context, {
             signal: nodeSignal
           });
@@ -540,6 +599,17 @@ export class WorkflowEngine {
               targetAgentId: targetNode.agentId,
               signal: nodeSignal,
               onVerify: rec => {
+                if (node.loopEnvelope) {
+                  const gateRecord: NodeExecutionRecord = {
+                    nodeId: verifyNode.id, nodeName: verifyNode.name, status: 'completed',
+                    startTime: rec.verificationStartedAt!, endTime: rec.verificationFinishedAt!, input: rec.output,
+                    output: { passed: rec.passed, score: rec.score }, verification: rec.verification,
+                    meta: { attemptId: randomUUID(), iteration: rec.iteration }
+                  };
+                  this.appendRecord(state, gateRecord);
+                  hooks.onNodeStart?.(verifyNode, { ...gateRecord, status: 'running' });
+                  hooks.onNodeEnd?.(verifyNode, gateRecord);
+                }
                 hooks.onLoopIteration?.(node, rec);
                 hooks.onLog?.(
                   `self-loop ${node.id} iteration ${rec.iteration}: score=${rec.score.toFixed(3)} ` +
@@ -560,6 +630,7 @@ export class WorkflowEngine {
           // overwriting the artifact through outputKey.
           output = loopResult.finalOutput;
           record.meta = {
+            ...record.meta,
             converged: loopResult.converged,
             iterations: loopResult.totalIterations,
             score: loopResult.finalVerification.score
@@ -567,6 +638,8 @@ export class WorkflowEngine {
           state.context.lastOutput = loopResult.finalOutput;
           state.context.lastVerification = loopResult.finalVerification;
           state.context.loopSummary = record.meta;
+          if (node.loopEnvelope) output = { artifact: loopResult.finalOutput, verification: loopResult.finalVerification,
+            iterations: loopResult.totalIterations, bestIteration: loopResult.bestIteration };
 
           // The verification gate really did execute (once per iteration). Surface it on
           // the timeline so the DAG never shows an "unexecuted" node that actually ran.
@@ -586,9 +659,11 @@ export class WorkflowEngine {
             verification: loopResult.finalVerification,
             meta: { iterations: loopResult.totalIterations, score: loopResult.finalVerification.score }
           };
-          this.appendRecord(state, gateRecord);
-          hooks.onNodeStart?.(verifyNode, gateRecord);
-          hooks.onNodeEnd?.(verifyNode, gateRecord);
+          if (!node.loopEnvelope) {
+            this.appendRecord(state, gateRecord);
+            hooks.onNodeStart?.(verifyNode, gateRecord);
+            hooks.onNodeEnd?.(verifyNode, gateRecord);
+          }
 
           if (!loopResult.converged) {
             record.status = 'needs_human';
@@ -607,7 +682,7 @@ export class WorkflowEngine {
       }
 
       hooks.signal?.throwIfAborted();
-      record.status = 'completed';
+      if (record.status !== 'paused') record.status = 'completed';
       record.output = output;
       record.endTime = Date.now();
 
@@ -622,6 +697,7 @@ export class WorkflowEngine {
     }
 
     this.appendRecord(state, record);
+    hooks.onCheckpoint?.(node.id, record, deepClone(state.context));
     hooks.onNodeEnd?.(node, record);
     return record;
   }
@@ -647,7 +723,9 @@ export class WorkflowEngine {
     state: WorkflowExecutionState,
     deadline: number,
     taskIdByNode: Map<string, string> | undefined,
-    hooks: WorkflowHooks
+    hooks: WorkflowHooks,
+    input: Record<string, any>,
+    record: NodeExecutionRecord
   ): Promise<any> {
     const executeOnce = async (agentId: string) => {
       const agent = this.agentRegistry.get(agentId);
@@ -661,7 +739,7 @@ export class WorkflowEngine {
         taskId: `${state.workflowExecutionId}-${node.id}-i${state.context.__loopIteration ?? 1}`,
         agentId: agent.id,
         signal,
-        input: { ...state.context, goal: state.context.goal ?? node.description ?? node.name },
+        input: node.inputTransformer ? input : { ...input, goal: input.goal ?? node.description ?? node.name },
         context: state.context,
         iteration: typeof state.context.__loopIteration === 'number' ? state.context.__loopIteration : 1,
         criticGuidance: state.context.diagnosticFeedback as string | undefined,
@@ -682,6 +760,8 @@ export class WorkflowEngine {
 
       try {
         const result = await Promise.race([agent.execute(request), timeout]);
+        record.meta = { ...record.meta, agentId: agent.profile.capacityKey ?? agent.id, instanceId: agent.id,
+          tokensUsed: result.tokensUsed, reasoning: result.reasoning, toolCalls: result.toolCalls };
         if (!result.success) throw new Error(result.error ?? 'agent execution failed');
         return result;
       } finally {
@@ -704,7 +784,8 @@ export class WorkflowEngine {
           return res.output;
         },
         deadline,
-        hooks.signal
+        hooks.signal,
+        this.agentRegistry
       );
     }
 

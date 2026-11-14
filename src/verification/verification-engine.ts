@@ -12,7 +12,7 @@
  * - per-tier results are returned for the TUI, and `passed` is defined by explicit
  *   blocking reasons rather than a single composite threshold.
  */
-import { VerificationSpec, VerificationResult, VerificationTierResult } from '../types/index.js';
+import { VerificationSpec, VerificationResult, VerificationTierResult, AgentExecutor } from '../types/index.js';
 import { AgentRegistry } from '../agent/agent-registry.js';
 import { ToolCleanupError, ToolRegistry } from '../tools/tool-registry.js';
 
@@ -128,7 +128,8 @@ function artifactToString(output: any): string {
 export class VerificationEngine {
   constructor(
     private agentRegistry: AgentRegistry,
-    private toolRegistry: ToolRegistry
+    private toolRegistry: ToolRegistry,
+    private executeAgent?: AgentExecutor
   ) {}
 
   public async verify(
@@ -268,7 +269,7 @@ export class VerificationEngine {
           continue;
         }
 
-        const execution = await auditor.execute({
+        const execution = await (this.executeAgent ?? (request => auditor.execute(request)))({
           taskId: `audit-${Date.now().toString(36)}-${auditorId}`,
           agentId: auditorId,
           signal: opts.signal,
@@ -288,7 +289,9 @@ export class VerificationEngine {
 
         // A brain that does not implement an audit falls back to the deterministic checks.
         if (!verdict || typeof (verdict as any).approved !== 'boolean') {
-          verdict = auditFor(auditor.role)(artifact, context);
+          verdict = auditor.profile.capacityKey
+            ? { approved: false, comments: 'Custom auditor returned no boolean approved verdict.', signals: [], confidence: 0 }
+            : auditFor(auditor.role)(artifact, context);
         }
 
         const signals = (verdict.signals ?? []).map(s => s.ruleId);

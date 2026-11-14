@@ -15,7 +15,9 @@ export const DASHBOARD_HTML = /* html */ `<!doctype html>
   <nav aria-label="控制台导航">
     <a href="/" data-route data-nav="workbench"><span class="nav-icon" aria-hidden="true">⌂</span>工作台</a>
     <a href="/runs" data-route data-nav="execution"><span class="nav-icon" aria-hidden="true">▷</span>任务执行</a>
-    <a href="/agents" data-route data-nav="agents"><span class="nav-icon" aria-hidden="true">◇</span>Agent 中心</a>
+    <a href="/studio/agents"><span class="nav-icon" aria-hidden="true">◇</span>Agent 中心</a>
+    <a href="/teams"><span class="nav-icon" aria-hidden="true">◇</span>团队</a>
+    <a href="/workflows"><span class="nav-icon" aria-hidden="true">⌘</span>工作流</a>
     <a href="/delivery" data-route data-nav="delivery"><span class="nav-icon" aria-hidden="true">▣</span>验收与交付</a>
     <a href="/settings" data-route data-nav="settings"><span class="nav-icon" aria-hidden="true">⚙</span>系统设置</a>
   </nav>

@@ -11,6 +11,11 @@ import { resolve } from 'node:path';
 import { Orchestrator, RunSnapshot } from '../orchestrator.js';
 import { DASHBOARD_HTML } from './client.js';
 import { LOGIN_HTML } from './login.js';
+import { STUDIO_HTML } from './studio-page.js';
+import { FLOW_HTML } from './flow-page.js';
+import { readFile } from 'node:fs/promises';
+import { studioRequest } from './studio-api.js';
+import { StudioError } from '../studio/definitions.js';
 import { LlmConfig } from '../agent/llm/index.js';
 import { OrchestratorEvent } from '../types/index.js';
 import { authenticate, authenticateToken, createBootstrapAccount, loadWebAccounts, validateAccounts, type WebAccount } from './accounts.js';
@@ -34,11 +39,14 @@ const LOGIN_ERROR = '请使用控制台账号和访问令牌登录。';
 
 function workspacePath(path: unknown): string {
   return typeof path === 'string' && path.trim() === path &&
-    /^\/(?:index\.html|agents|settings|delivery|runs(?:\/run-\d+(?:\/delivery)?)?)?$/.test(path) ? path : '/';
+    /^\/(?:index\.html|agents|studio\/agents(?:\/[\w-]+)?|teams(?:\/[\w-]+)?|workflows(?:\/[\w-]+)?|settings|delivery|runs(?:\/run-\d+(?:\/delivery)?)?)?$/.test(path) ? path : '/';
 }
 
-function runDetail({ state, ...detail }: RunSnapshot) {
-  return detail;
+function runDetail({ state, definitions, requestKey, resumeRecords, runInput, ...detail }: RunSnapshot) {
+  return { ...detail, design: definitions ? { kind: definitions.kind, executionHash: definitions.executionHash,
+    workflow: definitions.workflow && { id: definitions.workflow.id, revision: definitions.workflow.revision, hash: definitions.workflow.hash, name: definitions.workflow.graph.name },
+    team: definitions.team && { id: definitions.team.id, revision: definitions.team.revision, hash: definitions.team.hash, name: definitions.team.config.name },
+    agents: definitions.agents.map(a => ({ id: a.id, memberId: a.memberId, revision: a.revision, hash: a.hash, name: a.config.name })) } : undefined };
 }
 
 function eventFrame(event: OrchestratorEvent, scoped: boolean): string {
@@ -166,7 +174,8 @@ export class WebServer {
       this.json(res, 403, { error: '请使用本机控制台地址。' });
       return;
     }
-    if (method === 'POST' && (req.headers['sec-fetch-site'] === 'cross-site' || (origin && origin !== `http://${host}`))) {
+    const mutating = !['GET', 'HEAD', 'OPTIONS'].includes(method);
+    if (mutating && (req.headers['sec-fetch-site'] === 'cross-site' || (origin && origin !== `http://${host}`))) {
       this.json(res, 403, { error: '请从控制台页面提交此操作。' });
       return;
     }
@@ -243,7 +252,7 @@ export class WebServer {
         }
         return;
       }
-      if (method === 'POST' && account.role !== 'operator') {
+      if (mutating && account.role !== 'operator') {
         this.json(res, 403, { error: '此操作需要操作者权限。' });
         return;
       }
@@ -253,7 +262,20 @@ export class WebServer {
           'Content-Type': 'text/html; charset=utf-8',
           'Cache-Control': 'no-store'
         });
-        res.end(DASHBOARD_HTML);
+        res.end(pathname.startsWith('/workflows') ? FLOW_HTML : pathname.startsWith('/studio/agents') || pathname.startsWith('/teams') ? STUDIO_HTML : DASHBOARD_HTML);
+        return;
+      }
+      if (method === 'GET' && ['/studio-assets/flow-editor.js', '/studio-assets/flow-editor.css'].includes(pathname)) {
+        const name = pathname.endsWith('.css') ? 'flow-editor.css' : 'flow-editor.js';
+        const asset = await readFile(new URL('../assets/' + name, import.meta.url));
+        res.writeHead(200, { 'Content-Type': name.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8', 'Cache-Control': 'no-store' });
+        res.end(asset); return;
+      }
+
+      if (pathname.startsWith('/api/studio/')) {
+        const result = await studioRequest(req, url, this.orchestrator, account, () => this.readJsonBody(req));
+        if (result.etag) res.setHeader('ETag', '"' + result.etag + '"');
+        this.json(res, result.status, result.data);
         return;
       }
 
@@ -509,7 +531,9 @@ export class WebServer {
       // Fallback 404
       this.json(res, 404, { error: 'Not Found', path: pathname });
     } catch (err: any) {
-      if (err instanceof SyntaxError) {
+        if (err instanceof StudioError) {
+          this.json(res, err.status, { error: { code: err.code, message: err.message, ...('issues' in err ? { issues: err.issues } : {}) } });
+      } else if (err instanceof SyntaxError) {
         this.json(res, 400, { error: '请求内容必须是 JSON 对象。' });
       } else {
         this.json(res, 500, { error: err?.message ?? 'Internal Server Error' });

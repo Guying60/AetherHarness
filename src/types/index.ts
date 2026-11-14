@@ -24,6 +24,9 @@ export type AgentRole =
 
 export interface AgentProfile {
   id: string;
+  /** Stable definition ID used to share capacity across run-local instances. */
+  capacityKey?: string;
+  memoryWindow?: number;
   name: string;
   role: AgentRole;
   description: string;
@@ -84,6 +87,7 @@ export interface AgentExecutionResult {
   durationMs: number;
   error?: string;
 }
+export type AgentExecutor = (request: AgentExecutionRequest) => Promise<AgentExecutionResult>;
 
 // ---------------------------------------------------------------------------
 // Knowledge & RAG
@@ -148,6 +152,8 @@ export interface ToolDefinition {
 // ---------------------------------------------------------------------------
 
 export type WorkflowNodeType =
+  | 'transform'
+  | 'human_approval'
   | 'agent'
   | 'tool'
   | 'condition'
@@ -168,12 +174,16 @@ export interface WorkflowNode {
   agentCapability?: string;
   /** scheduling priority 1..10 (1 = background, 10 = urgent) */
   priority?: number;
+  /** Override scheduler retries for bounded or non-idempotent agent execution. */
+  maxRetries?: number;
 
   // --- tool nodes ---
   toolId?: string;
+  toolMemberId?: string;
 
   // --- subworkflow nodes ---
   subworkflowId?: string;
+  subworkflowOutputOnly?: boolean;
 
   // --- parallel_group nodes ---
   /** node ids executed concurrently; their outputKeys land in context */
@@ -183,9 +193,11 @@ export interface WorkflowNode {
   verificationSpec?: VerificationSpec;
   /** context key holding the artifact to verify (default: `lastOutput`) */
   verifyTargetKey?: string;
+  verifyInputTarget?: boolean;
 
   // --- self_loop nodes ---
   selfLoopConfig?: SelfLoopConfig;
+  loopEnvelope?: boolean;
 
   // --- control ---
   conditionFn?: (context: Record<string, any>) => string;
@@ -193,6 +205,8 @@ export interface WorkflowNode {
   outputKey?: string;
   /** hard per-node budget; enforced for sandboxed tools and agent calls */
   timeoutMs?: number;
+  approval?: { message: string; expiresInMs: number };
+  outputSchema?: import('../studio/definitions.js').ValueSchema;
 }
 
 export interface WorkflowEdge {
@@ -372,6 +386,7 @@ export interface SchedulerStats {
 // ---------------------------------------------------------------------------
 
 export type EventKind =
+  | 'agent.started' | 'agent.finished' | 'agent.turn' | 'tool.started' | 'tool.finished' | 'tool.denied' | 'approval.requested' | 'approval.resolved'
   | 'run.started'
   | 'run.finished'
   | 'node.started'
@@ -383,6 +398,8 @@ export type EventKind =
   | 'log';
 
 export interface OrchestratorEvent {
+  schemaVersion?: 1;
+  seq?: number;
   /** Stable cursor for the retained run event stream. */
   id?: string;
   at: number;
