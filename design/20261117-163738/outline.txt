@@ -1,0 +1,488 @@
+FRAME 9:1001 "Main" 1040×1980
+FRAME9:1001 "Main" [3083,-400 1040×1980] bg=#f8fafc r=0 flex=VERTICAL pad=80,24,24,24 ASSET=agent_20261117-163738.assets/node_9_1001.png
+  FRAME9:1002 "Container" [3107,-320 992×1876] r=0 flex=VERTICAL gap=16
+    FRAME9:1003 "Top Bar / Meta Bar" [3107,-320 992×51] r=0 flex=HORIZONTAL gap=353 pad=0,0,4,0
+      FRAME9:1004 "Container" [3107,-320 358×47] r=0 flex=VERTICAL gap=2
+        FRAME9:1005 "Container" [3107,-320 358×28] r=0 flex=HORIZONTAL gap=12
+          FRAME9:1006 "Container" [3107,-320 107×28] r=0 flex=VERTICAL
+            TEXT9:1007 "Text" [3107,-320 107×28] bg=#0f172a TEXT("验收与交付") 700/22px lh=28 ls=-0.55 color=
+          FRAME9:1008 "Background+Border+Shadow" [3226,-317 159×22] bg=#ecfdf5 line=#a7f3d0/1 r=9999 flex=HORIZONTAL gap=6 pad=2,10,2,10 fx=drop:2
+            RECTANGLE9:1009 "Background" [3237,-309 6×6] bg=#10b981 r=9999
+            TEXT9:1010 "Text" [3249,-314 125×16] bg=#047857 TEXT("VERIFICATION PASSED") 600/11px lh=16 color=
+        FRAME9:1011 "Container" [3107,-290 358×17] r=0 flex=HORIZONTAL gap=8
+          FRAME9:1012 "Container" [3107,-290 120×17] r=0 flex=VERTICAL
+            TEXT9:1013 "Text" [3107,-290 120×17] bg=#64748b TEXT("最近一次已结束的运行") 400/12px lh=17 color=
+          FRAME9:1014 "Container" [3235,-290 4×17] r=0 flex=VERTICAL
+            TEXT9:1015 "Text" [3235,-290 4×17] bg=#cbd5e1 TEXT("/") 400/12px lh=17 color=
+          FRAME9:1016 "Container" [3247,-289 218×16] r=0 flex=VERTICAL
+            TEXT9:1017 "Text" [3247,-289 218×16] bg=#4338ca TEXT("orchestrator-cluster-asia-east-04") 500/11px lh=16 color=
+      FRAME9:1018 "Switch Run Dropdown" [3834,-311 265×30] r=0 flex=HORIZONTAL gap=12
+        FRAME9:1019 "Container" [3834,-311 162×30] r=0 flex=VERTICAL
+          FRAME9:1020 "Background+Border+Shadow" [3834,-311 162×30] bg=#ffffff line=#e2e8f0/1 r=8 flex=HORIZONTAL gap=8 pad=6,12,6,12 fx=drop:2
+            FRAME9:1021 "Container" [3847,-302 12×12] r=0 flex=VERTICAL ASSET=agent_20261117-163738.assets/icon_9_1021.svg
+              VECTOR9:1022 "Icon" [3847,-302 12×12] bg=#4f46e5 r=0
+            FRAME9:1023 "Container" [3867,-304 101×16] r=0 flex=VERTICAL
+              TEXT9:1024 "Text" [3867,-304 101×16] bg=#0f172a TEXT("切换运行 (run-07)") 500/12px lh=16 ls=0.12 color=
+            FRAME9:1025 "Container" [3976,-299 7×4] r=0 flex=VERTICAL ASSET=agent_20261117-163738.assets/icon_9_1025.svg
+              VECTOR9:1026 "Icon" [3976,-299 7×4] bg=#64748b r=0
+        FRAME9:1027 "Button" [4008,-311 91×30] bg=#ffffff line=#e2e8f0/1 r=8 flex=HORIZONTAL gap=6 pad=6,12,6,12 fx=drop:2
+          FRAME9:1028 "Container" [4021,-302 11×11] r=0 flex=VERTICAL ASSET=agent_20261117-163738.assets/icon_9_1028.svg
+            VECTOR9:1029 "Icon" [4021,-302 11×11] bg=#4f46e5 r=0
+          FRAME9:1030 "Container" [4038,-304 48×16] r=0 flex=VERTICAL
+            TEXT9:1031 "Text" [4038,-304 48×16] bg=#0f172a TEXT("刷新遥测") 500/12px lh=16 ls=0.12 color=
+    FRAME9:1032 "SECTION 1: Summary Telemetry Header Card" [3107,-253 992×214] bg=#ffffff line=#e2e8f0/1 r=12 flex=VERTICAL gap=16 pad=16,16,16,16 fx=drop:2
+      FRAME9:1033 "Container" [3124,-236 958×96] r=0 flex=HORIZONTAL gap=16
+        FRAME9:1034 "Title & Cluster Run Tag" [3124,-210 331×43] r=0 flex=VERTICAL gap=4
+          FRAME9:1035 "Container" [3124,-210 331×22] r=0 flex=HORIZONTAL gap=8
+            FRAME9:1036 "Container" [3124,-209 197×20] r=0 flex=VERTICAL
+              TEXT9:1037 "Text" [3124,-209 197×20] bg=#0f172a TEXT("run-07 · rl-normal 标准限流") 600/16px lh=20 ls=-0.40 color=
+            FRAME9:1038 "Background+Border" [3329,-210 86×22] bg=#ecfdf5 line=#a7f3d0/1 r=9999 flex=VERTICAL pad=2,10,2,10
+              TEXT9:1039 "Text" [3340,-207 64×16] bg=#047857 TEXT("COMPLETED") 600/11px lh=16 ls=0.55 color=
+          FRAME9:1040 "Container" [3124,-184 331×17] r=0 flex=HORIZONTAL gap=8
+            FRAME9:1041 "Paragraph" [3124,-184 129×17] r=0 flex=HORIZONTAL gap=0
+              TEXT9:1042 "Text" [3124,-184 83×17] bg=#64748b TEXT("构建任务 SHA: ") 400/12px lh=17 color=
+              TEXT9:1043 "Text" [3207,-183 46×16] bg=#0f172a TEXT("4a9f18e") 500/11px lh=16 color=
+            FRAME9:1044 "Container" [3261,-184 3×17] r=0 flex=VERTICAL
+              TEXT9:1045 "Text" [3261,-184 3×17] bg=#cbd5e1 TEXT("·") 400/12px lh=17 color=
+            FRAME9:1046 "Container" [3273,-184 182×17] r=0 flex=VERTICAL
+              TEXT9:1047 "Text" [3273,-184 182×17] bg=#64748b TEXT("环境: 分布式网关 Edge-Cluster-A") 400/12px lh=17 color=
+        FRAME9:1048 "4 Core Cockpit Metrics Grid" [3471,-236 611×96] r=0 flex=HORIZONTAL gap=12
+          FRAME9:1049 "Background+Border+Shadow" [3471,-236 144×95] bg=#f8fafc line=#e2e8f0/1 r=8 flex=VERTICAL gap=13 pad=12,12,12,12 fx=drop:2
+            FRAME9:1050 "Container" [3484,-223 118×14] r=0 flex=HORIZONTAL gap=56
+              FRAME9:1051 "Container" [3484,-223 46×14] r=0 flex=VERTICAL
+                TEXT9:1052 "Text" [3484,-223 46×14] bg=#64748b TEXT("断言覆盖") 600/11px lh=14 ls=0.55 color=
+              FRAME9:1053 "Container" [3587,-223 15×14] r=0 flex=VERTICAL ASSET=agent_20261117-163738.assets/icon_9_1053.svg
+                VECTOR9:1054 "Icon" [3587,-223 15×14] bg=#059669 r=0
+            FRAME9:1055 "Margin" [3484,-196 118×42] r=0 flex=VERTICAL pad=8,0,0,0
+              FRAME9:1056 "Paragraph" [3484,-188 118×34] r=0 flex=HORIZONTAL gap=6
+                TEXT9:1057 "Text" [3484,-188 80×34] bg=#0f172a TEXT("57/57") 600/28px lh=34 ls=-0.56 color=
+                TEXT9:1058 "Text" [3570,-173 26×16] bg=#059669 TEXT("100%") 600/11px lh=16 color=
+          FRAME9:1059 "Background+Border+Shadow" [3627,-236 144×95] bg=#f8fafc line=#e2e8f0/1 r=8 flex=VERTICAL gap=13 pad=12,12,12,12 fx=drop:2
+            FRAME9:1060 "Container" [3640,-223 118×14] r=0 flex=HORIZONTAL gap=33
+              FRAME9:1061 "Container" [3640,-223 69×14] r=0 flex=VERTICAL
+                TEXT9:1062 "Text" [3640,-223 69×14] bg=#64748b TEXT("综合验收得分") 600/11px lh=14 ls=0.55 color=
+              FRAME9:1063 "Container" [3744,-221 13×11] r=0 flex=VERTICAL ASSET=agent_20261117-163738.assets/icon_9_1063.svg
+                VECTOR9:1064 "Icon" [3744,-221 13×11] bg=#4f46e5 r=0
+            FRAME9:1065 "Margin" [3640,-196 118×42] r=0 flex=VERTICAL pad=8,0,0,0
+              FRAME9:1066 "Paragraph" [3640,-188 118×34] r=0 flex=HORIZONTAL gap=6
+                TEXT9:1067 "Text" [3640,-188 60×34] bg=#0f172a TEXT("0.91") 600/28px lh=34 ls=-0.56 color=
+                TEXT9:1068 "Text" [3705,-173 40×16] bg=#64748b TEXT("/ 1.00") 400/11px lh=16 color=
+          FRAME9:1069 "Background+Border+Shadow" [3782,-236 144×96] bg=#f8fafc line=#e2e8f0/1 r=8 flex=VERTICAL gap=13 pad=12,12,12,12 fx=drop:2
+            FRAME9:1070 "Container" [3795,-223 118×15] r=0 flex=HORIZONTAL gap=32
+              FRAME9:1071 "Container" [3795,-223 69×14] r=0 flex=VERTICAL
+                TEXT9:1072 "Text" [3795,-223 69×14] bg=#64748b TEXT("自愈循环轮次") 600/11px lh=14 ls=0.55 color=
+              FRAME9:1073 "Container" [3903,-223 11×15] r=0 flex=VERTICAL ASSET=agent_20261117-163738.assets/icon_9_1073.svg
+                VECTOR9:1074 "Icon" [3903,-223 11×15] bg=#d97706 r=0
+            FRAME9:1075 "Margin" [3795,-195 118×42] r=0 flex=VERTICAL pad=8,0,0,0
+              FRAME9:1076 "Paragraph" [3795,-187 118×34] r=0 flex=HORIZONTAL gap=6
+                TEXT9:1077 "Text" [3795,-187 18×34] bg=#0f172a TEXT("3") 600/28px lh=34 ls=-0.56 color=
+                TEXT9:1078 "Text" [3819,-172 62×16] bg=#64748b TEXT("Loops 回敛") 400/11px lh=16 color=
+          FRAME9:1079 "Background+Border+Shadow" [3938,-236 144×95] bg=#f8fafc line=#e2e8f0/1 r=8 flex=VERTICAL pad=12,12,12,12 fx=drop:2
+            FRAME9:1080 "Container" [3951,-223 118×14] r=0 flex=HORIZONTAL gap=44
+              FRAME9:1081 "Container" [3951,-223 58×14] r=0 flex=VERTICAL
+                TEXT9:1082 "Text" [3951,-223 58×14] bg=#64748b TEXT("总运行时长") 600/11px lh=14 ls=0.55 color=
+              FRAME9:1083 "Container" [4057,-223 12×14] r=0 flex=VERTICAL ASSET=agent_20261117-163738.assets/icon_9_1083.svg
+                VECTOR9:1084 "Icon" [4057,-223 12×14] bg=#4f46e5 r=0
+            FRAME9:1085 "Margin" [3951,-209 118×55] r=0 flex=VERTICAL pad=8,0,0,0
+              FRAME9:1086 "Container" [3951,-201 118×47] r=0
+                TEXT9:1087 "Text" [3951,-201 77×34] bg=#0f172a TEXT("02:41") 600/28px lh=34 ls=-0.56 color=
+                FRAME9:1088 "Container" [4034,-186 35×32] r=0 flex=VERTICAL pad=0,2,0,0
+                  TEXT9:1089 "Text" [4034,-186 33×32] bg=#64748b TEXT("秒级追 踪") 400/11px lh=16 color=
+      FRAME9:1090 "Tier Stacked Bar & Weight Legend" [3124,-124 958×68] r=0 flex=VERTICAL gap=8 pad=4,0,0,0
+        FRAME9:1091 "Background" [3124,-120 958×8] bg=#e2e8f0 r=9999 flex=HORIZONTAL ASSET=agent_20261117-163738.assets/icon_9_1091.svg
+          RECTANGLE9:1092 "Background" [3124,-120 383×8] bg=#4f46e5 r=0
+          RECTANGLE9:1093 "Background" [3507,-120 383×8] bg=#059669 r=0
+          RECTANGLE9:1094 "Background" [3890,-120 192×8] bg=#f59e0b r=0
+        FRAME9:1095 "Container" [3124,-104 958×48] r=0 flex=VERTICAL gap=12
+          FRAME9:1096 "Container" [3124,-104 816×16] r=0 flex=HORIZONTAL gap=16
+            FRAME9:1097 "Container" [3124,-104 239×16] r=0 flex=HORIZONTAL gap=8
+              RECTANGLE9:1098 "Background" [3124,-101 10×10] bg=#4f46e5 r=2
+              FRAME9:1099 "Container" [3142,-104 90×16] r=0 flex=VERTICAL
+                TEXT9:1100 "Text" [3142,-104 90×16] bg=#0f172a TEXT("Tier-1 规则校验") 500/11px lh=16 color=
+              FRAME9:1101 "Container" [3240,-104 123×16] r=0 flex=VERTICAL
+                TEXT9:1102 "Text" [3240,-104 123×16] bg=#64748b TEXT("权重 40% (得分 0.95)") 400/11px lh=16 color=
+            FRAME9:1103 "Container" [3379,-104 272×16] r=0 flex=HORIZONTAL gap=8
+              RECTANGLE9:1104 "Background" [3379,-101 10×10] bg=#059669 r=2
+              FRAME9:1105 "Container" [3397,-104 123×16] r=0 flex=VERTICAL
+                TEXT9:1106 "Text" [3397,-104 123×16] bg=#0f172a TEXT("Tier-2 自动化集成测试") 500/11px lh=16 color=
+              FRAME9:1107 "Container" [3529,-104 123×16] r=0 flex=VERTICAL
+                TEXT9:1108 "Text" [3529,-104 123×16] bg=#64748b TEXT("权重 40% (得分 0.92)") 400/11px lh=16 color=
+            FRAME9:1109 "Container" [3668,-104 272×16] r=0 flex=HORIZONTAL gap=8
+              RECTANGLE9:1110 "Background" [3668,-101 10×10] bg=#f59e0b r=2
+              FRAME9:1111 "Container" [3686,-104 123×16] r=0 flex=VERTICAL
+                TEXT9:1112 "Text" [3686,-104 123×16] bg=#0f172a TEXT("Tier-3 审计员复审共识") 500/11px lh=16 color=
+              FRAME9:1113 "Container" [3817,-104 123×16] r=0 flex=VERTICAL
+                TEXT9:1114 "Text" [3817,-104 123×16] bg=#64748b TEXT("权重 20% (得分 0.86)") 400/11px lh=16 color=
+          FRAME9:1115 "Background+Border" [3124,-76 175×20] bg=#eef2ff line=#e0e7ff/1 r=4 flex=VERTICAL pad=2,8,2,8
+            TEXT9:1116 "Text" [3133,-73 157×14] bg=#4338ca TEXT("加权置信度模型: v4.2.1-aether") 500/11px lh=14 ls=0.22 color=
+    FRAME9:1117 "SECTION 2: Middle Split Layout (60% / 40%)" [3107,-23 992×682] r=0 flex=GRID
+      FRAME9:1118 "Left Column: Three-tier Verification Cards (7 / 12 cols = ~58-60%)" [3107,-23 572×593] r=0 flex=VERTICAL gap=16
+        FRAME9:1119 "Tier 1 Card" [3107,-23 572×334] bg=#ffffff line=#e2e8f0/1 r=12 flex=VERTICAL gap=12 pad=16,16,16,16 fx=drop:2
+          FRAME9:1120 "Container" [3124,-6 522×22] r=0 flex=HORIZONTAL gap=102
+            FRAME9:1121 "Container" [3124,-5 275×20] r=0 flex=HORIZONTAL gap=6
+              FRAME9:1123 "Heading 3" [3124,-5 275×20] r=0 flex=VERTICAL
+                TEXT9:1124 "Text" [3124,-5 275×20] bg=#0f172a TEXT("Tier-1 规则层验证 (Rules Verification)") 600/16px lh=20 ls=-0.16 color=
+            FRAME9:1125 "Container" [3501,-6 145×22] r=0 flex=HORIZONTAL gap=6
+              FRAME9:1126 "Background+Border" [3501,-6 62×22] bg=#eef2ff line=#e0e7ff/1 r=4 flex=VERTICAL pad=2,8,2,8
+                TEXT9:1127 "Text" [3510,-3 44×16] bg=#4f46e5 TEXT("0.95 分") 600/11px lh=16 color=
+              FRAME9:1128 "Background+Border" [3569,-6 77×22] bg=#ecfdf5 line=#a7f3d0/1 r=9999 flex=HORIZONTAL gap=4 pad=2,8,2,8
+                FRAME9:1129 "Container" [3578,-1 11×11] r=0 flex=VERTICAL ASSET=agent_20261117-163738.assets/icon_9_1129.svg
+                  VECTOR9:1130 "Icon" [3578,-1 11×11] bg=#047857 r=0
+                TEXT9:1131 "Text" [3593,-3 44×16] bg=#047857 TEXT("通过准入") 500/11px lh=16 color=
+          FRAME9:1132 "Rules Table" [3124,28 538×266] bg=#ffffff line=#e2e8f0/1 r=8 flex=VERTICAL
+            FRAME9:1133 "Table" [3125,29 536×264] r=0 flex=VERTICAL gap=-1
+              FRAME9:1134 "Header → Row" [3125,29 536×35] bg=#f8fafc line=#e2e8f0/1 r=0 flex=HORIZONTAL
+                FRAME9:1135 "Cell" [3125,29 74×34] r=0 flex=VERTICAL pad=10,12,10,12
+                  TEXT9:1136 "Text" [3137,39 37×14] bg=#475569 TEXT("规则 ID") 600/11px lh=14 ls=0.22 color=
+                FRAME9:1137 "Cell" [3199,29 223×34] r=0 flex=VERTICAL pad=10,12,10,12
+                  TEXT9:1138 "Text" [3211,39 45×14] bg=#475569 TEXT("验证描述") 700/11px lh=14 ls=0.22 color=
+                FRAME9:1139 "Cell" [3422,29 96×34] r=0 flex=VERTICAL pad=10,12,10,12
+                  TEXT9:1140 "Text" [3459,39 22×14] bg=#475569 TEXT("状态") 700/11px lh=14 ls=0.22 color=
+                FRAME9:1141 "Cell" [3518,29 143×34] r=0 flex=VERTICAL pad=10,12,10,12
+                  TEXT9:1142 "Text" [3530,39 89×14] bg=#475569 TEXT("证据链哈希 / 耗时") 600/11px lh=14 ls=0.22 color=
+              FRAME9:1143 "Body" [3125,63 536×230] r=0 flex=VERTICAL gap=-1
+                FRAME9:1144 "Row" [3125,63 536×34] r=0 flex=HORIZONTAL
+                  FRAME9:1145 "Data" [3125,63 74×34] r=0 flex=VERTICAL pad=9,12,9,12
+                    TEXT9:1146 "Text" [3137,72 46×16] bg=#4338ca TEXT("SEC-001") 600/11px lh=16 color=
+                  FRAME9:1147 "Data" [3199,63 223×34] r=0 flex=VERTICAL pad=9,12,9,12
+                    TEXT9:1148 "Text" [3211,72 165×16] bg=#0f172a TEXT("无硬编码密钥或明文环境变量泄漏") 400/11px lh=16 color=
+                  FRAME9:1149 "Data" [3422,63 96×34] r=0 flex=VERTICAL pad=8,12,8,12
+                    FRAME9:1150 "Background+Border" [3449,70 42×19] bg=#ecfdf5 line=#a7f3d0/1 r=4 flex=HORIZONTAL pad=1,8,1,8
+                      TEXT9:1151 "Text" [3458,72 24×16] bg=#047857 TEXT("PASS") 600/10px lh=16 color=
+                  FRAME9:1152 "Data" [3518,63 143×34] r=0 flex=VERTICAL pad=9,12,9,12
+                    TEXT9:1153 "Text" [3530,72 99×16] bg=#64748b TEXT("sha:88b2 · 12ms") 400/11px lh=16 color=
+                FRAME9:1154 "Row" [3125,96 536×50] line=#e2e8f0/1 r=0 flex=HORIZONTAL
+                  FRAME9:1155 "Data" [3125,97 74×49] r=0 flex=VERTICAL pad=17,12,17,12
+                    TEXT9:1156 "Text" [3137,113 46×16] bg=#4338ca TEXT("MEM-004") 600/11px lh=16 color=
+                  FRAME9:1157 "Data" [3199,97 223×49] r=0 flex=VERTICAL pad=9,12,9,12
+                    TEXT9:1158 "Text" [3211,105 186×32] bg=#0f172a TEXT("连续高压场景无显著句柄与 Goroutine 泄漏") 400/11px lh=16 color=
+                  FRAME9:1159 "Data" [3422,97 96×49] r=0 flex=VERTICAL pad=15,12,15,12
+                    FRAME9:1160 "Background+Border" [3449,112 42×19] bg=#ecfdf5 line=#a7f3d0/1 r=4 flex=HORIZONTAL pad=1,8,1,8
+                      TEXT9:1161 "Text" [3458,113 24×16] bg=#047857 TEXT("PASS") 600/10px lh=16 color=
+                  FRAME9:1162 "Data" [3518,97 143×49] r=0 flex=VERTICAL pad=17,12,17,12
+                    TEXT9:1163 "Text" [3530,113 106×16] bg=#64748b TEXT("sha:410e · 210ms") 400/11px lh=16 color=
+                FRAME9:1164 "Row" [3125,145 536×50] bg=#fef2f2@0.4000000059604645 line=#e2e8f0/1 r=0 flex=HORIZONTAL
+                  FRAME9:1165 "Data" [3125,146 74×49] r=0 flex=VERTICAL pad=9,12,9,12
+                    TEXT9:1166 "Text" [3137,154 33×32] bg=#dc2626 TEXT("DIST- 001") 600/11px lh=16 color=
+                  FRAME9:1167 "Data" [3199,146 223×49] r=0 flex=VERTICAL pad=9,12,9,12
+                    TEXT9:1168 "Text" [3211,154 186×32] bg=#0f172a TEXT("分布式限流滑动窗口跨分片抖动漂移 < 5%") 500/11px lh=16 color=
+                  FRAME9:1169 "Data" [3422,146 96×49] r=0 flex=VERTICAL pad=15,12,15,12
+                    FRAME9:1170 "Background+Border" [3434,161 72×19] bg=#fee2e2 line=#fecaca/1 r=4 flex=HORIZONTAL pad=1,8,1,8
+                      TEXT9:1171 "Text" [3443,162 54×16] bg=#b91c1c TEXT("FAIL/WARN") 600/10px lh=16 color=
+                  FRAME9:1172 "Data" [3518,146 143×49] r=0 flex=VERTICAL pad=9,12,9,12
+                    TEXT9:1173 "Text" [3530,154 90×32] bg=#b91c1c TEXT("漂移 6.8% (阈值 5.0%)") 500/11px lh=16 color=
+                FRAME9:1174 "Row" [3125,194 536×50] line=#e2e8f0/1 r=0 flex=HORIZONTAL
+                  FRAME9:1175 "Data" [3125,195 74×49] r=0 flex=VERTICAL pad=17,12,17,12
+                    TEXT9:1176 "Text" [3137,211 46×16] bg=#4338ca TEXT("LAT-009") 600/11px lh=16 color=
+                  FRAME9:1177 "Data" [3199,195 223×49] r=0 flex=VERTICAL pad=9,12,9,12
+                    TEXT9:1178 "Text" [3211,203 192×32] bg=#0f172a TEXT("P99.9 尾延迟在 10k QPS 下必须保持 < 20ms") 400/11px lh=16 color=
+                  FRAME9:1179 "Data" [3422,195 96×49] r=0 flex=VERTICAL pad=15,12,15,12
+                    FRAME9:1180 "Background+Border" [3449,210 42×19] bg=#ecfdf5 line=#a7f3d0/1 r=4 flex=HORIZONTAL pad=1,8,1,8
+                      TEXT9:1181 "Text" [3458,211 24×16] bg=#047857 TEXT("PASS") 600/10px lh=16 color=
+                  FRAME9:1182 "Data" [3518,195 143×49] r=0 flex=VERTICAL pad=17,12,17,12
+                    TEXT9:1183 "Text" [3530,211 114×16] bg=#64748b TEXT("实际 14.8ms · 54ms") 400/11px lh=16 color=
+                FRAME9:1184 "Row" [3125,243 536×50] line=#e2e8f0/1 r=0 flex=HORIZONTAL
+                  FRAME9:1185 "Data" [3125,244 74×48] r=0 flex=VERTICAL pad=8,12,8,12
+                    TEXT9:1186 "Text" [3137,252 33×32] bg=#4338ca TEXT("IDEM- 002") 600/11px lh=16 color=
+                  FRAME9:1187 "Data" [3199,244 223×48] r=0 flex=VERTICAL pad=8,12,8,12
+                    TEXT9:1188 "Text" [3211,252 198×32] bg=#0f172a TEXT("幂等键复用下的全量状态隔离与防重放机 制") 400/11px lh=16 color=
+                  FRAME9:1189 "Data" [3422,244 96×49] r=0 flex=VERTICAL pad=15,12,15,12
+                    FRAME9:1190 "Background+Border" [3449,259 42×19] bg=#ecfdf5 line=#a7f3d0/1 r=4 flex=HORIZONTAL pad=1,8,1,8
+                      TEXT9:1191 "Text" [3458,260 24×16] bg=#047857 TEXT("PASS") 600/10px lh=16 color=
+                  FRAME9:1192 "Data" [3518,244 143×49] r=0 flex=VERTICAL pad=17,12,16,12
+                    TEXT9:1193 "Text" [3530,260 99×16] bg=#64748b TEXT("sha:1c7f · 45ms") 400/11px lh=16 color=
+        FRAME9:1194 "Tier 2 Card" [3107,326 572×243] bg=#ffffff line=#e2e8f0/1 r=12 flex=VERTICAL gap=12 pad=16,16,16,16 fx=drop:2
+          FRAME9:1195 "Container" [3124,343 538×22] r=0 flex=HORIZONTAL gap=52
+            FRAME9:1196 "Container" [3124,344 310×20] r=0 flex=HORIZONTAL gap=6
+              FRAME9:1198 "Heading 3" [3124,344 310×20] r=0 flex=VERTICAL
+                TEXT9:1199 "Text" [3124,344 310×20] bg=#0f172a TEXT("Tier-2 自动化测试层 (Integration Harness)") 600/16px lh=20 ls=-0.16 color=
+            FRAME9:1200 "Container" [3499,343 163×22] r=0 flex=HORIZONTAL gap=6
+              FRAME9:1201 "Background+Border" [3499,343 62×22] bg=#ecfdf5 line=#a7f3d0/1 r=4 flex=VERTICAL pad=2,8,2,8
+                TEXT9:1202 "Text" [3508,346 44×16] bg=#047857 TEXT("0.92 分") 600/11px lh=16 color=
+              FRAME9:1203 "Background+Border" [3567,343 95×22] bg=#ecfdf5 line=#a7f3d0/1 r=9999 flex=VERTICAL pad=2,10,2,10
+                TEXT9:1204 "Text" [3578,346 73×16] bg=#047857 TEXT("通过率 98.2%") 500/11px lh=16 color=
+          FRAME9:1205 "Terminal-like Code Test Run Block" [3124,377 538×175] bg=#f8fafc line=#e2e8f0/1 r=8 flex=VERTICAL gap=4 pad=12,12,12,12
+            FRAME9:1206 "HorizontalBorder" [3137,390 512×23] line=#e2e8f0/1 r=0 flex=HORIZONTAL gap=50 pad=0,0,6,0
+              FRAME9:1207 "Container" [3137,390 284×16] r=0 flex=VERTICAL
+                TEXT9:1208 "Text" [3137,390 284×16] bg=#334155 TEXT("SUITE: test_ratelimit_distributed_matrix.py") 600/11px lh=16 color=
+              FRAME9:1209 "Container" [3471,390 178×16] r=0 flex=VERTICAL
+                TEXT9:1210 "Text" [3471,390 178×16] bg=#64748b TEXT("PYTEST EXECUTION BUFFER #24") 400/11px lh=16 color=
+            FRAME9:1211 "Container" [3137,417 512×20] r=0 flex=HORIZONTAL gap=12 pad=4,0,0,0
+              FRAME9:1212 "Container" [3137,421 24×16] r=0 flex=VERTICAL
+                TEXT9:1213 "Text" [3148,421 13×16] bg=#94a3b8 TEXT("01") 400/11px lh=16 color=
+              FRAME9:1214 "Container" [3173,421 44×16] r=0 flex=VERTICAL
+                TEXT9:1215 "Text" [3173,421 44×16] bg=#047857 TEXT("✓ PASS") 600/11px lh=16 color=
+              FRAME9:1216 "Container" [3229,421 205×16] r=0 flex=VERTICAL
+                TEXT9:1217 "Text" [3229,421 205×16] bg=#0f172a TEXT("test_token_bucket_initial_burst") 400/11px lh=16 color=
+              FRAME9:1218 "Margin" [3446,421 203×16] r=0 flex=VERTICAL pad=0,0,0,170
+                FRAME9:1219 "Container" [3616,421 33×16] r=0 flex=VERTICAL
+                  TEXT9:1220 "Text" [3616,421 33×16] bg=#64748b TEXT("0.14s") 400/11px lh=16 color=
+            FRAME9:1221 "Container" [3137,441 512×16] r=0 flex=HORIZONTAL gap=12
+              FRAME9:1222 "Container" [3137,441 24×16] r=0 flex=VERTICAL
+                TEXT9:1223 "Text" [3148,441 13×16] bg=#94a3b8 TEXT("02") 400/11px lh=16 color=
+              FRAME9:1224 "Container" [3173,441 44×16] r=0 flex=VERTICAL
+                TEXT9:1225 "Text" [3173,441 44×16] bg=#047857 TEXT("✓ PASS") 600/11px lh=16 color=
+              FRAME9:1226 "Container" [3229,441 264×16] r=0 flex=VERTICAL
+                TEXT9:1227 "Text" [3229,441 264×16] bg=#0f172a TEXT("test_sliding_log_single_node_correctness") 400/11px lh=16 color=
+              FRAME9:1228 "Margin" [3505,441 144×16] r=0 flex=VERTICAL pad=0,0,0,111
+                FRAME9:1229 "Container" [3616,441 33×16] r=0 flex=VERTICAL
+                  TEXT9:1230 "Text" [3616,441 33×16] bg=#64748b TEXT("0.32s") 400/11px lh=16 color=
+            FRAME9:1231 "Overlay+Border" [3137,461 512×38] bg=#fef2f2@0.699999988079071 line=#fecaca@0.6000000238418579/1 r=4 flex=HORIZONTAL gap=12 pad=2,4,2,4
+              FRAME9:1232 "Container" [3142,472 21×16] r=0 flex=VERTICAL
+                TEXT9:1233 "Text" [3150,472 13×16] bg=#94a3b8 TEXT("03") 400/11px lh=16 color=
+              FRAME9:1234 "Container" [3175,464 34×32] r=0 flex=VERTICAL pad=0,8,0,0
+                TEXT9:1235 "Text" [3175,464 26×32] bg=#dc2626 TEXT("✗ FAIL") 600/11px lh=16 color=
+              FRAME9:1236 "Container" [3222,472 277×16] r=0 flex=VERTICAL
+                TEXT9:1237 "Text" [3222,472 277×16] bg=#0f172a TEXT("test_redis_cluster_failover_recovery_spike") 500/11px lh=16 color=
+              FRAME9:1238 "Container" [3511,464 133×32] r=0 flex=VERTICAL pad=0,34,0,0
+                TEXT9:1239 "Text" [3511,464 99×32] bg=#dc2626 TEXT("AssertionError: slip>5%") 500/11px lh=16 color=
+            FRAME9:1240 "Container" [3137,503 512×16] r=0 flex=HORIZONTAL gap=12
+              FRAME9:1241 "Container" [3137,503 24×16] r=0 flex=VERTICAL
+                TEXT9:1242 "Text" [3148,503 13×16] bg=#94a3b8 TEXT("04") 400/11px lh=16 color=
+              FRAME9:1243 "Container" [3173,503 44×16] r=0 flex=VERTICAL
+                TEXT9:1244 "Text" [3173,503 44×16] bg=#047857 TEXT("✓ PASS") 600/11px lh=16 color=
+              FRAME9:1245 "Container" [3229,503 244×16] r=0 flex=VERTICAL
+                TEXT9:1246 "Text" [3229,503 244×16] bg=#0f172a TEXT("test_self_healing_compensator_applied") 400/11px lh=16 color=
+              FRAME9:1247 "Margin" [3485,503 164×16] r=0 flex=VERTICAL pad=0,0,0,131
+                FRAME9:1248 "Container" [3616,503 33×16] r=0 flex=VERTICAL
+                  TEXT9:1249 "Text" [3616,503 33×16] bg=#64748b TEXT("1.02s") 400/11px lh=16 color=
+            FRAME9:1250 "Container" [3137,523 512×16] r=0 flex=HORIZONTAL gap=12
+              FRAME9:1251 "Container" [3137,523 24×16] r=0 flex=VERTICAL
+                TEXT9:1252 "Text" [3148,523 13×16] bg=#94a3b8 TEXT("05") 400/11px lh=16 color=
+              FRAME9:1253 "Container" [3173,523 44×16] r=0 flex=VERTICAL
+                TEXT9:1254 "Text" [3173,523 44×16] bg=#047857 TEXT("✓ PASS") 600/11px lh=16 color=
+              FRAME9:1255 "Container" [3229,523 264×16] r=0 flex=VERTICAL
+                TEXT9:1256 "Text" [3229,523 264×16] bg=#0f172a TEXT("test_fallback_local_memory_guard_engaged") 400/11px lh=16 color=
+              FRAME9:1257 "Margin" [3505,523 144×16] r=0 flex=VERTICAL pad=0,0,0,111
+                FRAME9:1258 "Container" [3616,523 33×16] r=0 flex=VERTICAL
+                  TEXT9:1259 "Text" [3616,523 33×16] bg=#64748b TEXT("0.45s") 400/11px lh=16 color=
+      FRAME9:1322 "Right Column: Deliverables & Report (5 / 12 cols = ~40-42%)" [3695,-23 404×636] r=0 flex=VERTICAL gap=16
+        FRAME9:1323 "Card 1: Deliverables Artifacts" [3695,-23 404×322] bg=#ffffff line=#e2e8f0/1 r=12 flex=VERTICAL gap=12 pad=16,16,16,16 fx=drop:2
+          FRAME9:1324 "Container" [3712,-6 370×30] r=0 flex=HORIZONTAL gap=117
+            FRAME9:1325 "Container" [3712,-1 104×20] r=0 flex=HORIZONTAL gap=8
+              FRAME9:1326 "Container" [3712,0 17×17] r=0 flex=VERTICAL ASSET=agent_20261117-163738.assets/icon_9_1326.svg
+                VECTOR9:1327 "Icon" [3712,0 17×17] bg=#4f46e5 r=0
+              FRAME9:1328 "Heading 3" [3737,-1 79×20] r=0 flex=VERTICAL
+                TEXT9:1329 "Text" [3737,-1 79×20] bg=#0f172a TEXT("交付物列表") 600/16px lh=20 ls=-0.16 color=
+            FRAME9:1330 "Download All Button with Primary container border" [3941,-6 141×30] bg=#f8fafc line=#e2e8f0/1 r=8 flex=HORIZONTAL gap=6 pad=6,12,6,12 fx=drop:2
+              FRAME9:1331 "Container" [3954,3 11×11] r=0 flex=VERTICAL ASSET=agent_20261117-163738.assets/icon_9_1331.svg
+                VECTOR9:1332 "Icon" [3954,3 11×11] bg=#4338ca r=0
+              FRAME9:1333 "Container" [3971,1 98×16] r=0 flex=VERTICAL
+                TEXT9:1334 "Text" [3971,1 98×16] bg=#4338ca TEXT("全部打包 (.tar.gz)") 500/12px lh=16 ls=0.12 color=
+          FRAME9:1335 "Container" [3712,36 370×198] r=0 flex=VERTICAL gap=6
+            FRAME9:1336 "Artifact 1" [3712,36 370×62] bg=#f8fafc line=#e2e8f0/1 r=8 flex=HORIZONTAL gap=89 pad=12,12,12,12
+              FRAME9:1337 "Container" [3725,49 223×36] r=0 flex=HORIZONTAL gap=12
+                FRAME9:1338 "Background+Border" [3725,49 36×36] bg=#eef2ff line=#e0e7ff/1 r=8 flex=HORIZONTAL ASSET=agent_20261117-163738.assets/icon_9_1338.svg
+                  FRAME9:1339 "Container" [3735,57 16×18] r=0 flex=VERTICAL
+                    VECTOR9:1340 "Icon" [3735,57 16×18] bg=#4f46e5 r=0
+                FRAME9:1341 "Container" [3773,50 175×33] r=0 flex=VERTICAL
+                  FRAME9:1342 "Container" [3773,50 175×16] r=0 flex=VERTICAL
+                    TEXT9:1343 "Text" [3773,50 66×16] bg=#0f172a TEXT("patch.diff") 600/11px lh=16 color=
+                  FRAME9:1344 "Container" [3773,66 175×17] r=0 flex=VERTICAL
+                    TEXT9:1345 "Text" [3773,66 175×17] bg=#64748b TEXT("14.2 KB · 包含 4 个核心文件修改") 400/12px lh=17 color=
+              FRAME9:1346 "Button" [4037,51 32×32] bg=#ffffff line=#e2e8f0/1 r=8 flex=HORIZONTAL fx=drop:2 ASSET=agent_20261117-163738.assets/icon_9_1346.svg
+                FRAME9:1347 "Container" [4047,61 12×12] r=0 flex=VERTICAL
+                  VECTOR9:1348 "Icon" [4047,61 12×12] bg=#64748b r=0
+            FRAME9:1349 "Artifact 2" [3712,104 370×62] bg=#f8fafc line=#e2e8f0/1 r=8 flex=HORIZONTAL gap=53 pad=12,12,12,12
+              FRAME9:1350 "Container" [3725,117 259×36] r=0 flex=HORIZONTAL gap=12
+                FRAME9:1351 "Background+Border" [3725,117 36×36] bg=#ecfdf5 line=#d1fae5/1 r=8 flex=HORIZONTAL ASSET=agent_20261117-163738.assets/icon_9_1351.svg
+                  FRAME9:1352 "Container" [3735,128 17×13] r=0 flex=VERTICAL
+                    VECTOR9:1353 "Icon" [3735,128 17×13] bg=#059669 r=0
+                FRAME9:1354 "Container" [3773,118 211×33] r=0 flex=VERTICAL
+                  FRAME9:1355 "Container" [3773,118 211×16] r=0 flex=VERTICAL
+                    TEXT9:1356 "Text" [3773,118 73×16] bg=#0f172a TEXT("report.json") 600/11px lh=16 color=
+                  FRAME9:1357 "Container" [3773,134 211×17] r=0 flex=VERTICAL
+                    TEXT9:1358 "Text" [3773,134 211×17] bg=#64748b TEXT("88.4 KB · 运行时指标与完整追踪上下文") 400/12px lh=17 color=
+              FRAME9:1359 "Button" [4037,119 32×32] bg=#ffffff line=#e2e8f0/1 r=8 flex=HORIZONTAL fx=drop:2 ASSET=agent_20261117-163738.assets/icon_9_1359.svg
+                FRAME9:1360 "Container" [4047,129 12×12] r=0 flex=VERTICAL
+                  VECTOR9:1361 "Icon" [4047,129 12×12] bg=#64748b r=0
+            FRAME9:1362 "Artifact 3" [3712,172 370×62] bg=#f8fafc line=#e2e8f0/1 r=8 flex=HORIZONTAL gap=80 pad=12,12,12,12
+              FRAME9:1363 "Container" [3725,185 232×36] r=0 flex=HORIZONTAL gap=12
+                FRAME9:1364 "Background+Border" [3725,185 36×36] bg=#eef2ff line=#e0e7ff/1 r=8 flex=HORIZONTAL ASSET=agent_20261117-163738.assets/icon_9_1364.svg
+                  FRAME9:1365 "Container" [3736,194 13×17] r=0 flex=VERTICAL
+                    VECTOR9:1366 "Icon" [3736,194 13×17] bg=#4f46e5 r=0
+                FRAME9:1367 "Container" [3773,186 184×33] r=0 flex=VERTICAL
+                  FRAME9:1368 "Container" [3773,186 184×16] r=0 flex=VERTICAL
+                    TEXT9:1369 "Text" [3773,186 112×16] bg=#0f172a TEXT("verification.json") 600/11px lh=16 color=
+                  FRAME9:1370 "Container" [3773,202 184×17] r=0 flex=VERTICAL
+                    TEXT9:1371 "Text" [3773,202 184×17] bg=#64748b TEXT("32.1 KB · 三层验收断言与签名哈希") 400/12px lh=17 color=
+              FRAME9:1372 "Button" [4037,187 32×32] bg=#ffffff line=#e2e8f0/1 r=8 flex=HORIZONTAL fx=drop:2 ASSET=agent_20261117-163738.assets/icon_9_1372.svg
+                FRAME9:1373 "Container" [4047,197 12×12] r=0 flex=VERTICAL
+                  VECTOR9:1374 "Icon" [4047,197 12×12] bg=#64748b r=0
+          FRAME9:1375 "Container" [3712,246 370×36] r=0 flex=HORIZONTAL pad=4,0,0,0
+            FRAME9:1376 "Container" [3712,250 263×32] r=0 flex=VERTICAL pad=0,19,0,0
+              TEXT9:1377 "Text" [3712,250 244×32] bg=#64748b TEXT("存储桶: s3://aether-run-artifacts/run- 07/") 400/11px lh=16 color=
+            FRAME9:1378 "Container" [3975,250 107×32] r=0 flex=VERTICAL pad=0,10,0,0
+              TEXT9:1379 "Text" [3975,250 97×32] bg=#047857 TEXT("校验码 SHA256 匹 配") 500/11px lh=16 color=
+        FRAME9:1380 "Card 2: Comprehensive Delivery Report" [3695,315 404×298] bg=#ffffff line=#e2e8f0/1 r=12 flex=VERTICAL gap=12 pad=16,16,16,16 fx=drop:2
+          FRAME9:1381 "Container" [3712,332 370×20] r=0 flex=HORIZONTAL gap=8
+            FRAME9:1382 "Container" [3712,333 15×17] r=0 flex=VERTICAL ASSET=agent_20261117-163738.assets/icon_9_1382.svg
+              VECTOR9:1383 "Icon" [3712,333 15×17] bg=#4338ca r=0
+            FRAME9:1384 "Heading 3" [3735,332 143×20] r=0 flex=VERTICAL
+              TEXT9:1385 "Text" [3735,332 143×20] bg=#0f172a TEXT("综合交付报告与归档") 600/16px lh=20 ls=-0.16 color=
+          FRAME9:1386 "Container" [3712,364 370×34] r=0 flex=VERTICAL
+            TEXT9:1387 "本报告已汇总 Tier-1 静态规则集、Tier-2 回归仿真与 Tier-3 人工共识 意见。通过安全芯片公钥完成链上密封归档。" [3712,364 370×34] bg=#64748b TEXT("本报告已汇总 Tier-1 静态规则集、Tier-2 回归仿真与 Tier-3 人工共识 意见。通过安全芯片公钥完成链上密封归档。") 400/12px lh=17 color=
+          FRAME9:1388 "Action Buttons" [3712,410 370×82] r=0 flex=VERTICAL gap=6 pad=4,0,0,0
+            FRAME9:1389 "Button" [3712,414 370×38] bg=#4338ca r=8 flex=HORIZONTAL gap=8 pad=10,16,10,16 fx=drop:2
+              FRAME9:1390 "Container" [3802,427 17×12] r=0 flex=VERTICAL ASSET=agent_20261117-163738.assets/icon_9_1390.svg
+                VECTOR9:1391 "Icon" [3802,427 17×12] bg=#ffffff r=0
+              FRAME9:1392 "Container" [3827,424 165×18] r=0 flex=VERTICAL
+                TEXT9:1393 "Text" [3827,424 165×18] bg=#ffffff TEXT("下载完整交付报告 (JSON)") 600/14px lh=18 color=
+            FRAME9:1394 "Button" [3712,458 370×34] bg=#f8fafc line=#e2e8f0/1 r=8 flex=HORIZONTAL gap=8 pad=8,16,8,16 fx=drop:2
+              FRAME9:1395 "Container" [3828,467 13×15] r=0 flex=VERTICAL ASSET=agent_20261117-163738.assets/icon_9_1395.svg
+                VECTOR9:1396 "Icon" [3828,467 13×15] bg=#0f172a r=0
+              FRAME9:1397 "Container" [3849,467 117×16] r=0 flex=VERTICAL
+                TEXT9:1398 "Text" [3849,467 117×16] bg=#0f172a TEXT("复制 Markdown 摘要") 500/12px lh=16 ls=0.12 color=
+          FRAME9:1399 "Security and Signature Verification Notice" [3712,504 370×92] bg=#f8fafc line=#e2e8f0/1 r=8 flex=VERTICAL gap=6 pad=12,12,12,12
+            FRAME9:1400 "Container" [3725,517 344×16] r=0 flex=HORIZONTAL gap=8
+              FRAME9:1401 "Container" [3725,518 10×13] r=0 flex=VERTICAL ASSET=agent_20261117-163738.assets/icon_9_1401.svg
+                VECTOR9:1402 "Icon" [3725,518 10×13] bg=#047857 r=0
+              FRAME9:1403 "Container" [3743,517 130×16] r=0 flex=VERTICAL
+                TEXT9:1404 "Text" [3743,517 130×16] bg=#047857 TEXT("ED25519 数字指纹已认证") 600/11px lh=16 color=
+            FRAME9:1405 "Container" [3725,539 344×16] r=0 flex=VERTICAL
+              TEXT9:1406 "SIG: a9e18...42ff091a084cba6104bcde824190c411ee" [3725,539 344×16] bg=#64748b TEXT("SIG: a9e18...42ff091a084cba6104bcde824190c411ee") 400/11px lh=16 color=
+            FRAME9:1407 "HorizontalBorder" [3725,561 344×22] line=#e2e8f0/1 r=0 flex=HORIZONTAL gap=52 pad=4,0,0,0
+              FRAME9:1408 "Container" [3725,566 165×17] r=0
+                TEXT9:1409 "Text" [3725,565 165×17] bg=#94a3b8 TEXT("签名节点: cluster-harness-auth-01") 400/11px lh=17 color=
+              FRAME9:1410 "Container" [3942,566 127×17] r=0
+                TEXT9:1411 "Text" [3942,565 127×17] bg=#94a3b8 TEXT("2025-05-18 14:23:44 UTC") 400/11px lh=17 color=
+    FRAME9:1412 "SECTION 3: Evidence Timeline Full Width Card" [3107,675 992×592] bg=#ffffff line=#e2e8f0/1 r=12 flex=VERTICAL gap=12 pad=16,16,16,16 fx=drop:2
+      FRAME9:1413 "Container" [3124,692 958×20] r=0 flex=HORIZONTAL gap=438
+        FRAME9:1414 "Container" [3124,692 308×20] r=0 flex=HORIZONTAL gap=8
+          FRAME9:1415 "Container" [3124,697 18×10] r=0 flex=VERTICAL ASSET=agent_20261117-163738.assets/icon_9_1415.svg
+            VECTOR9:1416 "Icon" [3124,697 18×10] bg=#4f46e5 r=0
+          FRAME9:1417 "Heading 3" [3150,692 282×20] r=0 flex=VERTICAL
+            TEXT9:1418 "Text" [3150,692 282×20] bg=#0f172a TEXT("证据时间线 (Evidence & Audit Stream)") 600/16px lh=20 ls=-0.16 color=
+        FRAME9:1419 "Container" [3872,694 210×16] r=0 flex=HORIZONTAL gap=12
+          FRAME9:1420 "Container" [3872,694 125×16] r=0 flex=VERTICAL
+            TEXT9:1421 "Text" [3872,694 125×16] bg=#64748b TEXT("全量追踪: 8 个关键事件") 400/11px lh=16 color=
+          FRAME9:1422 "Container" [4009,694 7×16] r=0 flex=VERTICAL
+            TEXT9:1423 "Text" [4009,694 7×16] bg=#cbd5e1 TEXT("|") 400/11px lh=16 color=
+          FRAME9:1424 "Container" [4028,694 54×16] r=0 flex=HORIZONTAL gap=4
+            RECTANGLE9:1425 "Background" [4028,699 6×6] bg=#10b981 r=9999
+            TEXT9:1426 "Text" [4038,694 44×16] bg=#047857 TEXT("实时固化") 500/11px lh=16 color=
+      FRAME9:1427 "Timeline Container" [3124,724 958×526] r=0 flex=VERTICAL gap=12
+        RECTANGLE9:1428 "Vertical Divider" [3194,732 1×510] bg=#cbd5e1 r=0
+        FRAME9:1429 "Item 1: run" [3124,724 958×44] bg=#f8fafc line=#e2e8f0/1 r=8 flex=HORIZONTAL gap=12 pad=10,10,10,10
+          TEXT9:1430 "Text" [3135,735 53×16] bg=#64748b TEXT("14:20:05") 400/11px lh=16 color=
+          FRAME9:1431 "Background+Border" [3200,735 36×22] bg=#eef2ff line=#c7d2fe/1 r=4 flex=VERTICAL pad=2,8,2,8
+            TEXT9:1432 "Text" [3209,738 18×16] bg=#4338ca TEXT("RUN") 600/10px lh=16 color=
+          FRAME9:1433 "Container" [3248,735 823×16] r=0 flex=HORIZONTAL gap=364
+            FRAME9:1434 "Container" [3248,735 347×16] r=0 flex=VERTICAL
+              TEXT9:1435 "Text" [3248,735 347×16] bg=#0f172a TEXT("调度引擎初始化执行流水线：载入上下文配置 `rl-normal` 标准限流策略") 400/11px lh=16 color=
+            FRAME9:1436 "Container" [3959,735 112×16] r=0 flex=VERTICAL
+              TEXT9:1437 "Text" [3959,735 112×16] bg=#64748b TEXT("node: edge-master") 400/11px lh=16 color=
+        FRAME9:1438 "Item 2: scheduler" [3124,780 958×44] bg=#f8fafc line=#e2e8f0/1 r=8 flex=HORIZONTAL gap=12 pad=10,10,10,10
+          TEXT9:1439 "Text" [3135,791 53×16] bg=#64748b TEXT("14:20:18") 400/11px lh=16 color=
+          FRAME9:1440 "Background+Border" [3200,791 72×22] bg=#f1f5f9 line=#cbd5e1/1 r=4 flex=VERTICAL pad=2,8,2,8
+            TEXT9:1441 "Text" [3209,794 54×16] bg=#334155 TEXT("SCHEDULER") 600/10px lh=16 color=
+          FRAME9:1442 "Container" [3284,791 787×16] r=0 flex=HORIZONTAL gap=317
+            FRAME9:1443 "Container" [3284,791 391×16] r=0 flex=VERTICAL
+              TEXT9:1444 "Text" [3284,791 391×16] bg=#0f172a TEXT("动态分配执行代理集群：挂载 Redis 分片集群 [Shard-01, Shard-02, Shard-03]") 400/11px lh=16 color=
+            FRAME9:1445 "Container" [3992,791 79×16] r=0 flex=VERTICAL
+              TEXT9:1446 "Text" [3992,791 79×16] bg=#64748b TEXT("latency: 4ms") 400/11px lh=16 color=
+        FRAME9:1447 "Item 3: verification" [3124,836 958×44] bg=#f8fafc line=#e2e8f0/1 r=8 flex=HORIZONTAL gap=12 pad=10,10,10,10
+          TEXT9:1448 "Text" [3135,847 53×16] bg=#64748b TEXT("14:20:55") 400/11px lh=16 color=
+          FRAME9:1449 "Background+Border" [3200,847 90×22] bg=#eef2ff line=#c7d2fe/1 r=4 flex=VERTICAL pad=2,8,2,8
+            TEXT9:1450 "Text" [3209,850 72×16] bg=#4338ca TEXT("VERIFICATION") 600/10px lh=16 color=
+          FRAME9:1451 "Container" [3302,847 769×16] r=0 flex=HORIZONTAL gap=245
+            FRAME9:1452 "Container" [3302,847 405×16] r=0 flex=VERTICAL
+              TEXT9:1453 "Text" [3302,847 405×16] bg=#0f172a TEXT("执行 Tier-1 静态断言扫描，发现规则 DIST-001 滑动窗口漂移 6.8%，触发阻塞标记") 400/11px lh=16 color=
+            FRAME9:1454 "Container" [3952,847 119×16] r=0 flex=VERTICAL
+              TEXT9:1455 "Text" [3952,847 119×16] bg=#b45309 TEXT("warn: tier1_breach") 600/11px lh=16 color=
+        FRAME9:1456 "Item 4: loop" [3124,892 958×44] bg=#f8fafc line=#e2e8f0/1 r=8 flex=HORIZONTAL gap=12 pad=10,10,10,10
+          TEXT9:1457 "Text" [3135,903 53×16] bg=#64748b TEXT("14:21:12") 400/11px lh=16 color=
+          FRAME9:1458 "Background+Border" [3200,903 42×22] bg=#fffbeb line=#fde68a/1 r=4 flex=VERTICAL pad=2,8,2,8
+            TEXT9:1459 "Text" [3209,906 24×16] bg=#b45309 TEXT("LOOP") 600/10px lh=16 color=
+          FRAME9:1460 "Container" [3254,903 817×16] r=0 flex=HORIZONTAL gap=392
+            FRAME9:1461 "Container" [3254,903 353×16] r=0 flex=VERTICAL
+              TEXT9:1462 "Text" [3254,903 353×16] bg=#0f172a TEXT("自愈循环启动 Loop #1：Agent 生成自适应令牌分发补丁，重试合成仿真") 400/11px lh=16 color=
+            FRAME9:1463 "Container" [3998,903 73×16] r=0 flex=VERTICAL
+              TEXT9:1464 "Text" [3998,903 73×16] bg=#64748b TEXT("loop_id: #1") 400/11px lh=16 color=
+        FRAME9:1465 "Item 5: loop" [3124,948 958×44] bg=#f8fafc line=#e2e8f0/1 r=8 flex=HORIZONTAL gap=12 pad=10,10,10,10
+          TEXT9:1466 "Text" [3135,959 53×16] bg=#64748b TEXT("14:21:49") 400/11px lh=16 color=
+          FRAME9:1467 "Background+Border" [3200,959 42×22] bg=#fffbeb line=#fde68a/1 r=4 flex=VERTICAL pad=2,8,2,8
+            TEXT9:1468 "Text" [3209,962 24×16] bg=#b45309 TEXT("LOOP") 600/10px lh=16 color=
+          FRAME9:1469 "Container" [3254,959 817×16] r=0 flex=HORIZONTAL gap=345
+            FRAME9:1470 "Container" [3254,959 373×16] r=0 flex=VERTICAL
+              TEXT9:1471 "Text" [3254,959 373×16] bg=#0f172a TEXT("自愈循环 Loop #2 回敛完成：引入本地内存锁兜底，漂移被阻尼收敛至 2.1%") 400/11px lh=16 color=
+            FRAME9:1472 "Container" [3972,959 99×16] r=0 flex=VERTICAL
+              TEXT9:1473 "Text" [3972,959 99×16] bg=#047857 TEXT("converged: true") 500/11px lh=16 color=
+        FRAME9:1474 "Item 6: approval (EXPANDED SPECIAL ROW)" [3124,1004 958×134] bg=#ecfdf5@0.5 line=#a7f3d0/1 r=8 flex=VERTICAL gap=8 pad=12,12,12,12 fx=drop:2
+          FRAME9:1475 "Container" [3137,1017 932×22] r=0 flex=HORIZONTAL gap=12
+            TEXT9:1476 "Text" [3137,1017 53×16] bg=#64748b TEXT("14:22:15") 400/11px lh=16 color=
+            FRAME9:1477 "Background+Border" [3202,1017 80×22] bg=#d1fae5 line=#a7f3d0/1 r=4 flex=HORIZONTAL gap=4 pad=2,8,2,8
+              FRAME9:1478 "Container" [3211,1024 10×8] r=0 flex=VERTICAL ASSET=agent_20261117-163738.assets/icon_9_1478.svg
+                VECTOR9:1479 "Icon" [3211,1024 10×8] bg=#065f46 r=0
+              TEXT9:1480 "Text" [3225,1020 48×16] bg=#065f46 TEXT("APPROVAL") 600/10px lh=16 color=
+            FRAME9:1481 "Container" [3294,1017 775×20] r=0 flex=HORIZONTAL gap=523
+              FRAME9:1482 "Container" [3294,1018 168×18] r=0 flex=VERTICAL
+                TEXT9:1483 "Text" [3294,1018 168×18] bg=#064e3b TEXT("人工决策点：批准扩展预算") 700/14px lh=18 color=
+              FRAME9:1484 "Background" [3987,1017 82×20] bg=#d1fae5 r=4 flex=VERTICAL pad=2,8,2,8
+                TEXT9:1485 "Text" [3995,1019 66×16] bg=#065f46 TEXT("人机协同复核") 500/11px lh=16 color=
+          FRAME9:1486 "Expanded details of alice's approval:margin" [3137,1047 932×78] r=0 flex=VERTICAL pad=0,0,0,96
+            FRAME9:1487 "Expanded details of alice's approval" [3233,1047 836×78] bg=#ffffff line=#a7f3d0@0.800000011920929/1 r=8 flex=HORIZONTAL gap=119 pad=12,12,12,12 fx=drop:2
+              FRAME9:1488 "Container" [3246,1060 361×52] r=0 flex=HORIZONTAL gap=12
+                FRAME9:1489 "Background+Border" [3246,1070 32×32] bg=#e0e7ff line=#c7d2fe/1 r=9999 flex=HORIZONTAL
+                  TEXT9:1490 "Text" [3255,1078 14×16] bg=#4338ca TEXT("AL") 600/12px lh=16 color=
+                FRAME9:1491 "Container" [3290,1060 317×52] r=0 flex=VERTICAL
+                  FRAME9:1492 "Container" [3290,1060 317×16] r=0 flex=HORIZONTAL gap=8
+                    FRAME9:1493 "Container" [3290,1060 96×16] r=0 flex=VERTICAL
+                      TEXT9:1494 "Text" [3290,1060 96×16] bg=#0f172a TEXT("决策审批人: alice") 600/12px lh=16 ls=0.12 color=
+                    FRAME9:1495 "Container" [3394,1060 7×16] r=0 flex=VERTICAL
+                      TEXT9:1496 "Text" [3394,1060 7×16] bg=#cbd5e1 TEXT("·") 400/12px lh=16 color=
+                    FRAME9:1497 "Container" [3409,1060 198×16] r=0 flex=VERTICAL
+                      TEXT9:1498 "Text" [3409,1060 198×16] bg=#4338ca TEXT("动作: 批准扩展预算 (+35% 算力配额)") 500/11px lh=16 color=
+                  FRAME9:1499 "Margin" [3290,1076 317×36] r=0 flex=VERTICAL pad=2,0,0,0
+                    FRAME9:1500 "Container" [3290,1078 317×34] r=0 flex=VERTICAL
+                      TEXT9:1501 "备注：“允许在多分片容灾压测期间上浮并发实例数至 32 节点，已确认账单预算在团队应急池内。”" [3290,1078 317×34] bg=#475569 TEXT("备注：“允许在多分片容灾压测期间上浮并发实例数至 32 节点，已确认账单预算在团队应急池内。”") 400/12px lh=17 color=
+              FRAME9:1502 "Container" [3934,1078 122×16] r=0 flex=HORIZONTAL gap=6
+                FRAME9:1503 "Container" [3934,1080 13×12] r=0 flex=VERTICAL ASSET=agent_20261117-163738.assets/icon_9_1503.svg
+                  VECTOR9:1504 "Icon" [3934,1080 13×12] bg=#059669 r=0
+                FRAME9:1505 "Container" [3953,1078 103×16] r=0 flex=VERTICAL
+                  TEXT9:1506 "Text" [3953,1078 103×16] bg=#64748b TEXT("MFA 硬件密钥已签名") 400/11px lh=16 color=
+        FRAME9:1507 "Item 7: verification" [3124,1150 958×44] bg=#f8fafc line=#e2e8f0/1 r=8 flex=HORIZONTAL gap=12 pad=10,10,10,10
+          TEXT9:1508 "Text" [3135,1161 53×16] bg=#64748b TEXT("14:22:48") 400/11px lh=16 color=
+          FRAME9:1509 "Background+Border" [3200,1161 90×22] bg=#eef2ff line=#c7d2fe/1 r=4 flex=VERTICAL pad=2,8,2,8
+            TEXT9:1510 "Text" [3209,1164 72×16] bg=#4338ca TEXT("VERIFICATION") 600/10px lh=16 color=
+          FRAME9:1511 "Container" [3302,1161 769×16] r=0 flex=HORIZONTAL gap=383
+            FRAME9:1512 "Container" [3302,1161 320×16] r=0 flex=VERTICAL
+              TEXT9:1513 "Text" [3302,1161 320×16] bg=#0f172a TEXT("Tier-2 自动化矩阵执行完毕：57/57 断言达成，合成压力测试收工") 400/11px lh=16 color=
+            FRAME9:1514 "Container" [4005,1161 66×16] r=0 flex=VERTICAL
+              TEXT9:1515 "Text" [4005,1161 66×16] bg=#047857 TEXT("pass: 100%") 500/11px lh=16 color=
+        FRAME9:1516 "Item 8: run" [3124,1206 958×44] bg=#f8fafc line=#e2e8f0/1 r=8 flex=HORIZONTAL gap=12 pad=10,10,10,10
+          TEXT9:1517 "Text" [3135,1217 53×16] bg=#64748b TEXT("14:23:41") 400/11px lh=16 color=
+          FRAME9:1518 "Background+Border" [3200,1217 36×22] bg=#eef2ff line=#c7d2fe/1 r=4 flex=VERTICAL pad=2,8,2,8
+            TEXT9:1519 "Text" [3209,1220 18×16] bg=#4338ca TEXT("RUN") 600/10px lh=16 color=
+          FRAME9:1520 "Container" [3248,1217 823×16] r=0 flex=HORIZONTAL gap=388
+            FRAME9:1521 "Container" [3248,1217 329×16] r=0 flex=VERTICAL
+              TEXT9:1522 "Text" [3248,1217 329×16] bg=#0f172a TEXT("流水线宣告成功结束：全部交付物已就绪，状态迁移至 `completed`") 400/11px lh=16 color=
+            FRAME9:1523 "Container" [3965,1217 106×16] r=0 flex=VERTICAL
+              TEXT9:1524 "Text" [3965,1217 106×16] bg=#047857 TEXT("TOTAL TIME 02:41") 600/11px lh=16 color=
+    FRAME9:1525 "SECTION 4: Corner Reference Component (Empty State Reference):margin" [3107,1283 992×273] r=0 flex=VERTICAL pad=12,0,0,0
+      FRAME9:1526 "SECTION 4: Corner Reference Component (Empty State Reference)" [3107,1295 992×261] line=#e2e8f0/1 r=0 flex=VERTICAL gap=8 pad=12,0,0,0
+        FRAME9:1527 "Container" [3107,1308 992×16] r=0 flex=HORIZONTAL gap=640
+          FRAME9:1528 "Container" [3107,1308 241×16] r=0 flex=VERTICAL
+            TEXT9:1529 "Text" [3107,1308 241×16] bg=#94a3b8 TEXT("组件库参考态 · EMPTY STATE REFERENCE") 500/11px lh=16 ls=0.55 color=
+          FRAME9:1530 "Button" [3987,1309 112×14] r=0 flex=VERTICAL
+            TEXT9:1531 "Text" [3987,1309 112×14] bg=#4f46e5 TEXT("展开 / 折叠空状态预览") 500/11px lh=14 ls=0.22 color=
+        FRAME9:1532 "Empty State Content (Toggleable)" [3107,1332 992×224] bg=#f8fafc line=#e2e8f0/2 r=12 flex=VERTICAL gap=12 pad=24,24,24,24
+          FRAME9:1533 "Background+Border+Shadow" [3575,1358 56×56] bg=#ffffff line=#e2e8f0/1 r=16 flex=HORIZONTAL fx=drop:2 ASSET=agent_20261117-163738.assets/icon_9_1533.svg
+            FRAME9:1534 "Container" [3589,1372 28×28] r=0 flex=VERTICAL
+              VECTOR9:1535 "Icon" [3589,1372 28×28] bg=#4f46e5 r=0
+          FRAME9:1536 "Container" [3381,1426 444×58] r=0 flex=VERTICAL gap=4
+            FRAME9:1537 "Container" [3381,1426 444×20] r=0 flex=VERTICAL
+              TEXT9:1538 "Text" [3524,1426 158×20] bg=#0f172a TEXT("暂无已结束的运行记录") 600/16px lh=20 ls=-0.16 color=
+            FRAME9:1539 "Container" [3381,1450 444×34] r=0 flex=VERTICAL
+              TEXT9:1540 "Text" [3381,1450 444×34] bg=#64748b TEXT("当前集群工作区尚未生成完整的交付证据。当智能体编排任务运行结束并通过质量准 入后，三层验收数据、交付物清单及证据时间线将自动展示于此。") 400/12px lh=17 color=
+          FRAME9:1541 "Container" [3449,1496 308×34] r=0 flex=HORIZONTAL gap=12
+            FRAME9:1542 "Button" [3449,1496 144×34] bg=#4338ca r=8 flex=HORIZONTAL gap=6 pad=8,16,8,16 fx=drop:2
+              FRAME9:1543 "Container" [3465,1507 8×11] r=0 flex=VERTICAL ASSET=agent_20261117-163738.assets/icon_9_1543.svg
+                VECTOR9:1544 "Icon" [3465,1507 8×11] bg=#ffffff r=0
+              FRAME9:1545 "Container" [3479,1504 98×18] r=0 flex=VERTICAL
+                TEXT9:1546 "Text" [3479,1504 98×18] bg=#ffffff TEXT("立即触发新运行") 600/14px lh=18 color=
+            FRAME9:1547 "Button" [3605,1496 152×34] bg=#ffffff line=#e2e8f0/1 r=8 flex=HORIZONTAL gap=6 pad=8,16,8,16 fx=drop:2
+              FRAME9:1548 "Container" [3622,1505 15×15] r=0 flex=VERTICAL ASSET=agent_20261117-163738.assets/icon_9_1548.svg
+                VECTOR9:1549 "Icon" [3622,1505 15×15] bg=#0f172a r=0
+              FRAME9:1550 "Container" [3643,1505 97×16] r=0 flex=VERTICAL
+                TEXT9:1551 "Text" [3643,1505 97×16] bg=#0f172a TEXT("查看验收规范指南") 500/12px lh=16 ls=0.12 color=

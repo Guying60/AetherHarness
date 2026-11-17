@@ -10,7 +10,7 @@ import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
 import { Orchestrator, RunSnapshot } from '../orchestrator.js';
 import { DASHBOARD_HTML } from './client.js';
-import { LOGIN_HTML } from './login.js';
+import { loginPage } from './login.js';
 import { STUDIO_HTML } from './studio-page.js';
 import { FLOW_HTML } from './flow-page.js';
 import { readFile } from 'node:fs/promises';
@@ -191,7 +191,8 @@ export class WebServer {
     res.setHeader('Referrer-Policy', 'no-referrer');
 
     const address = this.server?.address();
-    const cookieName = 'aether_session_' + (address && typeof address === 'object' ? address.port : this.port);
+    const serverPort = address && typeof address === 'object' ? address.port : this.port;
+    const cookieName = 'aether_session_' + serverPort;
     const cookie = req.headers.cookie?.split(';').map(item => item.trim()).find(item => item.startsWith(cookieName + '='));
     const sessionId = cookie?.slice(cookieName.length + 1);
     const session = sessionId ? this.sessions.get(sessionId) : undefined;
@@ -213,7 +214,7 @@ export class WebServer {
           redirect(workspacePath(url.searchParams.get('next')));
         } else {
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
-          res.end(LOGIN_HTML);
+          res.end(loginPage(serverPort));
         }
         return;
       }
@@ -317,12 +318,20 @@ export class WebServer {
             const profile = this.orchestrator.agents.get(agent.id)!.profile;
             return { ...agent, version: profile.version, toolIds: profile.toolIds, capabilities: profile.capabilities };
           }),
+          runtime: {
+            rss: process.memoryUsage().rss,
+            uptimeMs: Math.round(process.uptime() * 1000),
+            agents: this.orchestrator.studio.catalog.list('agents').length,
+            teams: this.orchestrator.studio.catalog.list('teams').length,
+            workflows: this.orchestrator.studio.workflows.list().length
+          },
           pending: pending.map(({ runId, node, basePriority, effectivePriority, submittedAt }) => ({
             runId, nodeId: node.id, basePriority, effectivePriority, submittedAt
           })),
           optimizations: this.orchestrator.getPromptOptimizations().slice(-12),
           runs: runs.map(({ runId, taskId, title, status, startedAt, finishedAt, humanDecision, retryOf, verification }) => ({
-            runId, taskId, title, status, startedAt, finishedAt, humanDecision, retryOf, verificationPassed: verification?.passed
+            runId, taskId, title, status, startedAt, finishedAt, humanDecision, retryOf,
+            verificationPassed: verification?.passed, verificationScore: verification?.score
           })),
           run: selected ? runDetail(selected) : null,
           events: selected ? this.orchestrator.getEvents(selected.runId) : []

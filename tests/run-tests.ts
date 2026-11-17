@@ -1326,7 +1326,7 @@ async function suiteWebServer(): Promise<void> {
     const htmlText = await htmlRes.text();
     check(htmlText.includes('AetherHarness'), 'HTML includes AetherHarness brand');
     check(htmlText.includes('pipeline-flow'), 'HTML includes workflow DAG pipeline view');
-    check(htmlText.includes('预设案例'), 'the workbench includes the scenario picker');
+    check(htmlText.includes('编排预设'), 'the workbench includes the scenario picker');
     for (const path of ['/runs', '/agents', '/delivery', '/settings']) {
       const response = await webFetch(info.url + path);
       equal(response.status, 200, `workspace navigation serves ${path}`);

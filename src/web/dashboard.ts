@@ -1,9 +1,10 @@
 import type { Orchestrator, RunSnapshot } from '../orchestrator.js';
-import type { OrchestratorEvent, VerificationResult, WorkflowDefinition, WorkflowNode } from '../types/index.js';
+import type { OrchestratorEvent, SelfLoopConfig, VerificationResult, WorkflowDefinition, WorkflowNode } from '../types/index.js';
 
 type Snapshot = ReturnType<Orchestrator['getSnapshot']>;
 type RunSummary = Pick<RunSnapshot, 'runId' | 'taskId' | 'title' | 'status' | 'startedAt' | 'finishedAt' | 'humanDecision' | 'retryOf'> & {
   verificationPassed?: boolean;
+  verificationScore?: number;
 };
 type Page = 'workbench' | 'execution' | 'agents' | 'delivery' | 'settings';
 interface DashboardData {
@@ -11,6 +12,8 @@ interface DashboardData {
   tasks: Array<{ id: string; title: string; description: string; prompt: string; difficulty: string; workflow: WorkflowDefinition }>;
   repository: ReturnType<Orchestrator['getProject']>;
   persistentStorage: boolean;
+  /** process + definition-store telemetry for the sidebar runtime card */
+  runtime?: { rss: number; uptimeMs?: number; agents: number; teams: number; workflows: number };
   agents: Array<Snapshot['agents'][number] & { version: string; toolIds: string[]; capabilities: Record<string, number> }>;
   scheduler: Snapshot['scheduler'];
   pending: Array<{ runId: string; nodeId: string; basePriority: number; effectivePriority: number; submittedAt: number }>;
@@ -39,9 +42,21 @@ interface AgentHistory {
 /** Browser entry point. Everything it uses at runtime is defined inside this function. */
 export function dashboard(): void {
   const scenarios: Record<string, { title: string; detail: string; label: string; color: string; action: string }> = {
-    'rl-easy': { title: '基线验收', detail: '检验已有实现，观察需求分析、沙箱测试和交叉审查。', label: '基础案例', color: 'good', action: '运行基线验收' },
-    'rl-normal': { title: '边界缺陷自愈', detail: '从带缺陷的草稿开始，观察测试拦截、根因诊断和重试修复。', label: '推荐起点', color: 'good', action: '运行缺陷修复' },
-    'rl-hard': { title: '分布式对账阻塞', detail: '加入跨节点令牌对账要求，观察系统在无法满足验收条件时如何请求人工决策。', label: '人工介入', color: 'warn', action: '运行阻塞案例' }
+    'rl-easy': {
+      title: '基线验收',
+      detail: '固定窗口单点计数，基础负载压力测试；快速验证单个 Agent 的边界判断与单体纠错。',
+      label: 'L1 入门级', color: '', action: '启动运行'
+    },
+    'rl-normal': {
+      title: '边界缺陷自愈',
+      detail: '滑动窗口算法，多并发竞争与自愈验证；观察双代理协作下的锁粒度与重试退避。',
+      label: '推荐基线', color: 'violet', action: '启动运行'
+    },
+    'rl-hard': {
+      title: '分布式对账阻塞',
+      detail: '分布式令牌桶，跨节点对账无法满足；观察系统在收敛失败时如何请求人工决策。',
+      label: 'L3 级联高危', color: '', action: '启动运行'
+    }
   };
   const nodeNames: Record<string, string> = {
     n_requirement: '需求分析', n_architecture: '架构设计', n_complexity_gate: '复杂度判断',
@@ -115,6 +130,7 @@ export function dashboard(): void {
   let nodeId = '';
   let tab = page === 'delivery' ? 'result' : 'flow';
   let settingsTab = 'model';
+  let runsTab: 'all' | 'active' | 'done' = 'all';
   let connected = false;
   let stream: EventSource | undefined;
   let streamRun: string | undefined;
@@ -151,10 +167,12 @@ export function dashboard(): void {
   }
 
   function setConnection(label: string, color: string): void {
-    const indicator = get('connection');
-    if (indicator.textContent === label) return;
-    indicator.className = 'badge ' + color;
-    indicator.textContent = label;
+    const pill = get('connection');
+    const tone = color === 'good' ? '' : color === 'bad' ? 'bad' : 'warn';
+    const next = ('conn ' + tone).trim();
+    if (pill.className !== next) pill.className = next;
+    const text = get('connection-label');
+    if (text.textContent !== label) text.textContent = label;
   }
 
   function notice(message: string, error = false): void {
@@ -187,52 +205,48 @@ export function dashboard(): void {
     const busy = data.runs.some(active);
     const telemetry = data.llm.telemetry;
     const canOperate = data.account.role === 'operator';
-    get('session-account').textContent = data.account.username + ' · ' + (canOperate ? '操作者' : '只读');
+    get('session-name').textContent = data.account.username + ' · ' + (canOperate ? '操作者' : '只读');
     get('sign-out').hidden = false;
-    get('storage-status').textContent = data.persistentStorage ? '历史与报告已启用本地持久化' : '运行历史保存在当前进程';
+    get('storage-status').textContent = data.persistentStorage ? '历史与证据已启用本地持久化' : '运行历史保存在当前进程';
+    const runtime = data.runtime;
+    if (runtime) {
+      get('rt-memory').textContent = megabytes(runtime.rss);
+      get('rt-defs').textContent = String(runtime.agents + runtime.teams) + ' 项';
+      get('rt-flows').textContent = String(runtime.workflows) + ' 项';
+    }
     get('mode').textContent = live ? '实时模型 · ' + data.llm.label + (telemetry ?
       ' · 调用 ' + telemetry.calls + ' 次 · 降级 ' + telemetry.fallbacks + ' 次' : '') :
       '离线演示 · 确定性 Agent';
+    get('mode').className = 'mode-pill' + (live ? ' live' : '');
+    get('bus-state').className = 'live' + (connected ? '' : ' warn');
+    get('bus-label').textContent = connected ? '编排总线在线' : '编排总线重连中';
     get<HTMLButtonElement>('run-all').hidden = !canOperate;
     get<HTMLButtonElement>('run-all').disabled = starting || busy || data.tasks.length === 0;
     const { project, ready, reason } = data.repository;
     get('project-status').textContent = ready && project
       ? project.filePath + ' @ ' + project.revision.slice(0, 12) + ' · 目标文件将发送至配置的模型端点。'
       : reason ?? '仓库任务不可用。';
-    show('project-select', project ? '<option value="' + esc(project.id) + '">' + esc(project.title) + '</option>' :
-      '<option value="">无配置仓库</option>');
+    get('repo-badge').textContent = ready ? '已就绪' : '未配置';
+    get('repo-badge').className = 'badge' + (ready ? ' good' : '');
+    get('schema-badge').className = 'badge ' + (ready ? 'good' : 'warn');
+    get('schema-badge').innerHTML = '<i class="dot"></i>' + (ready ? 'Ready · 可提交编排' : 'Awaiting Input Schema');
+    get('repo-target').textContent = project ? 'Target: ' + project.filePath : 'Target: —';
+    get('repo-tree').textContent = ready ? 'CLEAN TREE' : 'DISCONNECTED';
+    get('repo-tree').className = ready ? 'ok' : '';
+    show('project-select', project ? '<option value="' + esc(project.id) + '">' +
+      esc('repo: ' + project.title + ' (' + project.revision.slice(0, 7) + ')') + '</option>' : '<option value="">无配置仓库</option>');
     get<HTMLSelectElement>('project-select').disabled = !canOperate || !ready;
     get('project-form').hidden = !canOperate;
-    get<HTMLTextAreaElement>('project-goal').disabled = !canOperate || !ready;
+    // The goal draft never needs a repository: only dispatch does. Keeping the
+    // textarea editable lets an operator prepare a brief before configuring one.
+    get<HTMLTextAreaElement>('project-goal').disabled = !canOperate;
+    get<HTMLButtonElement>('project-sample').disabled = !canOperate;
     get<HTMLButtonElement>('project-submit').disabled = !canOperate || starting || !ready ||
       data.runs.some(item => item.taskId === project?.id && active(item));
 
-    show('scenario-cards', data.tasks.map(item => {
-      const copy = scenarios[item.id];
-      const title = taskName(item.id);
-      const latest = data!.runs.findLast(record => record.taskId === item.id);
-      const running = data!.runs.some(record => record.taskId === item.id && active(record));
-      return '<article class="card scenario ' + (item.id === task?.id ? 'selected' : '') + '">' +
-        '<div class="row">' + badge(copy?.label ?? item.difficulty, copy?.color) + '</div><h3>' + esc(title) + '</h3><p class="muted small">' +
-        esc(copy?.detail ?? item.description) + '</p>' +
-        '<div class="row small muted">最近运行 ' + (latest ? stateBadge(latest.humanDecision ?? latest.status) : '暂无') + '</div>' +
-        '<div class="actions row">' + (canOperate ? '<button type="button" class="btn ' + (item.id === 'rl-normal' ? 'primary' : '') +
-        '" data-run="' + esc(item.id) + '" data-focus="run-' + esc(item.id) + '"' + (starting || running ? ' disabled' : '') +
-        '>' + esc(running ? '案例运行中…' : copy?.action ?? '运行案例') + '</button>' : '') +
-        '<button type="button" class="link" data-preview="' + esc(item.id) + '" data-focus="preview-' + esc(item.id) +
-        '" aria-label="预览' + esc(title) + '编排">预览编排</button></div></article>';
-    }).join('') || empty('当前服务没有可用的案例。'));
-    show('overview', '<div class="metrics">' + [
-      ['已记录任务', data.runs.length],
-      ['进行中', data.runs.filter(active).length],
-      ['通过自动验收', data.runs.filter(item => item.status === 'completed' && item.verificationPassed && !item.humanDecision).length],
-      ['正在工作的 Agent', data.agents.filter(agent => agent.load > 0).length]
-    ].map(([label, value]) => metric(String(label), String(value))).join('') + '</div>');
-    const recent = data.runs.slice(-5).reverse();
-    show('recent-runs', recent.length ? '<ul class="plain-list record-list">' + recent.map(item =>
-      '<li><a class="row between" data-route href="' + runPath(item.runId) + '"><strong>' + esc(runTitle(item)) + '</strong>' +
-      stateBadge(item.humanDecision ?? item.status) + '</a><span class="mono muted small">' + esc(item.runId) + ' · ' +
-      time(item.startedAt) + '</span></li>').join('') + '</ul>' : empty('暂无运行记录'));
+    renderPresets(canOperate, task?.id, starting);
+    renderKpi();
+    renderRuns();
 
     if (page === 'agents' || page === 'settings') {
       renderOperations(data);
@@ -252,11 +266,12 @@ export function dashboard(): void {
     show('run-caption', run ? '<strong>' + esc(selectedTitle) + '</strong> <span class="mono">' + esc(run.runId) +
       '</span> ' + stateBadge(run.humanDecision ?? run.status) : '');
     if (page === 'execution') {
-      get('flow-content').hidden = tab !== 'flow';
+      get('flow-panel').hidden = tab !== 'flow';
       get('execution-evidence').hidden = tab === 'flow';
       if (tab === 'flow') renderWorkflow(run?.workflow ?? task?.workflow, run);
       renderRun(run, selectedTitle, run?.goal ?? task?.prompt);
       renderRunAgents(run);
+      renderDock(run);
     } else {
       get('delivery-summary').hidden = tab !== 'result';
       get('delivery-evidence').hidden = tab === 'result';
@@ -267,6 +282,134 @@ export function dashboard(): void {
 
   function metric(label: string, value: string): string {
     return '<div class="inset metric"><span class="muted small">' + esc(label) + '</span><strong>' + esc(value) + '</strong></div>';
+  }
+
+  /** bytes -> "142 MB" (sidebar runtime card) */
+  function megabytes(bytes: number): string {
+    if (!Number.isFinite(bytes) || bytes <= 0) return '—';
+    return Math.round(bytes / 1048576) + ' MB';
+  }
+
+  /** ms -> "02:14" (runs table duration column) */
+  function clock(ms: number): string {
+    const total = Math.max(0, Math.round(ms / 1000));
+    return String(Math.floor(total / 60)).padStart(2, '0') + ':' + String(total % 60).padStart(2, '0');
+  }
+
+  function scoreClass(value: number | undefined): string {
+    if (typeof value !== 'number') return 'quiet';
+    if (value >= 0.9) return 'ok';
+    if (value >= 0.8) return '';
+    return value >= 0.6 ? 'warn' : 'bad';
+  }
+
+  /** status pill for one run row — a human decision outranks machine status */
+  function runPill(item: RunSummary): string {
+    const state = item.humanDecision ?? item.status;
+    const tone = state === 'completed' ? 'done'
+      : state === 'failed' || state === 'cancelled' ? 'failed'
+        : state === 'needs_human' || state === 'paused' || item.humanDecision ? 'human'
+          : state === 'pending' ? 'queued' : 'running';
+    const label = statusNames[state]?.[0] ?? state;
+    return '<span class="pill ' + tone + '"><i class="dot"></i>' + esc(label) + '</span>';
+  }
+
+  function runRow(item: RunSummary): string {
+    const state = item.humanDecision ?? item.status;
+    const canAct = data?.account.role === 'operator';
+    const url = runPath(item.runId);
+    const elapsed = item.finishedAt
+      ? clock(item.finishedAt - item.startedAt)
+      : state === 'pending' ? '00:00' : clock(Date.now() - item.startedAt);
+    const action = state === 'pending' && canAct
+      ? '<button type="button" class="row-btn quiet" data-cancel-run="' + esc(item.runId) + '">取消</button>'
+      : state === 'running' || state === 'cancelling'
+        ? '<a class="row-btn primary" data-route href="' + url + '">进入</a>'
+        : state === 'needs_human' || state === 'paused'
+          ? '<a class="row-btn warn" data-route href="' + url + '">审批</a>'
+          : state === 'failed'
+            ? '<a class="row-btn bad" data-route href="' + url + '">复盘</a>'
+            : '<a class="row-btn" data-route href="' + url + '">查看</a>';
+    return '<tr>' +
+      '<td><button type="button" class="run-id" data-select-run="' + esc(item.runId) + '">' + esc(item.runId) + '</button></td>' +
+      '<td><span class="run-scenario"><span>' + esc(item.taskId) + '</span><strong>' + esc(runTitle(item)) + '</strong></span></td>' +
+      '<td>' + runPill(item) + '</td>' +
+      '<td><span class="run-score ' + scoreClass(item.verificationScore) + '">' +
+      (typeof item.verificationScore === 'number' ? item.verificationScore.toFixed(2) : '—') + '</span></td>' +
+      '<td><span class="run-time">' + elapsed + '</span></td>' +
+      '<td>' + action + '</td>' +
+      '</tr>';
+  }
+
+  function renderPresets(canOperate: boolean, selected: string | undefined, starting: boolean): void {
+    const tasks = data?.tasks ?? [];
+    get('preset-count').textContent = 'Presets ' + tasks.length + '/' + tasks.length;
+    show('scenario-cards', tasks.map(item => {
+      const copy = scenarios[item.id];
+      const running = (data?.runs ?? []).some(record => record.taskId === item.id && active(record));
+      const loops = item.workflow.nodes
+        .map(node => node.selfLoopConfig)
+        .filter((config): config is SelfLoopConfig => !!config);
+      const rounds = loops.reduce((max, config) => Math.max(max, config.maxIterations), 0);
+      const threshold = loops.reduce((max, config) => Math.max(max, config.convergenceThreshold), 0);
+      const featured = item.id === 'rl-normal';
+      return '<article class="preset' + (featured ? ' featured' : '') + '" data-task="' + esc(item.id) +
+        '" aria-current="' + (item.id === selected ? 'true' : 'false') + '">' +
+        '<div class="preset-top"><span class="preset-id"><i class="dot"></i>' + esc(item.id) + '</span>' +
+        badge(copy?.label ?? item.difficulty, copy?.color) + '</div>' +
+        '<div class="preset-body"><h3>' + esc(taskName(item.id)) + '</h3><p>' +
+        esc(copy?.detail ?? item.description) + '</p></div>' +
+        '<dl class="preset-metrics">' +
+        '<div><dt>节点数</dt><dd>' + item.workflow.nodes.length + '</dd></div>' +
+        '<div><dt>轮次</dt><dd>' + rounds + '</dd></div>' +
+        '<div><dt>阈值</dt><dd class="' + (featured ? 'accent' : item.id === 'rl-hard' ? 'warn' : 'ok') + '">' +
+        threshold.toFixed(2) + '</dd></div>' +
+        '</dl>' +
+        '<div class="preset-actions">' +
+        '<button type="button" class="btn ghost" data-preview="' + esc(item.id) + '" data-focus="preview-' +
+        esc(item.id) + '">预览编排</button>' +
+        (canOperate ? '<button type="button" class="btn primary" data-run="' + esc(item.id) + '" data-focus="run-' +
+          esc(item.id) + '"' + (starting || running ? ' disabled' : '') + '>' +
+          esc(running ? '运行中…' : '启动运行') + '</button>' : '') +
+        '</div></article>';
+    }).join('') || empty('当前服务没有可用的案例。'));
+  }
+
+  function renderKpi(): void {
+    const runs = data?.runs ?? [];
+    const running = runs.filter(active);
+    const scored = runs.filter(item => typeof item.verificationScore === 'number');
+    const average = scored.length
+      ? scored.reduce((total, item) => total + (item.verificationScore ?? 0), 0) / scored.length : 0;
+    const passed = scored.filter(item => item.verificationPassed).length;
+    const capacity = Math.max(1, data?.settings.maxConcurrentRuns ?? 1);
+    const today = new Date().toDateString();
+    get('stat-running').textContent = String(running.length);
+    get('stat-running-note').textContent = '集群负荷 ' + Math.round(running.length / capacity * 100) + '%';
+    get('stat-queued').textContent = String(data?.scheduler.queued ?? 0);
+    get('stat-queued-note').textContent = (data?.pending.length ?? 0) > 0
+      ? (data!.pending.length + ' 个节点待派发') : '就绪待调度';
+    get('stat-done').textContent = String(runs.filter(item => item.status === 'completed').length);
+    get('stat-delta').textContent = '+' +
+      runs.filter(item => new Date(item.startedAt).toDateString() === today).length;
+    get('stat-score').textContent = average.toFixed(2);
+    get('stat-score-note').textContent = '合格率 ' + (scored.length ? Math.round(passed / scored.length * 100) : 0) + '%';
+  }
+
+  function renderRuns(): void {
+    const runs = data?.runs ?? [];
+    const activeRuns = runs.filter(active);
+    const finished = runs.filter(item => !active(item));
+    get('runs-count-all').textContent = String(runs.length);
+    get('runs-count-active').textContent = String(activeRuns.length);
+    get('runs-count-done').textContent = String(finished.length);
+    for (const button of document.querySelectorAll<HTMLElement>('[data-runs-tab]')) {
+      button.setAttribute('aria-pressed', String(button.dataset.runsTab === runsTab));
+    }
+    const visible = (runsTab === 'active' ? activeRuns : runsTab === 'done' ? finished : runs).slice(-8).reverse();
+    show('runs-tbody', visible.map(runRow).join(''));
+    get('runs-table-wrap').hidden = runs.length === 0;
+    get('runs-empty').hidden = runs.length > 0;
   }
 
   function renderWorkflow(workflow: WorkflowDefinition | undefined, run: DashboardData['run']): void {
@@ -300,7 +443,29 @@ export function dashboard(): void {
     const edges = new Set(workflow.edges.map(edge => edge.from + '/' + edge.to));
     const merges = stages.map((stage, index) => stages[index - 1]?.length === 2 && stage.length === 1 &&
       stages[index - 1].every(node => edges.has(node.id + '/' + stage[0].id)));
-    show('execution-steps', stages.flat().map(nodeButton).join(''));
+    const ordered = stages.flat();
+    const stateOf = (node: WorkflowNode) => progress[node.id]?.status
+      ?? (branches.has(node.id) || (run && run.finishedAt) ? 'skipped' : 'pending');
+    show('execution-steps', ordered.map((node, index) => {
+      const record = progress[node.id];
+      const state = stateOf(node);
+      const done = state === 'completed';
+      const elapsed = record?.endTime !== undefined ? clock(record.endTime - record.startTime)
+        : record?.status === 'running' ? clock(Date.now() - record.startTime) : '--:--';
+      const subtitle = node.type === 'self_loop'
+        ? (run?.iterations ? '当前处于第 ' + run.iterations + ' 轮修正' : '自愈循环 · 开发/验收/诊断')
+        : node.agentId ? agentName(node.agentId)
+          : node.toolId ? (tools[node.toolId] ?? node.toolId)
+            : nodeTypes[node.type] ?? node.type;
+      return '<li class="step-row ' + esc(state) + '" data-node="' + esc(node.id) + '" data-focus="step-' + esc(node.id) + '">' +
+        '<span class="marker" aria-hidden="true">' + (done ? '✓' : String(index + 1)) + '</span>' +
+        '<div class="body"><div class="line"><strong>' + esc(nodeName(node.id, node.name)) + '</strong>' +
+        '<span class="dur">' + elapsed + '</span></div><p>' + esc(subtitle) + '</p></div></li>';
+    }).join('') || empty('该工作流没有可展示的执行步骤。'));
+    const finishedSteps = ordered.filter(node => stateOf(node) === 'completed').length;
+    get('step-count').textContent = finishedSteps + '/' + ordered.length + ' 已完成';
+    get('dag-legend').innerHTML = '<span><i class="busy"></i>运行中</span>' +
+      '<span><i class="ok"></i>已完成</span><span><i></i>等待 / 未进入</span>';
     show('pipeline-flow', stages.map((stage, index) => {
       const before = stages[index - 1];
       const fork = before?.length === 1 && stage.length === 2 &&
@@ -350,7 +515,17 @@ export function dashboard(): void {
 
   function renderRun(run: DashboardData['run'], title: string, prompt?: string): void {
     const brief = prompt ? '<details id="task-brief" class="small"><summary>查看任务原文</summary><p>' + esc(prompt) + '</p></details>' : '';
+    const crumb = get('run-crumb');
+    const report = get<HTMLAnchorElement>('run-report');
+    const cancel = get<HTMLButtonElement>('run-cancel');
     if (!run) {
+      crumb.textContent = requestedRun ? '读取中…' : '预览';
+      get('run-status-pill').innerHTML = '';
+      get('run-id').textContent = '';
+      get('run-policy').textContent = title;
+      get('run-meta').textContent = unavailableRun ? '未找到该运行' : '尚未选择运行';
+      report.hidden = true;
+      cancel.hidden = true;
       if (unavailableRun) {
         show('run-summary', empty('找不到运行 ' + unavailableRun + '。') + '<a class="link" href="/">返回工作台</a>');
         return;
@@ -359,6 +534,15 @@ export function dashboard(): void {
         '正在读取所选运行…' : '当前正在预览工作流。点击案例的运行按钮开始，或通过运行历史查看已有结果。') + brief);
       return;
     }
+    crumb.textContent = '运行 ' + run.runId;
+    get('run-status-pill').innerHTML = runPill(run);
+    get('run-id').textContent = run.runId;
+    get('run-policy').textContent = run.taskId + ' · ' + runTitle(run);
+    get('run-meta').textContent = '· ' + (run.requestedBy ?? '本地操作者') + ' 启动 · ' +
+      (run.finishedAt ? clock(run.finishedAt - run.startedAt) + ' 结束' : clock(Date.now() - run.startedAt) + ' 已运行');
+    report.hidden = !run.finishedAt;
+    report.href = '/api/runs/' + encodeURIComponent(run.runId) + '/report';
+    cancel.hidden = !(data?.account.role === 'operator' && (run.status === 'pending' || run.status === 'running'));
     const v = run.verification;
     const outcome = run.humanDecision;
     const description = outcome === 'retry' ? '新运行使用加倍后的自愈预算。' :
@@ -427,6 +611,27 @@ export function dashboard(): void {
       (decisionError ? '<p class="notice" data-error="true" role="alert">' + esc(decisionError) + '</p>' : ''));
   }
 
+  /** Floating metric dock under the DAG (design: "综合置信得分 / 循环轮数 / 断言覆盖 / 净耗时"). */
+  function renderDock(run: DashboardData['run']): void {
+    const dock = get('dag-dock');
+    if (!run) { dock.innerHTML = ''; return; }
+    const verification = run.verification;
+    const sandbox = verification?.sandboxTestResult;
+    const workflow = run.workflow ?? data?.tasks.find(item => item.id === run.taskId)?.workflow;
+    const maxLoops = Math.max(0, ...(workflow?.nodes ?? []).map(node => node.selfLoopConfig?.maxIterations ?? 0));
+    const elapsed = run.finishedAt ? clock(run.finishedAt - run.startedAt) : clock(Date.now() - run.startedAt);
+    const budget = workflow?.timeoutMs;
+    dock.innerHTML =
+      '<div><dt>综合置信得分</dt><dd class="' + (verification?.passed ? 'ok' : 'accent') + '">' +
+      (verification ? verification.score.toFixed(2) : '–') + ' <small>/ 1.00</small></dd></div>' +
+      '<div><dt>当前循环轮数</dt><dd class="accent">' + (run.iterations ?? 0) +
+      ' <small>/ ' + (maxLoops || '—') + ' max</small></dd></div>' +
+      '<div><dt>断言集覆盖</dt><dd>' + (sandbox?.totalCount ?? '–') +
+      ' <small>已通过 ' + (sandbox?.passedCount ?? 0) + '/' + (sandbox?.totalCount ?? 0) + '</small></dd></div>' +
+      '<div><dt>净耗时指标</dt><dd>' + elapsed +
+      (budget ? ' <small>SLA ' + (budget >= 60000 ? Math.round(budget / 60000) + 'm' : Math.round(budget / 1000) + 's') + '</small>' : '') + '</dd></div>';
+  }
+
   function renderRunAgents(run: DashboardData['run']): void {
     const participation = new Map<string, Set<string>>();
     const add = (agentId: string, label: string) => {
@@ -450,6 +655,21 @@ export function dashboard(): void {
       '</p></li>').join('') + '</ul>' : empty('暂无本次运行的派发或审查记录。'));
   }
 
+  /** Composite tier weights — mirrors VerificationEngine.verify (keep in sync). */
+  function tierWeights(names: string[]): Record<string, number> {
+    const sandbox = names.includes('Tier-2');
+    const voting = names.includes('Tier-3');
+    if (sandbox && voting) return { 'Tier-1': 0.3, 'Tier-2': 0.4, 'Tier-3': 0.3 };
+    if (sandbox) return { 'Tier-1': 0.4, 'Tier-2': 0.6, 'Tier-3': 0 };
+    if (voting) return { 'Tier-1': 0.5, 'Tier-2': 0, 'Tier-3': 0.5 };
+    return { 'Tier-1': 1, 'Tier-2': 0, 'Tier-3': 0 };
+  }
+
+  function tileOf(label: string, value: string, unit: string, tone = ''): string {
+    return '<div class="stat-tile ' + tone + '"><span class="label">' + esc(label) + '</span>' +
+      '<span class="value"><b>' + esc(value) + '</b><em>' + esc(unit) + '</em></span></div>';
+  }
+
   function renderDelivery(run: DashboardData['run']): void {
     if (!run) {
       show('delivery-summary', empty(unavailableRun ? '找不到运行 ' + unavailableRun + '。' : '暂无验收结果，请选择历史运行。'));
@@ -457,26 +677,122 @@ export function dashboard(): void {
     }
     const verification = run.verification;
     const sandbox = verification?.sandboxTestResult;
-    const patch = run.patch?.patch;
-    const draft = !!patch && !(run.status === 'completed' && verification?.passed && !run.humanDecision);
-    const assertionCount = sandbox?.passedCount !== undefined && sandbox.totalCount !== undefined
+    const names = (verification?.tiers ?? []).map(tier => tier.tier);
+    const weights = tierWeights(names);
+    const done = run.status === 'completed' && verification?.passed && !run.humanDecision;
+    const assertion = sandbox?.passedCount !== undefined && sandbox?.totalCount !== undefined
       ? sandbox.passedCount + ' / ' + sandbox.totalCount : '—';
-    const verdict = verification ? badge(verification.passed ? '自动验收通过' : '自动验收阻塞', verification.passed ? 'good' : 'bad') :
-      badge('暂无最终验收');
-    show('delivery-summary', '<div class="row between"><h2>验收结果</h2>' + verdict + '</div>' +
-      '<div class="metrics">' + metric('最终沙箱断言', assertionCount) +
-      metric('验证得分', verification ? pct(verification.score) : '—') +
-      metric('自愈轮数', run.iterations === undefined ? '—' : String(run.iterations)) +
-      metric('运行耗时', run.finishedAt ? duration(run.finishedAt - run.startedAt) : '—') + '</div>' +
-      (verification?.blockingReasons?.length ? '<p class="small muted">' + esc(verification.blockingReasons.join(' · ')) + '</p>' : '') +
-      '<h3>交付物</h3>' +
-      (patch ? '<div class="inset row between"><div class="row"><code>' + esc(run.patch?.filePath) + '</code>' +
-        badge(draft ? '待复审草稿' : '已验证补丁', draft ? 'warn' : 'good') + '</div><div class="row">' +
-        '<button class="btn" type="button" data-tab="artifact">查看 Diff</button><button class="btn primary" type="button" data-download>下载补丁</button></div></div>' :
-        '<p class="muted small">本次运行没有可下载的补丁。</p>') +
-      (run.finishedAt ? '<div class="inset row between"><strong>验收报告</strong><a class="btn" href="/api/runs/' +
-        esc(run.runId) + '/report" download>下载 JSON 报告</a></div>' : '') +
-      '<div><a class="link" data-route href="' + runPath(run.runId) + '">查看任务执行</a></div>');
+    const coverage = sandbox?.totalCount ? Math.round((sandbox.passedCount ?? 0) / sandbox.totalCount * 100) : undefined;
+    const segments = names
+      .map(name => ({ name, weight: weights[name] ?? 0, tier: (verification?.tiers ?? []).find(item => item.tier === name) }))
+      .filter(item => item.weight > 0);
+    const bar = segments.map((item, index) =>
+      '<i style="flex:' + item.weight + ';background:' +
+      (index === 0 ? 'var(--accent-2)' : index === 1 ? 'var(--ok)' : 'var(--warn)') + '"></i>').join('');
+    const legend = segments.map((item, index) =>
+      '<span><i class="sw" style="background:' + (index === 0 ? 'var(--accent-2)' : index === 1 ? 'var(--ok)' : 'var(--warn)') + '"></i>' +
+      esc(tierNames[item.name] ?? item.name) + ' · 权重 ' + Math.round(item.weight * 100) + '% · 得分 ' +
+      (item.tier ? item.tier.score.toFixed(2) : '—') + '</span>').join('');
+
+    show('delivery-summary',
+      '<div class="card-head"><div class="row">' +
+      '<h2>' + esc(run.runId + ' · ' + runTitle(run)) + '</h2>' +
+      (verification ? badge(verification.passed ? '自动验收通过' : '自动验收阻塞', verification.passed ? 'good' : 'bad')
+        : badge('暂无最终验收')) + '</div>' +
+      '<span class="run-time">' + '最近一次已结束的运行' + '</span></div>' +
+      '<div class="stat-row">' +
+      tileOf('断言覆盖', assertion, coverage === undefined ? '' : coverage + '%', '') +
+      tileOf('综合验收得分', verification ? verification.score.toFixed(2) : '—', '/ 1.00', 'accent') +
+      tileOf('自愈循环轮次', run.iterations === undefined ? '—' : String(run.iterations), '轮', '') +
+      tileOf('总运行时长', run.finishedAt ? clock(run.finishedAt - run.startedAt) : '—', 'mm:ss', done ? 'ok' : '') +
+      '</div>' +
+      (verification ? '<div class="stack" style="gap:8px"><span class="verdict-bar">' + bar + '</span>' +
+        '<div class="legend">' + legend + '</div></div>' : '') +
+      (verification?.blockingReasons?.length
+        ? '<p class="caption">阻塞原因 · ' + esc(verification.blockingReasons.slice(0, 3).join(' | ')) + '</p>' : '') +
+      '<div class="row between"><a class="link" data-route href="' + runPath(run.runId) + '">查看任务执行</a>' +
+      (run.finishedAt ? '<a class="btn" href="/api/runs/' + esc(run.runId) + '/report" download>下载完整交付报告 (JSON)</a>' : '') +
+      '</div>');
+  }
+
+  /** Delivery evidence: tier evidence on the left, deliverables on the right. */
+  function renderDeliveryEvidence(run: NonNullable<DashboardData['run']>): string {
+    const verification = run.verification;
+    const tiers = verification?.tiers ?? [];
+    const patch = run.patch;
+    const left = tiers.map(tier => {
+      const tone = tier.passed ? 'good' : 'bad';
+      const head = '<div class="head"><div class="title"><h3>' + esc(tierNames[tier.tier] ?? tier.name) + '</h3></div>' +
+        '<div class="row"><span class="score">' + tier.score.toFixed(2) + ' 分</span>' + badge(tier.passed ? '通过准入' : '阻塞', tone) + '</div></div>';
+      let body = '';
+      if (tier.tier === 'Tier-1') {
+        const rules = verification?.ruleResults ?? [];
+        body = rules.length ? dataTable(['规则 ID', '验证描述', '状态', '得分'], rules.map(rule =>
+          '<tr><td><span class="mono">' + esc(rule.ruleId ?? rule.ruleName) + '</span></td>' +
+          '<td>' + esc(rule.message) + '</td>' +
+          '<td>' + badge(rule.passed ? 'PASS' : 'BLOCKED', rule.passed ? 'good' : 'bad') + '</td>' +
+          '<td class="run-score ' + (rule.score >= 0.9 ? 'ok' : rule.score > 0 ? 'warn' : 'bad') + '">' +
+          rule.score.toFixed(2) + '</td></tr>').join(''))
+          : empty('本运行没有 Tier-1 规则断言。');
+      } else if (tier.tier === 'Tier-2') {
+        const sandbox = verification?.sandboxTestResult;
+        body = '<div class="terminal"><div class="bar">SUITE: aether-rate-limiter-matrix' +
+          '<span>' + (sandbox?.passedCount ?? 0) + ' / ' + (sandbox?.totalCount ?? 0) + ' 断言 · exit ' +
+          (sandbox?.exitCode ?? '—') + '</span></div>' +
+          '<pre class="' + (sandbox?.passed ? '' : 'fail') + '">' + esc(sandbox?.output ?? '没有可展示的沙箱输出。') + '</pre></div>';
+      } else {
+        const reviews = verification?.auditorReviews ?? [];
+        body = reviews.length ? '<div class="stack">' + reviews.map(review =>
+          '<div class="note-row"><div class="top"><b>' + esc(agentName(review.agentId)) + '</b>' +
+          badge(review.approved ? '同意' : '拦截', review.approved ? 'good' : 'bad') + '</div>' +
+          '<p>' + esc(review.comments) + '</p></div>').join('') + '</div>'
+          : empty('本运行没有交叉审查记录。');
+      }
+      return '<section class="tier-card">' + head + body + '</section>';
+    }).join('') || empty('该运行没有三层验收记录。');
+
+    const bytes = patch?.patch ? Math.max(1, Math.round(new Blob([patch.patch]).size / 102.4) / 10) : 0;
+    const right =
+      '<section class="tier-card"><div class="head"><div class="title"><h3>交付物列表</h3></div>' +
+      '<span class="stamp plain">' + (patch?.patch ? '1 个补丁' : '无补丁') + '</span></div>' +
+      (patch?.patch
+        ? '<div class="artifact-row"><span class="glyph" aria-hidden="true">±</span>' +
+          '<div class="ident"><b>' + esc(patch.filePath) + '</b>' +
+          '<span>' + bytes.toFixed(1) + ' KB · +' + (patch.stats?.added ?? 0) + ' / -' + (patch.stats?.removed ?? 0) + ' 行</span></div>' +
+          '<span class="act"><button class="row-btn" type="button" data-tab="artifact">查看 Diff</button></span></div>'
+        : empty('本次运行没有可下载的补丁。')) +
+      '<div class="artifact-row"><span class="glyph ok" aria-hidden="true">≡</span>' +
+      '<div class="ident"><b>' + esc(run.runId + '-report.json') + '</b>' +
+      '<span>包含三层验收、执行事件与交付状态</span></div>' +
+      '<span class="act"><a class="row-btn primary" href="/api/runs/' + esc(run.runId) + '/report" download>下载</a></span></div>' +
+      '<div class="kv-grid">' +
+      kv('自愈轮次', run.iterations === undefined ? '—' : String(run.iterations), '', true) +
+      kv('事件条数', String((data?.events ?? []).length), '', true) +
+      '</div></section>' +
+      '<section class="tier-card"><div class="head"><div class="title"><h3>综合交付报告与归档</h3></div></div>' +
+      '<p class="caption">报告汇总三层规则集、回归仿真与审查共识；导出内容不包含模型密钥或系统提示。</p>' +
+      '<div class="row"><a class="btn primary" href="/api/runs/' + esc(run.runId) + '/report" download>下载完整交付报告 (JSON)</a>' +
+      '<button class="btn ghost" type="button" data-copy>复制 Markdown 摘要</button></div>' +
+      (verification ? '<div class="kv-grid">' +
+        kv('自动验收结论', verification.passed ? 'PASSED' : 'BLOCKED', verification.passed ? 'ok' : 'accent') +
+        kv('加权得分', verification.score.toFixed(2) + ' / 1.00', 'accent', true) + '</div>' : '') +
+      '</section>';
+
+    return '<div class="split-2"><div class="stack">' + left + '</div><div class="stack">' + right + '</div></div>';
+  }
+
+  function renderDeliveryTimeline(): string {
+    const events = (data?.events ?? []).slice(-40).reverse();
+    if (!events.length) return empty('当前没有可显示的运行事件。');
+    return '<ol class="timeline">' + events.map(event => {
+      const tone = event.kind === 'loop.iteration' ? 'loop' : event.tag === 'human' ? 'human'
+        : event.kind.startsWith('run') ? 'run' : 'node';
+      const label = eventNames[event.kind] ?? event.kind;
+      const meta = event.data?.agentId ? ' · ' + agentName(event.data.agentId) : '';
+      return '<li><time>' + time(event.at) + '</time>' +
+        '<span class="kind ' + tone + '">' + esc(label) + '</span>' +
+        '<p>' + esc(event.message) + '<span class="faint">' + esc(meta) + '</span></p></li>';
+    }).join('') + '</ol>';
   }
 
   function verification(result: VerificationResult): string {
@@ -541,6 +857,10 @@ export function dashboard(): void {
           '</div>' : '') + '</div>');
       return;
     }
+    if (page === 'delivery' && tab === 'verification') {
+      show(evidence, renderDeliveryEvidence(run));
+      return;
+    }
     if (tab === 'artifact') {
       const patch = run.patch?.patch;
       const draft = !run.verification?.passed || run.status !== 'completed' || !!run.humanDecision;
@@ -558,6 +878,7 @@ export function dashboard(): void {
       return;
     }
     if (tab === 'events') {
+      if (page === 'delivery') { show(evidence, renderDeliveryTimeline()); return; }
       show(evidence, !data?.events.length ? empty('当前没有可显示的运行事件。') :
         '<p class="small muted">此运行最近 ' + data.events.length + ' 条事件，最新在前。</p><ol class="log small">' +
         data.events.slice().reverse().map(event => {
@@ -616,45 +937,131 @@ export function dashboard(): void {
       return;
     }
     const s = snapshot.scheduler;
-    show('scheduler', '<div class="metrics">' + [
-      ['等待派发', s.queued], ['正在执行', s.running], ['累计派发', s.dispatches], ['重试', s.retried]
-    ].map(([label, value]) => '<div class="inset metric"><span class="muted small">' + esc(label) +
-      '</span><strong>' + esc(value) + '</strong></div>').join('') +
-      '</div><p class="small muted">优先级老化提权 ' + s.agingPromotions + ' 次 · 最长等待 ' + duration(s.maxObservedWaitMs) +
-      ' · 调度失败 ' + s.failed + ' 次</p>' +
-      (snapshot.pending.length ? '<ul class="plain-list small">' + snapshot.pending.map(item =>
-        '<li>' + esc(item.runId + ' · ' + nodeName(item.nodeId)) + ' · 优先级 ' + item.basePriority + ' → ' +
-        item.effectivePriority + ' · 已等待 ' + duration(Math.max(0, Date.now() - item.submittedAt)) + '</li>').join('') +
-        '</ul>' : '<p class="muted small">等待队列为空。并发运行全部案例可以观察队列和负载变化。</p>'));
+    const agents = snapshot.agents;
+    const capacity = agents.reduce((total, agent) => total + agent.max, 0);
+    const running = agents.reduce((total, agent) => total + agent.load, 0);
+    const waiters = snapshot.pending;
+    const averageWait = waiters.length
+      ? waiters.reduce((total, item) => total + Math.max(0, Date.now() - item.submittedAt), 0) / waiters.length
+      : s.maxObservedWaitMs;
+    get('sys-id').textContent = 'aether-local';
+    get('poll-label').textContent = '轮询间隔: 3s';
 
-    const roleIcons: Record<string, string> = { requirement_analyst: '≡', architect: '◇', developer: '⌘',
-      code_reviewer: '✓', security_auditor: '◈', critic: '⌕' };
-    show('team', snapshot.agents.map(agent => '<details id="agent-' + esc(agent.id) +
-      '" class="card agent"><summary><span class="agent-title"><span class="agent-icon" aria-hidden="true">' +
-      esc(roleIcons[agent.role] ?? '◇') + '</span><strong>' + esc(agent.name) + '</strong> ' +
-      badge(agent.load > 0 ? '运行中' : '空闲', agent.load > 0 ? 'active' : 'good') + '</span><span class="small muted">' +
-      esc(roles[agent.role] ?? agent.role) + ' · 并发 ' + agent.load + ' / ' + agent.max + '</span></summary>' +
-      '<progress value="' + agent.load + '" max="' + agent.max + '" aria-label="' + esc(agent.name) +
-      ' 并发负载"></progress><p class="small muted">配置 v' + esc(agent.version) + ' · ' + esc(agent.brain) +
-      ' · 累计 Token ' + agent.tokens.toLocaleString('zh-CN') + '</p><ul class="plain-list small">' +
-      Object.entries(agent.capabilities).map(([name, score]) => '<li>' + esc(capabilities[name] ?? name) +
-        ' · ' + pct(score) + '</li>').join('') + '</ul><p class="small muted">绑定工具 · ' +
-      esc(agent.toolIds.map(id => tools[id] ?? id).join('、') || '无') + '</p>' +
-      '<button class="link" type="button" data-agent-history="' + esc(agent.id) + '" data-focus="agent-history-' + esc(agent.id) +
-      '">查看 Agent 历史</button>' + agentHistory(agent.id) + '</details>').join(''));
+    const tile = (label: string, value: string, unit: string, ratio: number, tone = ''): string =>
+      '<div class="stat-tile ' + tone + '"><span class="label">' + esc(label) + '</span>' +
+      '<span class="value"><b>' + esc(value) + '</b><em>' + esc(unit) + '</em></span>' +
+      '<span class="bar"><i style="width:' + Math.max(0, Math.min(100, Math.round(ratio * 100))) + '%"></i></span></div>';
 
-    show('system', '<div class="workspace"><div class="panel"><h3>工具调用</h3><div class="stack">' +
-      (snapshot.tools.length ? '<ul class="plain-list small">' + snapshot.tools.map(tool => '<li>' +
-        esc(tools[tool.toolId] ?? tool.toolId) + ' · ' + tool.calls + ' 次调用 · 成功率 ' + pct(tool.reliability) +
-        '</li>').join('') + '</ul>' : '<p class="small muted">运行案例后展示工具调用统计。</p>') +
-      '<p class="small muted">知识库 · ' + snapshot.knowledgeChunks + ' 个索引分块</p></div></div>' +
-      '<div class="panel"><h3>提示词优化</h3><div class="stack">' +
-      (snapshot.optimizations.length ? snapshot.optimizations.slice().reverse().map((record, index) =>
-        '<details id="optimization-' + (snapshot.optimizations.length - index) + '-' + record.timestamp +
-        '" class="small"><summary>' + time(record.timestamp) + ' · ' + esc(agentName(record.agentId)) +
-        ' · 新增 ' + record.addedGuardrails.length + ' 条约束</summary><ul>' +
-        record.addedGuardrails.map(rule => '<li>' + esc(rule) + '</li>').join('') + '</ul></details>').join('') :
-        '<p class="small muted">当验证失败触发新的提示词约束时，这里会显示优化记录。</p>') + '</div></div></div>');
+    show('scheduler',
+      '<div class="head"><div class="title"><div><h2>调度器引擎</h2>' +
+      '<p class="caption">capacityKey 合并并发 · 优先级老化 · 依赖门控</p></div></div>' +
+      '<div class="chip-row"><span class="stamp">路由策略 LEAST_LOAD</span>' +
+      '<span class="stamp plain">已派发 ' + s.dispatches + ' · 老化提权 ' + s.agingPromotions + '</span></div></div>' +
+      '<div class="stat-row">' +
+      tile('并发上限', String(capacity), 'SLOTS', 1, '') +
+      tile('运行中', String(running), 'ACTIVE', capacity ? running / capacity : 0, 'ok') +
+      tile('排队任务', String(s.queued), 'QUEUED', capacity ? s.queued / capacity : 0, s.queued ? 'warn' : '') +
+      tile('平均等待', (averageWait / 1000).toFixed(1), 'SEC', Math.min(1, averageWait / Math.max(1, 5000)), 'accent') +
+      '</div>' +
+      (waiters.length
+        ? '<div class="queue-strip"><span class="lead">当前活跃队列: <b class="mono">#' + esc(waiters[0].nodeId) + '</b>' +
+          '<span class="stamp plain">' + esc(waiters[0].runId) + '</span>' +
+          'base ' + waiters[0].basePriority + ' → effective ' + waiters[0].effectivePriority +
+          '<span class="count">已等待 ' + duration(Math.max(0, Date.now() - waiters[0].submittedAt)) + '</span></span>' +
+          '<span class="run-time">' + (s.failed ? '调度失败 ' + s.failed + ' 次' : '无调度失败') + '</span></div>'
+        : '<div class="queue-strip"><span class="lead">队列空闲 · 所有就绪任务已派发' +
+          '<span class="count">最长等待 ' + duration(s.maxObservedWaitMs) + '</span></span>' +
+          '<span class="run-time">并发运行全部案例可以观察队列与负载变化</span></div>'));
+
+    get('team-count').textContent = agents.length + ' 个注册节点';
+    get('team-legend').innerHTML = '<span><i class="busy"></i>运行中 (' + agents.filter(agent => agent.load > 0).length + ')</span>' +
+      '<span><i class="ok"></i>空闲就绪 (' + agents.filter(agent => agent.load === 0).length + ')</span>' +
+      '<span><i></i>累计 Token ' + Math.round(agents.reduce((total, agent) => total + agent.tokens, 0) / 1000) + 'k</span>';
+
+    show('team', agents.map(agent => {
+      const busy = agent.load > 0;
+      const score = Math.max(0, ...Object.values(agent.capabilities));
+      const initials = agent.name.slice(0, 1).toUpperCase();
+      const ratio = agent.max ? agent.load / agent.max : 0;
+      return '<article class="agent-tile ' + (busy ? 'busy' : 'idle') + '">' +
+        '<div class="top"><span class="avatar" aria-hidden="true">' + esc(initials) + '</span>' +
+        '<div class="ident"><strong>' + esc(agent.name) + '</strong>' +
+        '<span>' + esc(roles[agent.role] ?? agent.role) + ' · v' + esc(agent.version) + '</span></div>' +
+        '<span class="status">' + (busy
+          ? '<span class="pill running"><i class="dot"></i>运行中</span>'
+          : '<span class="pill done"><i class="dot"></i>空闲就绪</span>') + '</span></div>' +
+        '<div class="score"><div class="row"><span>能力评分</span><b>' + (score * 10).toFixed(1) + ' / 10</b></div>' +
+        '<span class="track"><i style="width:' + Math.round(score * 100) + '%"></i></span></div>' +
+        '<dl class="mini"><div><dt>并发槽位</dt><dd>' + agent.load + ' / ' + agent.max + '</dd></div>' +
+        '<div><dt>累计 Token</dt><dd>' + (agent.tokens >= 1000 ? (agent.tokens / 1000).toFixed(1) + 'k' : agent.tokens) + '</dd></div></dl>' +
+        '<div class="foot"><span>' + esc((agent.toolIds.length ? agent.toolIds.length + ' 个工具' : '无工具') + ' · ' +
+          (agent.brain.includes('llm') || agent.brain.includes('Configured') ? 'LLM' : '确定性')) + '</span>' +
+        '<button class="link" type="button" data-agent-history="' + esc(agent.id) + '" data-focus="agent-history-' +
+        esc(agent.id) + '">调阅历史</button></div></article>';
+    }).join('') || empty('当前服务没有注册 Agent。'));
+
+    show('system', '<div class="cockpit-card"><div class="head"><div class="title"><div>' +
+      '<h2>工具调用统计</h2><p class="caption">本次进程生命周期内累计 · 知识库 ' +
+      snapshot.knowledgeChunks + ' 个索引分块</p></div></div></div>' +
+      (snapshot.tools.length
+        ? dataTable(['工具名称', '调用次数', '成功率', '状态'], snapshot.tools.map(tool =>
+          '<tr><td><span class="mono">' + esc(tool.toolId) + '</span>' +
+          '<p class="caption">' + esc(tools[tool.toolId] ?? '') + '</p></td>' +
+          '<td class="run-score">' + tool.calls + '</td>' +
+          '<td class="run-score ' + (tool.reliability >= 0.9 ? 'ok' : tool.reliability >= 0.7 ? 'warn' : 'bad') + '">' +
+          pct(tool.reliability) + '</td>' +
+          '<td>' + badge(tool.reliability >= 0.9 ? '稳定' : '需关注', tool.reliability >= 0.9 ? 'good' : 'warn') + '</td></tr>').join(''))
+        : empty('运行一次案例后这里会显示工具调用统计。')) + '</div>');
+
+    show('optimizations', '<div class="cockpit-card"><div class="head"><div class="title"><div>' +
+      '<h2>提示词优化</h2><p class="caption">失败规则触发的自愈约束（幂等追加）</p></div></div>' +
+      '<span class="stamp plain">' + snapshot.optimizations.length + ' 条</span></div>' +
+      (snapshot.optimizations.length
+        ? '<div class="stack">' + snapshot.optimizations.slice().reverse().slice(0, 6).map(record =>
+          '<div class="note-row"><div class="top"><b>' + esc(agentName(record.agentId)) + '</b>' +
+          '<span>' + time(record.timestamp) + '</span></div>' +
+          '<p>新增 ' + record.addedGuardrails.length + ' 条约束 · ' +
+          esc(record.addedGuardrails.join(' / ').slice(0, 120)) + '</p></div>').join('') + '</div>'
+        : empty('当验证失败触发新的提示词约束时，这里会显示优化记录。')) + '</div>');
+  }
+
+  /** Stable content fingerprint of the effective policy (FNV-1a, display only). */
+  function fingerprint(value: unknown): string {
+    const text = JSON.stringify(value);
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < text.length; i++) {
+      hash ^= text.charCodeAt(i);
+      hash = (hash + ((hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24))) >>> 0;
+    }
+    const hex = hash.toString(16).padStart(8, '0');
+    return hex.slice(0, 4) + ' ' + hex.slice(4, 8);
+  }
+
+  function kv(label: string, value: string, tone = '', mono = false): string {
+    const cls = [tone, mono ? 'mono' : ''].filter(Boolean).join(' ');
+    return '<div class="kv"><dt>' + esc(label) + '</dt><dd' + (cls ? ' class="' + cls + '"' : '') + '>' + value + '</dd></div>';
+  }
+
+  function dataTable(head: string[], body: string): string {
+    return '<div class="table-wrap"><table class="runs-table compact"><thead><tr>' +
+      head.map(item => '<th>' + esc(item) + '</th>').join('') +
+      '</tr></thead><tbody>' + body + '</tbody></table></div>';
+  }
+
+  function calibCard(title: string, caption: string, stamp: string, body: string): string {
+    return '<section class="calib-card"><div class="calib-head">' +
+      '<div class="ident"><div><h3>' + esc(title) + '</h3>' +
+      (caption ? '<p class="caption">' + esc(caption) + '</p>' : '') + '</div></div>' +
+      (stamp ? '<span class="stamp">' + esc(stamp) + '</span>' : '') +
+      '</div><div class="calib-body">' + body + '</div></section>';
+  }
+
+  function flowBudgetTable(policy: DashboardData['settings']): string {
+    return dataTable(['任务', '版本', '执行预算', '自愈轮数'], policy.workflows.map(flow =>
+      '<tr><td>' + esc(taskName(flow.taskId)) + '</td>' +
+      '<td><span class="run-time">v' + esc(flow.version) + '</span></td>' +
+      '<td class="run-time">' + (flow.timeoutMs ? duration(flow.timeoutMs) : '—') + '</td>' +
+      '<td class="run-score">' + Math.max(0, ...flow.loopLimits) + ' 轮</td></tr>').join(''));
   }
 
   function renderSettings(snapshot: DashboardData): void {
@@ -662,44 +1069,99 @@ export function dashboard(): void {
     for (const button of document.querySelectorAll<HTMLElement>('[data-settings]')) {
       button.setAttribute('aria-pressed', String(button.dataset.settings === settingsTab));
     }
+
+    const live = !snapshot.llm.label.startsWith('offline');
+    const runtime = snapshot.runtime;
+    get('settings-stamp').innerHTML = '<i class="dot"></i>STRICT_READONLY<span class="sep">|</span>ENV: ' +
+      (live ? 'LIVE' : 'OFFLINE');
+    get('settings-lock').textContent = snapshot.persistentStorage ? '数据目录加锁' : '内存模式';
+    get('settings-digest').textContent = fingerprint(policy);
+    get('settings-uptime').textContent = 'UPTIME · ' + duration(runtime?.uptimeMs ?? 0);
+    get('settings-memory').textContent = 'RSS ' + megabytes(runtime?.rss ?? 0);
+
     if (settingsTab === 'tools') {
-      show('settings-policy', '<h2>工具权限与超时</h2><p class="small muted">Agent 的工具权限由角色绑定。工作流工具由服务端模板指定。</p>' +
-        '<ul class="plain-list record-list">' + policy.tools.map(tool => {
-          const bindings = snapshot.agents.filter(agent => agent.toolIds.includes(tool.id)).map(agent => agent.name);
-          return '<li><div class="row between"><strong>' + esc(tools[tool.id] ?? tool.id) + '</strong>' +
-            (tool.timeoutMs ? badge(duration(tool.timeoutMs)) : '') + '</div><p class="muted small">' + esc(tool.description) +
-            '</p><p class="small">' + esc(bindings.length ? '已绑定 · ' + bindings.join('、') : '暂无 Agent 绑定') + '</p></li>';
-        }).join('') + '</ul>');
+      const rows = policy.tools.map(tool => {
+        const bound = snapshot.agents.filter(agent => agent.toolIds.includes(tool.id)).length;
+        return '<tr><td><span class="mono">' + esc(tool.id) + '</span>' +
+          '<p class="caption">' + esc(tool.description) + '</p></td>' +
+          '<td>' + (bound ? bound + ' 个 Agent' : '未绑定') + '</td>' +
+          '<td class="run-time">' + (tool.timeoutMs ? duration(tool.timeoutMs) : '—') + '</td>' +
+          '<td>' + (tool.isSandboxed ? '隔离进程' : '进程内') + '</td>' +
+          '<td>' + badge(bound ? '运行时就绪' : '待绑定', bound ? 'good' : '') + '</td></tr>';
+      }).join('');
+      show('settings-policy',
+        calibCard('工具权限矩阵', policy.tools.length + ' 项本地及沙盒运行时工具已校验并登记',
+          'SANDBOX: ' + (policy.tools.some(tool => tool.isSandboxed) ? 'ISOLATED' : 'IN_PROCESS'),
+          dataTable(['工具标识', '授权作用域', '调用时限', '隔离级别', '状态'], rows)) +
+        calibCard('权限模型', 'Agent、团队与平台策略的交集决定一次调用是否放行', 'ACL_INTERSECTION',
+          '<div class="kv-grid">' +
+          kv('判定顺序', 'Agent 白名单 → 团队白名单 → 平台策略', '', false) +
+          kv('越权行为', '拒绝并记录 tool.denied 事件', 'accent', false) +
+          '</div>'));
       return;
     }
+
     if (settingsTab === 'strategy') {
-      show('settings-policy', '<h2>执行策略</h2><div class="metrics">' +
-        metric('并发运行上限', String(policy.maxConcurrentRuns)) +
-        metric('调度等待上限', duration(policy.scheduler.maxWaitMs)) +
-        metric('节点重试上限', String(policy.scheduler.maxRetries)) + '</div>' +
-        '<h3>工作流预算</h3><ul class="plain-list record-list">' + policy.workflows.map(flow => '<li>' +
-          esc(taskName(flow.taskId)) + ' · v' + esc(flow.version) +
-          (flow.timeoutMs ? ' · ' + duration(flow.timeoutMs) : '') + ' · 自愈最多 ' + Math.max(...flow.loopLimits, 0) +
-          ' 轮</li>').join('') + '</ul>');
+      const threshold = Math.max(0, ...(data?.tasks ?? []).flatMap(task =>
+        task.workflow.nodes.map(node => node.selfLoopConfig?.convergenceThreshold ?? 0)));
+      show('settings-policy',
+        calibCard('执行策略', '自主代理协同收敛、并发上限及回归阻断阀门', 'CONTROL_LOCK: ENGAGED',
+          '<div class="kv-grid">' +
+          kv('最大并发运行 (Concurrency)', String(policy.maxConcurrentRuns), '', true) +
+          kv('老化时间常数 (τ)', policy.scheduler.agingIntervalMs + ' ms', '', true) +
+          kv('调度等待上限', duration(policy.scheduler.maxWaitMs), '', true) +
+          kv('节点重试上限', String(policy.scheduler.maxRetries), '', true) +
+          kv('收敛阈值 (Convergence)', threshold ? threshold.toFixed(2) : '—', 'accent', true) +
+          kv('回归保护 (regressionGuard)', 'ENGAGED · 交付历史最佳', 'ok', false) +
+          '</div>') +
+        calibCard('工作流预算', '每个固定版本声明的时间与轮次上限', 'BUDGET_ENFORCED', flowBudgetTable(policy)));
       return;
     }
+
     if (settingsTab === 'runtime') {
       const { project, ready, reason } = snapshot.repository;
-      show('settings-policy', '<h2>运行环境</h2><ul class="plain-list record-list">' +
-        '<li><strong>历史存储</strong><p class="muted">' + (snapshot.persistentStorage ? '本地持久化已启用' : '当前服务进程内存') +
-        '</p></li><li><strong>固定 Git 仓库</strong><p class="muted">' + esc(project ? project.title + ' · ' + project.filePath : '未配置') +
-        '</p>' + (project ? '<p><code>' + esc(project.revision) + '</code></p>' : '') +
-        (ready || !reason ? '' : '<p class="muted">' + esc(reason) + '</p>') + '</li>' +
-        (project ? '<li><strong>固定验收镜像</strong><p class="muted"><code>' + esc(project.runnerImage) + '</code></p></li>' : '') + '</ul>');
+      const rows: Array<[string, string, string]> = [
+        ['控制台端口 (AETHER_PORT)', location.port || '80', '启动参数 --port'],
+        ['数据目录 (AETHER_DATA_DIR)', snapshot.persistentStorage ? '已启用 · 原子写入' : '内存模式 · 重启丢失', '环境变量'],
+        ['模型端点', snapshot.llm.label, '环境变量 / --base-url'],
+        ['固定 Git 仓库', project ? project.filePath : '未配置', 'AETHER_PROJECT_REPO'],
+        ['固定基线提交', project ? project.revision.slice(0, 12) : '—', 'AETHER_PROJECT_BASE'],
+        ['固定验收镜像', project ? project.runnerImage.slice(0, 26) + '…' : '—', 'AETHER_RUNNER_IMAGE'],
+        ['定义库 / 工作流', (runtime ? runtime.agents + runtime.teams : 0) + ' 项 / ' +
+          (runtime ? runtime.workflows : 0) + ' 项', '本地 JSON 存储']
+      ];
+      show('settings-policy',
+        calibCard('运行环境', '宿主与守护进程参数清单（只读）', live ? 'ENV: PRODUCTION' : 'ENV: LOCAL',
+          dataTable(['配置项 / 环境变量名', '当前生效值', '参数来源'], rows.map(row =>
+            '<tr><td><span class="mono">' + esc(row[0]) + '</span></td>' +
+            '<td class="run-time">' + esc(row[1]) + '</td>' +
+            '<td class="run-time">' + esc(row[2]) + '</td></tr>').join(''))) +
+        calibCard('不可变约束', '部署侧改动的影响范围', 'CLUSTER_ADMIN_IMMUTABLE',
+          '<div class="kv-grid">' +
+          kv('修改必须重启服务', '端口、模型与数据目录均来自启动参数', '', false) +
+          kv('端口变化', '会话 Cookie 失效，需要重新登录', 'accent', false) +
+          '</div>' + (ready || !reason ? '' :
+            '<p class="caption">' + esc(reason) + '</p>')));
       return;
     }
-    show('settings-policy', '<div class="row between"><h2>当前推理模式</h2>' +
-      badge(policy.model ? 'Live 模式' : '离线演示', policy.model ? 'active' : '') + '</div><div class="inset">' +
-      '<strong>' + esc(snapshot.llm.label) + '</strong>' +
-      (policy.model ? '<p class="muted small">' + (policy.model.strict ? '严格 Live，失败即停止' : '允许离线降级') + '</p>' +
-        (policy.model.timeoutMs === undefined ? '' : '<p class="muted small">单次请求超时 ' + duration(policy.model.timeoutMs) +
-          ' · 最多重试 ' + policy.model.maxRetries + ' 次 · 输出上限 ' + policy.model.maxTokens + ' Token</p>') : '') +
-      '</div><p class="small muted">通过服务启动参数配置模型，重启后生效。启动时不启用 Live 将使用确定性 Agent。</p>');
+
+    const [engine, endpoint] = snapshot.llm.label.split(' @ ');
+    const model = policy.model;
+    const telemetry = snapshot.llm.telemetry;
+    show('settings-policy',
+      calibCard('模型 · LLM 配置', '主推理大脑网络连接参数及流水线容灾设定',
+        model ? 'ENGINE: ACTIVE' : 'ENGINE: OFFLINE',
+        '<div class="kv-grid">' +
+        kv('模型代号 (Model ID)', esc(engine), '', true) +
+        kv('API 端点 (Base URL)', esc(endpoint ?? (model ? '—' : '离线确定性大脑 · 不联网')), '', true) +
+        kv('单次请求超时 (Timeout)', model?.timeoutMs ? duration(model.timeoutMs) : '—', '', true) +
+        kv('回退策略 (Fallback)', model ? (model.strict ? '关闭 · 严格模式' : '启用 · 允许降级') : '离线大脑',
+          model ? (model.strict ? 'accent' : 'ok') : '') +
+        kv('遥测探针 (Telemetry)', telemetry ? '开启 · ' + telemetry.calls + ' 次调用' : '关闭 (OPT_OUT)',
+          telemetry ? 'ok' : '') +
+        kv('输出与重试上限', model ? model.maxTokens + ' Token · ' + model.maxRetries + ' 次' : '—', '', true) +
+        '</div>') +
+      calibCard('决断流水线拓扑定义', '每个任务的固定 DAG 预算', 'DETERMINISTIC_DAG', flowBudgetTable(policy)));
   }
 
   function agentHistory(id: string): string {
@@ -880,6 +1342,15 @@ export function dashboard(): void {
   }
 
   get('run-all').addEventListener('click', () => void start('all'));
+  get('refresh-view').addEventListener('click', () => void refresh());
+  get('project-sample').addEventListener('click', () => {
+    const goal = get<HTMLTextAreaElement>('project-goal');
+    if (!goal.value.trim()) {
+      goal.value = '修复限流器容量、补充速率和令牌参数的边界校验，保证 consume() 拒绝非有限数值，并保留正常补充行为。';
+    }
+    goal.focus();
+    notice('已填入示例任务目标，可继续编辑后提交。');
+  });
   get<HTMLButtonElement>('sign-out').addEventListener('click', async event => {
     const button = event.currentTarget as HTMLButtonElement;
     button.disabled = true;
@@ -947,6 +1418,15 @@ export function dashboard(): void {
     if (action.tab) {
       tab = action.tab;
       render();
+    }
+    if (action.runsTab) {
+      runsTab = action.runsTab as 'all' | 'active' | 'done';
+      renderRuns();
+      return;
+    }
+    if (action.cancelRun) {
+      void decide(action.cancelRun);
+      return;
     }
     const run = data?.run;
     if (!run || run.runId !== requestedRun) return;

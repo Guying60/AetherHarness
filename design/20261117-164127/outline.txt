@@ -1,0 +1,595 @@
+FRAME 9:3513 "Main" 1040×1909
+FRAME9:3513 "Main" [2995,2271 1040×1909] bg=#f8f9ff r=0 flex=VERTICAL pad=56,16,12,16 ASSET=agent_20261117-164127.assets/node_9_3513.png
+  FRAME9:3514 "Container" [3011,2327 1008×1841] r=0 flex=VERTICAL pad=0,0,24,0
+    FRAME9:3515 "Top Operational Subheader / Telemetry HUD Strip:margin" [3011,2327 1008×74] r=0 flex=VERTICAL pad=0,0,12,0
+      FRAME9:3516 "Top Operational Subheader / Telemetry HUD Strip" [3011,2327 1008×62] bg=#ffffff r=8 flex=HORIZONTAL gap=387 pad=12,12,12,12 fx=drop:2
+        FRAME9:3517 "Container" [3023,2339 198×38] r=0 flex=HORIZONTAL gap=12
+          FRAME9:3518 "Background" [3023,2340 36×36] bg=#e3dfff r=2 flex=HORIZONTAL ASSET=agent_20261117-164127.assets/icon_9_3518.svg
+            FRAME9:3519 "Container" [3031,2353 20×10] r=0 flex=VERTICAL
+              VECTOR9:3520 "Icon" [3031,2353 20×10] bg=#2a14b4 r=0
+          FRAME9:3521 "Container" [3071,2339 150×38] r=0 flex=VERTICAL
+            FRAME9:3522 "Container" [3071,2339 150×24] r=0 flex=HORIZONTAL gap=8
+              FRAME9:3523 "Heading 1" [3071,2339 35×24] r=0 flex=VERTICAL
+                TEXT9:3524 "Text" [3071,2339 35×24] bg=#0b1c30 TEXT("团队") 600/18px lh=24 ls=-0.45 color=
+              FRAME9:3525 "Background" [3114,2343 80×16] bg=#e3dfff r=2 flex=VERTICAL pad=2,8,2,8
+                TEXT9:3526 "Text" [3122,2345 64×12] bg=#2a14b4 TEXT("STAGE-PROD") 500/10px lh=12 ls=0.40 color=
+            FRAME9:3527 "Container" [3071,2363 150×14] r=0 flex=VERTICAL
+              TEXT9:3528 "Text" [3071,2363 150×14] bg=#464554 TEXT("成员顺序 · 交接规则 · 能力路由") 500/11px lh=14 color=
+        FRAME9:3529 "Cluster Right Telemetry" [3608,2344 399×28] r=0 flex=HORIZONTAL gap=12
+          FRAME9:3530 "Background" [3608,2344 235×28] bg=#eff4ff r=2 flex=HORIZONTAL gap=8 pad=6,12,6,12
+            RECTANGLE9:3531 "Background" [3620,2354 8×8] bg=#4338ca r=12
+            FRAME9:3532 "Container" [3636,2350 195×16] r=0 flex=VERTICAL
+              TEXT9:3533 "Text" [3636,2350 195×16] bg=#0b1c30 TEXT("ORCH-CLUSTER-09 // ONLINE") 600/12px lh=16 ls=0.60 color=
+          FRAME9:3534 "Container" [3855,2352 152×12] r=0 flex=HORIZONTAL gap=12
+            FRAME9:3535 "Container" [3855,2352 58×12] r=0 flex=VERTICAL
+              TEXT9:3536 "Text" [3855,2352 58×12] bg=#777586 TEXT("SYNC 14ms") 500/10px lh=12 ls=0.40 color=
+            FRAME9:3537 "Container" [3925,2352 6×12] r=0 flex=VERTICAL
+              TEXT9:3538 "Text" [3925,2352 6×12] bg=#777586 TEXT("•") 500/10px lh=12 ls=0.40 color=
+            FRAME9:3539 "Container" [3943,2352 64×12] r=0 flex=VERTICAL
+              TEXT9:3540 "Text" [3943,2352 64×12] bg=#777586 TEXT("QUORUM 4/4") 500/10px lh=12 ls=0.40 color=
+    FRAME9:3541 "Master Split Layout: Left Rail (270px fixed equivalent) + Right Flight Desk Editor" [3011,2401 1008×1743] r=0 flex=GRID
+      FRAME9:3542 "LEFT RAIL: Orchestration Team Registry (Col 1-3)" [3011,2401 243×470] r=0 flex=VERTICAL gap=12
+        FRAME9:3543 "Registry Box" [3011,2401 243×320] bg=#ffffff r=8 flex=VERTICAL gap=8 pad=12,12,12,12 fx=drop:2
+          FRAME9:3544 "Container" [3023,2413 219×20] r=0 flex=HORIZONTAL gap=86
+            FRAME9:3545 "Container" [3023,2413 88×20] r=0 flex=VERTICAL
+              TEXT9:3546 "Text" [3023,2413 88×20] bg=#0b1c30 TEXT("编排团队列表") 600/15px lh=20 ls=-0.38 color=
+            FRAME9:3547 "Background" [3196,2415 46×16] bg=#e5eeff r=2 flex=VERTICAL pad=2,6,2,6
+              TEXT9:3548 "Text" [3202,2417 34×12] bg=#464554 TEXT("3 活跃") 500/10px lh=12 ls=0.40 color=
+          FRAME9:3549 "Search Filter" [3023,2441 219×30] r=0 flex=VERTICAL
+            FRAME9:3550 "Input" [3023,2441 219×30] bg=#eff4ff r=2 flex=HORIZONTAL pad=6,8,6,32 fx=inner:4
+              FRAME9:3551 "Container" [3055,2447 179×18] r=0 flex=VERTICAL pad=0,0,2,0
+                TEXT9:3552 "按名称、Slug 或版本筛选..." [3055,2447 179×16] bg=#777586 TEXT("按名称、Slug 或版本筛选...") 400/13px lh=16 color=
+            VECTOR9:3553 "Icon" [3035,2451 12×12] bg=#777586 r=0 ASSET=agent_20261117-164127.assets/icon_9_3553.svg
+          FRAME9:3554 "Team Items" [3023,2479 219×184] r=0 flex=VERTICAL gap=6 pad=4,0,0,0
+            FRAME9:3555 "Item 1: Active" [3023,2483 219×56] bg=#e5eeff r=4 flex=VERTICAL gap=4 pad=10,10,10,10
+              FRAME9:3556 "Container" [3033,2493 199×18] r=0 flex=HORIZONTAL gap=68
+                FRAME9:3557 "Container" [3033,2493 87×18] r=0 flex=HORIZONTAL gap=6
+                  FRAME9:3558 "Container" [3033,2494 16×15] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_3558.svg
+                    VECTOR9:3559 "Icon" [3033,2494 16×15] bg=#2a14b4 r=0
+                  FRAME9:3560 "Container" [3055,2493 65×18] r=0 flex=VERTICAL
+                    TEXT9:3561 "Text" [3055,2493 65×18] bg=#2a14b4 TEXT("限流交付队") 600/13px lh=18 color=
+                FRAME9:3562 "Background" [3188,2493 44×12] bg=#ffffff r=2 flex=VERTICAL pad=0,6,0,6
+                  TEXT9:3563 "Text" [3194,2493 32×12] bg=#2a14b4 TEXT("rev.2") 500/10px lh=12 ls=0.40 color=
+              FRAME9:3564 "Container" [3033,2515 199×14] r=0 flex=HORIZONTAL gap=51 pad=0,0,0,20
+                FRAME9:3565 "Container" [3053,2515 85×14] r=0 flex=VERTICAL
+                  TEXT9:3566 "Text" [3053,2515 85×14] bg=#464554 TEXT("rl-delivery-team") 500/11px lh=14 color=
+                FRAME9:3567 "Container" [3189,2515 43×14] r=0 flex=HORIZONTAL gap=4
+                  RECTANGLE9:3568 "Background" [3189,2519 6×6] bg=#4338ca r=12
+                  TEXT9:3569 "Text" [3199,2515 33×14] bg=#2a14b4 TEXT("运行中") 500/11px lh=14 color=
+              RECTANGLE9:3570 "Background" [3023,2483 4×56] bg=#2a14b4 r=0
+            FRAME9:3571 "Item 2" [3023,2545 219×56] bg=#ffffff r=4 flex=VERTICAL gap=4 pad=10,10,10,10
+              FRAME9:3572 "Container" [3033,2555 199×18] r=0 flex=HORIZONTAL gap=81
+                FRAME9:3573 "Container" [3033,2555 69×18] r=0 flex=HORIZONTAL gap=6
+                  FRAME9:3574 "Container" [3033,2557 11×13] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_3574.svg
+                    VECTOR9:3575 "Icon" [3033,2557 11×13] bg=#777586 r=0
+                  FRAME9:3576 "Container" [3050,2555 52×18] r=0 flex=VERTICAL
+                    TEXT9:3577 "Text" [3050,2555 52×18] bg=#0b1c30 TEXT("审计小队") 600/13px lh=18 color=
+                FRAME9:3578 "Background" [3188,2555 44×12] bg=#e5eeff r=2 flex=VERTICAL pad=0,6,0,6
+                  TEXT9:3579 "Text" [3194,2555 32×12] bg=#777586 TEXT("rev.1") 500/10px lh=12 ls=0.40 color=
+              FRAME9:3580 "Container" [3033,2577 199×14] r=0 flex=HORIZONTAL gap=59 pad=0,0,0,20
+                FRAME9:3581 "Container" [3053,2577 88×14] r=0 flex=VERTICAL
+                  TEXT9:3582 "Text" [3053,2577 88×14] bg=#464554 TEXT("audit-sentinel-v1") 500/11px lh=14 color=
+                FRAME9:3583 "Container" [3200,2577 32×14] r=0 flex=HORIZONTAL gap=4
+                  RECTANGLE9:3584 "Background" [3200,2581 6×6] bg=#777586 r=12
+                  TEXT9:3585 "Text" [3210,2577 22×14] bg=#777586 TEXT("挂起") 500/11px lh=14 color=
+            FRAME9:3586 "Item 3" [3023,2607 219×56] bg=#ffffff r=4 flex=VERTICAL gap=4 pad=10,10,10,10
+              FRAME9:3587 "Container" [3033,2617 199×18] r=0 flex=HORIZONTAL gap=68
+                FRAME9:3588 "Container" [3033,2617 84×18] r=0 flex=HORIZONTAL gap=6
+                  FRAME9:3589 "Container" [3033,2619 13×13] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_3589.svg
+                    VECTOR9:3590 "Icon" [3033,2619 13×13] bg=#0058be r=0
+                  FRAME9:3591 "Container" [3052,2617 65×18] r=0 flex=VERTICAL
+                    TEXT9:3592 "Text" [3052,2617 65×18] bg=#0b1c30 TEXT("应急自愈组") 600/13px lh=18 color=
+                FRAME9:3593 "Background" [3188,2617 44×12] bg=#e5eeff r=2 flex=VERTICAL pad=0,6,0,6
+                  TEXT9:3594 "Text" [3194,2617 32×12] bg=#0058be TEXT("rev.3") 500/10px lh=12 ls=0.40 color=
+              FRAME9:3595 "Container" [3033,2639 199×14] r=0 flex=HORIZONTAL gap=71 pad=0,0,0,20
+                FRAME9:3596 "Container" [3053,2639 76×14] r=0 flex=VERTICAL
+                  TEXT9:3597 "Text" [3053,2639 76×14] bg=#464554 TEXT("healing-squad") 500/11px lh=14 color=
+                FRAME9:3598 "Container" [3200,2639 32×14] r=0 flex=HORIZONTAL gap=4
+                  RECTANGLE9:3599 "Background" [3200,2643 6×6] bg=#2170e4 r=12
+                  TEXT9:3600 "Text" [3210,2639 22×14] bg=#0058be TEXT("运行") 500/11px lh=14 color=
+          FRAME9:3601 "Button - Add Team CTA:margin" [3023,2671 219×38] r=0 flex=VERTICAL pad=8,0,0,0
+            FRAME9:3602 "Button - Add Team CTA" [3023,2679 219×30] bg=#eff4ff r=2 flex=HORIZONTAL gap=4 pad=6,12,6,12
+              FRAME9:3603 "Container" [3100,2689 9×9] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_3603.svg
+                VECTOR9:3604 "Icon" [3100,2689 9×9] bg=#0b1c30 r=0
+              FRAME9:3605 "Container" [3113,2685 52×18] r=0 flex=VERTICAL
+                TEXT9:3606 "Text" [3113,2685 52×18] bg=#0b1c30 TEXT("新建团队") 500/13px lh=18 color=
+        FRAME9:3607 "Execution Specification HUD Well" [3011,2733 243×138] bg=#ffffff r=8 flex=VERTICAL gap=10 pad=12,12,12,12 fx=drop:2
+          FRAME9:3608 "Container" [3023,2745 219×16] r=0 flex=HORIZONTAL gap=131 pad=0,0,4,0
+            FRAME9:3609 "Container" [3023,2745 74×12] r=0 flex=VERTICAL
+              TEXT9:3610 "Text" [3023,2745 74×12] bg=#777586 TEXT("运行时配置约束") 600/10px lh=12 ls=0.50 color=
+            FRAME9:3611 "Container" [3231,2745 11×11] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_3611.svg
+              VECTOR9:3612 "Icon" [3231,2745 11×11] bg=#777586 r=0
+          FRAME9:3613 "Container" [3023,2771 219×88] r=0 flex=VERTICAL gap=8
+            FRAME9:3614 "Background" [3023,2771 219×24] bg=#eff4ff r=2 flex=HORIZONTAL gap=22 pad=4,8,4,8
+              FRAME9:3615 "Container" [3031,2776 44×14] r=0 flex=VERTICAL
+                TEXT9:3616 "Text" [3031,2776 44×14] bg=#464554 TEXT("拓扑模式") 500/11px lh=14 color=
+              FRAME9:3617 "Container" [3097,2775 137×16] r=0 flex=VERTICAL
+                TEXT9:3618 "Text" [3097,2775 137×16] bg=#0b1c30 TEXT("Strict Directed DAG") 600/12px lh=16 color=
+            FRAME9:3619 "Background" [3023,2803 219×24] bg=#eff4ff r=2 flex=HORIZONTAL gap=73 pad=4,8,4,8
+              FRAME9:3620 "Container" [3031,2808 44×14] r=0 flex=VERTICAL
+                TEXT9:3621 "Text" [3031,2808 44×14] bg=#464554 TEXT("沙箱隔离") 500/11px lh=14 color=
+              FRAME9:3622 "Container" [3148,2807 86×16] r=0 flex=VERTICAL
+                TEXT9:3623 "Text" [3148,2807 86×16] bg=#0b1c30 TEXT("eBPF Level 2") 600/12px lh=16 color=
+            FRAME9:3624 "Background" [3023,2835 219×24] bg=#eff4ff r=2 flex=HORIZONTAL gap=73 pad=4,8,4,8
+              FRAME9:3625 "Container" [3031,2840 44×14] r=0 flex=VERTICAL
+                TEXT9:3626 "Text" [3031,2840 44×14] bg=#464554 TEXT("交接协议") 500/11px lh=14 color=
+              FRAME9:3627 "Container" [3148,2839 86×16] r=0 flex=VERTICAL
+                TEXT9:3628 "Text" [3148,2839 86×16] bg=#2a14b4 TEXT("v3-ProtoJSON") 600/12px lh=16 color=
+      FRAME9:3629 "RIGHT MAIN EDITOR WORKSPACE (Col 4-12)" [3266,2401 753×1739] r=0 flex=VERTICAL gap=12
+        FRAME9:3630 "Section Header & Actions Flight Deck" [3266,2401 753×64] bg=#ffffff r=8 flex=HORIZONTAL gap=36 pad=12,12,12,12 fx=drop:2
+          FRAME9:3631 "Container" [3278,2413 353×40] r=0 flex=HORIZONTAL gap=12
+            FRAME9:3632 "Background" [3278,2413 40×40] bg=#e5eeff r=4 flex=HORIZONTAL ASSET=agent_20261117-164127.assets/icon_9_3632.svg
+              FRAME9:3633 "Container" [3289,2425 18×17] r=0 flex=VERTICAL
+                VECTOR9:3634 "Icon" [3289,2425 18×17] bg=#4338ca r=0
+            FRAME9:3635 "Container" [3330,2413 301×40] r=0 flex=VERTICAL gap=2
+              FRAME9:3636 "Container" [3330,2413 301×24] r=0 flex=HORIZONTAL gap=8
+                FRAME9:3637 "Container" [3330,2413 89×24] r=0 flex=VERTICAL
+                  TEXT9:3638 "Text" [3330,2413 89×24] bg=#0b1c30 TEXT("限流交付队") 700/18px lh=24 ls=-0.18 color=
+                FRAME9:3639 "Background" [3427,2417 118×16] bg=#e3dfff r=2 flex=VERTICAL pad=2,8,2,8
+                  TEXT9:3640 "Text" [3435,2419 102×12] bg=#2a14b4 TEXT("rl-delivery-team") 600/10px lh=12 ls=0.40 color=
+                FRAME9:3641 "Background" [3554,2417 47×16] bg=#eff4ff r=2 flex=HORIZONTAL gap=4 pad=2,8,2,8
+                  RECTANGLE9:3642 "Background" [3562,2422 6×6] bg=#4338ca r=12
+                  TEXT9:3643 "Text" [3572,2419 21×12] bg=#4338ca TEXT("启用") 500/10px lh=12 ls=0.40 color=
+              FRAME9:3644 "Container" [3330,2439 301×14] r=0 flex=VERTICAL
+                TEXT9:3645 "Text" [3330,2439 301×14] bg=#464554 TEXT("控制台上下文：当前编辑版本 rev.2-draft · 最后同步 3 分钟前") 500/11px lh=14 color=
+          FRAME9:3646 "Action Command Buttons" [3682,2418 325×30] r=0 flex=HORIZONTAL gap=8
+            FRAME9:3647 "Button" [3682,2418 91×30] bg=#eff4ff r=2 flex=HORIZONTAL gap=4 pad=6,12,6,12
+              FRAME9:3648 "Container" [3694,2428 11×11] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_3648.svg
+                VECTOR9:3649 "Icon" [3694,2428 11×11] bg=#0b1c30 r=0
+              FRAME9:3650 "Container" [3708,2424 52×18] r=0 flex=VERTICAL
+                TEXT9:3651 "Text" [3708,2424 52×18] bg=#0b1c30 TEXT("重新载入") 500/13px lh=18 color=
+            FRAME9:3652 "Button" [3780,2418 92×30] bg=#eff4ff r=2 flex=HORIZONTAL gap=4 pad=6,12,6,12
+              FRAME9:3653 "Container" [3792,2427 12×12] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_3653.svg
+                VECTOR9:3654 "Icon" [3792,2427 12×12] bg=#0b1c30 r=0
+              FRAME9:3655 "Container" [3808,2424 52×18] r=0 flex=VERTICAL
+                TEXT9:3656 "Text" [3808,2424 52×18] bg=#0b1c30 TEXT("保存草稿") 500/13px lh=18 color=
+            FRAME9:3657 "Button" [3880,2418 127×30] bg=#4338ca r=2 flex=HORIZONTAL gap=6 pad=6,16,6,16 fx=drop:2
+              FRAME9:3658 "Container" [3896,2428 11×11] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_3658.svg
+                VECTOR9:3659 "Icon" [3896,2428 11×11] bg=#ffffff r=0
+              FRAME9:3660 "Container" [3913,2424 78×18] r=0 flex=VERTICAL
+                TEXT9:3661 "Text" [3913,2424 78×18] bg=#ffffff TEXT("保存固定版本") 500/13px lh=18 color=
+        FRAME9:3662 "CRITICAL WARNING STRIP (Validation Error Barrier)" [3266,2477 753×60] bg=#ffdad6 r=8 flex=HORIZONTAL gap=241 pad=12,12,12,12 fx=drop:2
+          FRAME9:3663 "Container" [3278,2489 379×36] r=0 flex=HORIZONTAL gap=12
+            FRAME9:3664 "Background" [3278,2491 32×32] bg=#ba1a1a r=2 flex=HORIZONTAL ASSET=agent_20261117-164127.assets/icon_9_3664.svg
+              FRAME9:3665 "Container" [3287,2500 15×15] r=0 flex=VERTICAL
+                VECTOR9:3666 "Icon" [3287,2500 15×15] bg=#ffffff r=0
+            FRAME9:3667 "Container" [3322,2489 335×36] r=0 flex=VERTICAL gap=2
+              FRAME9:3668 "Container" [3322,2489 335×20] r=0 flex=VERTICAL
+                TEXT9:3669 "Text" [3322,2489 237×20] bg=#93000a TEXT("有 1 处校验错误，无法保存固定版本") 700/15px lh=20 ls=-0.08 color=
+              FRAME9:3670 "Container" [3322,2511 335×14] r=0 flex=VERTICAL
+                TEXT9:3671 "Text" [3322,2511 335×14] bg=#93000a@0.8999999761581421 TEXT("协调成员中存在重复的岗位 ID (architect)，请更正冲突后重试编译。") 500/11px lh=14 color=
+          FRAME9:3672 "Link" [3903,2494 104×26] bg=#ba1a1a r=2 flex=HORIZONTAL gap=4 pad=4,12,4,12
+            FRAME9:3673 "Container" [3915,2498 65×18] r=0 flex=VERTICAL
+              TEXT9:3674 "Text" [3915,2498 65×18] bg=#ffffff TEXT("定位到错误") 600/13px lh=18 color=
+            FRAME9:3675 "Container" [3984,2502 11×11] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_3675.svg
+              VECTOR9:3676 "Icon" [3984,2502 11×11] bg=#ffffff r=0
+        FRAME9:3677 "PART 01: Basic Information" [3266,2549 753×202] bg=#ffffff r=8 flex=VERTICAL gap=12 pad=12,12,12,12 fx=drop:2
+          FRAME9:3678 "Container" [3278,2561 729×20] r=0 flex=HORIZONTAL gap=8
+            FRAME9:3679 "Background" [3278,2563 57×16] bg=#e5eeff r=2 flex=VERTICAL pad=2,6,2,6
+              TEXT9:3680 "Text" [3284,2565 45×12] bg=#4338ca TEXT("PART 01") 600/10px lh=12 ls=0.40 color=
+            FRAME9:3681 "Container" [3343,2561 60×20] r=0 flex=VERTICAL
+              TEXT9:3682 "Text" [3343,2561 60×20] bg=#0b1c30 TEXT("基本信息") 700/15px lh=20 ls=-0.08 color=
+          FRAME9:3683 "Container" [3278,2593 729×54] r=0 flex=HORIZONTAL gap=12
+            FRAME9:3684 "Container" [3278,2593 359×54] r=0 flex=VERTICAL gap=6
+              FRAME9:3685 "Label" [3278,2593 359×14] r=0 flex=VERTICAL
+                TEXT9:3686 "团队名称" [3278,2593 359×14] bg=#464554 TEXT("团队名称") 500/11px lh=14 color=
+              FRAME9:3687 "Input" [3278,2613 359×34] bg=#eff4ff r=2 flex=VERTICAL pad=8,12,8,12
+                FRAME9:3688 "Container" [3290,2621 335×18] r=0 flex=VERTICAL
+                  TEXT9:3689 "限流交付队" [3290,2621 335×18] bg=#0b1c30 TEXT("限流交付队") 400/13px lh=18 color=
+            FRAME9:3690 "Container" [3649,2593 359×54] r=0 flex=VERTICAL gap=6 pad=0,0,2,0
+              FRAME9:3691 "Label" [3649,2593 359×14] r=0 flex=VERTICAL
+                TEXT9:3692 "唯一标识 (Slug)" [3649,2593 359×14] bg=#464554 TEXT("唯一标识 (Slug)") 500/11px lh=14 color=
+              FRAME9:3693 "Input" [3649,2613 359×32] bg=#eff4ff r=2 flex=VERTICAL pad=8,12,8,12
+                FRAME9:3694 "Container" [3661,2621 335×16] r=0 flex=VERTICAL
+                  TEXT9:3695 "rl-delivery-team" [3661,2621 335×16] bg=#0b1c30 TEXT("rl-delivery-team") 400/12px lh=16 color=
+          FRAME9:3696 "Container" [3278,2659 729×80] r=0 flex=VERTICAL gap=6
+            FRAME9:3697 "Label" [3278,2659 729×14] r=0 flex=VERTICAL
+              TEXT9:3698 "团队说明与运作基准" [3278,2659 729×14] bg=#464554 TEXT("团队说明与运作基准") 500/11px lh=14 color=
+            FRAME9:3699 "Textarea" [3278,2679 729×60] bg=#eff4ff r=2 flex=VERTICAL pad=12,12,12,12
+              FRAME9:3700 "Container" [3290,2691 705×36] r=0 flex=VERTICAL
+                TEXT9:3701 "负责微服务高并发场景下的降级规则、Envoy Filter 拓扑生成及边缘限流合规评审，输出零漏洞补丁包并经过自动化沙箱回 滚校验。" [3290,2691 705×36] bg=#0b1c30 TEXT("负责微服务高并发场景下的降级规则、Envoy Filter 拓扑生成及边缘限流合规评审，输出零漏洞补丁包并经过自动化沙箱回 滚校验。") 400/13px lh=18 color=
+        FRAME9:3702 "PART 02: Task Dispatch Mechanism" [3266,2763 753×136] bg=#ffffff r=8 flex=VERTICAL gap=12 pad=12,12,12,12 fx=drop:2
+          FRAME9:3703 "Container" [3278,2775 729×20] r=0 flex=HORIZONTAL gap=493
+            FRAME9:3704 "Container" [3278,2775 154×20] r=0 flex=HORIZONTAL gap=8
+              FRAME9:3705 "Background" [3278,2777 57×16] bg=#e5eeff r=2 flex=VERTICAL pad=2,6,2,6
+                TEXT9:3706 "Text" [3284,2779 45×12] bg=#4338ca TEXT("PART 02") 600/10px lh=12 ls=0.40 color=
+              FRAME9:3707 "Container" [3343,2775 90×20] r=0 flex=VERTICAL
+                TEXT9:3708 "Text" [3343,2775 90×20] bg=#0b1c30 TEXT("任务分配机制") 700/15px lh=20 ls=-0.08 color=
+            FRAME9:3709 "Container" [3926,2778 81×14] r=0 flex=VERTICAL
+              TEXT9:3710 "Text" [3926,2778 81×14] bg=#777586 TEXT("调度核版本 v4.2") 500/11px lh=14 color=
+          FRAME9:3711 "Segmented Control" [3278,2807 729×80] r=0 flex=HORIZONTAL gap=12
+            FRAME9:3712 "Option 1: Active" [3278,2807 359×80] bg=#e5eeff r=4 flex=VERTICAL gap=6 pad=14,14,14,14
+              FRAME9:3713 "Container" [3292,2821 331×18] r=0 flex=HORIZONTAL gap=109
+                FRAME9:3714 "Container" [3292,2821 151×18] r=0 flex=HORIZONTAL gap=8
+                  FRAME9:3715 "Background" [3292,2823 14×14] bg=#4338ca r=12 flex=HORIZONTAL
+                    RECTANGLE9:3716 "Background" [3296,2827 6×6] bg=#ffffff r=12
+                  FRAME9:3717 "Container" [3314,2821 129×18] r=0 flex=VERTICAL
+                    TEXT9:3718 "Text" [3314,2821 129×18] bg=#2a14b4 TEXT("顺序交接 (Sequence)") 700/13px lh=18 color=
+                FRAME9:3719 "Container" [3552,2824 70×12] r=0 flex=VERTICAL
+                  TEXT9:3720 "Text" [3552,2824 70×12] bg=#2a14b4 TEXT("RECOMMENDED") 600/10px lh=12 ls=0.40 color=
+              FRAME9:3721 "Container" [3292,2845 331×28] r=0 flex=VERTICAL pad=0,0,0,20
+                TEXT9:3722 "严格按照协调成员列表由上至下依序执行，上一步输出作为下一 步上下文输入，支持条件式短路回退。" [3312,2845 311×28] bg=#464554 TEXT("严格按照协调成员列表由上至下依序执行，上一步输出作为下一 步上下文输入，支持条件式短路回退。") 500/11px lh=14 color=
+            FRAME9:3723 "Option 2: Capability" [3649,2807 359×80] bg=#eff4ff r=4 flex=VERTICAL gap=6 pad=14,14,14,14
+              FRAME9:3724 "Container" [3663,2821 331×18] r=0 flex=HORIZONTAL gap=135
+                FRAME9:3725 "Container" [3663,2821 151×18] r=0 flex=HORIZONTAL gap=8
+                  RECTANGLE9:3726 "Overlay" [3663,2823 14×14] bg=#c7c4d7@0.6000000238418579 r=12
+                  FRAME9:3727 "Container" [3685,2821 129×18] r=0 flex=VERTICAL
+                    TEXT9:3728 "Text" [3685,2821 129×18] bg=#0b1c30 TEXT("能力路由 (Capability)") 600/13px lh=18 color=
+                FRAME9:3729 "Container" [3948,2824 45×12] r=0 flex=VERTICAL
+                  TEXT9:3730 "Text" [3948,2824 45×12] bg=#777586 TEXT("DYNAMIC") 500/10px lh=12 ls=0.40 color=
+              FRAME9:3731 "Container" [3663,2845 331×28] r=0 flex=VERTICAL pad=0,0,0,20
+                TEXT9:3732 "依据任务意图与 Agent 声明的能力标签由中央路由器进行向量 召回，多任务并行协同响应。" [3683,2845 311×28] bg=#464554 TEXT("依据任务意图与 Agent 声明的能力标签由中央路由器进行向量 召回，多任务并行协同响应。") 500/11px lh=14 color=
+        FRAME9:3733 "PART 03: Coordinated Members" [3266,2911 753×380] bg=#ffffff r=8 flex=VERTICAL gap=12 pad=12,12,12,12 fx=drop:2
+          FRAME9:3734 "Container" [3278,2923 729×20] r=0 flex=HORIZONTAL gap=228
+            FRAME9:3735 "Container" [3278,2923 397×20] r=0 flex=HORIZONTAL gap=8
+              FRAME9:3736 "Background" [3278,2925 57×16] bg=#e5eeff r=2 flex=VERTICAL pad=2,6,2,6
+                TEXT9:3737 "Text" [3284,2927 45×12] bg=#4338ca TEXT("PART 03") 600/10px lh=12 ls=0.40 color=
+              FRAME9:3738 "Container" [3343,2923 237×20] r=0 flex=VERTICAL
+                TEXT9:3739 "Text" [3343,2923 237×20] bg=#0b1c30 TEXT("协调成员 (Coordinated Members)") 700/15px lh=20 ls=-0.08 color=
+              FRAME9:3740 "Background" [3587,2925 88×16] bg=#e5eeff r=2 flex=VERTICAL pad=2,8,2,8
+                TEXT9:3741 "Text" [3595,2927 72×12] bg=#464554 TEXT("4 Agent 实例") 500/10px lh=12 ls=0.40 color=
+            FRAME9:3742 "Conflict Alert Pill" [3905,2924 102×18] bg=#ba1a1a r=2 flex=HORIZONTAL gap=6 pad=2,10,2,10
+              FRAME9:3743 "Container" [3915,2927 14×12] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_3743.svg
+                VECTOR9:3744 "Icon" [3915,2927 14×12] bg=#ffffff r=0
+              FRAME9:3745 "Container" [3935,2926 62×14] r=0 flex=VERTICAL
+                TEXT9:3746 "Text" [3935,2926 62×14] bg=#ffffff TEXT("1 项配置冲突") 600/11px lh=14 color=
+          FRAME9:3747 "Member Cards Stack" [3278,2955 729×278] r=0 flex=VERTICAL gap=10
+            FRAME9:3748 "Member 1: Sarah" [3278,2955 729×62] bg=#ffffff r=4 flex=HORIZONTAL gap=198 pad=12,12,12,12 fx=drop:2
+              FRAME9:3749 "Container" [3290,2967 399×38] r=0 flex=HORIZONTAL gap=12
+                FRAME9:3750 "Container" [3290,2980 8×12] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_3750.svg
+                  FRAME9:3751 "Container" [3290,2980 8×12] r=0 flex=VERTICAL
+                    VECTOR9:3752 "Icon" [3290,2980 8×12] bg=#777586 r=0
+                FRAME9:3753 "Background" [3310,2970 32×32] bg=#4338ca r=12 flex=HORIZONTAL
+                  TEXT9:3754 "Text" [3319,2979 12×14] bg=#ffffff TEXT("01") 700/11px lh=14 color=
+                FRAME9:3755 "Container" [3354,2967 335×38] r=0 flex=VERTICAL gap=4
+                  FRAME9:3756 "Container" [3354,2967 335×18] r=0 flex=HORIZONTAL gap=8
+                    FRAME9:3757 "Container" [3354,2967 105×18] r=0 flex=VERTICAL
+                      TEXT9:3758 "Text" [3354,2967 105×18] bg=#0b1c30 TEXT("Sarah 系统架构师") 700/13px lh=18 color=
+                    FRAME9:3759 "Background" [3466,2970 71×12] bg=#e5eeff r=2 flex=VERTICAL pad=0,6,0,6
+                      TEXT9:3760 "Text" [3472,2970 59×12] bg=#2a14b4 TEXT("rev.3 固定") 500/10px lh=12 ls=0.40 color=
+                    FRAME9:3761 "Background" [3546,2970 95×12] bg=#dce9ff r=2 flex=VERTICAL pad=0,6,0,6
+                      TEXT9:3762 "Text" [3552,2970 83×12] bg=#464554 TEXT("ID: architect") 500/10px lh=12 ls=0.40 color=
+                  FRAME9:3763 "Container" [3354,2989 335×16] r=0 flex=HORIZONTAL gap=6
+                    FRAME9:3764 "Background" [3354,2989 118×16] bg=#eff4ff r=2 flex=VERTICAL pad=2,8,2,8
+                      TEXT9:3765 "Text" [3362,2991 102×12] bg=#464554 TEXT("#traffic-shaping") 500/10px lh=12 ls=0.40 color=
+                    FRAME9:3766 "Background" [3478,2989 99×16] bg=#eff4ff r=2 flex=VERTICAL pad=2,8,2,8
+                      TEXT9:3767 "Text" [3486,2991 83×12] bg=#464554 TEXT("#sla-modeling") 500/10px lh=12 ls=0.40 color=
+                    FRAME9:3768 "Background" [3583,2989 106×16] bg=#eff4ff r=2 flex=VERTICAL pad=2,8,2,8
+                      TEXT9:3769 "Text" [3591,2991 90×12] bg=#464554 TEXT("#mesh-topology") 500/10px lh=12 ls=0.40 color=
+              FRAME9:3770 "Container" [3915,2971 80×30] r=0 flex=HORIZONTAL gap=4 ASSET=agent_20261117-164127.assets/icon_9_3770.svg
+                FRAME9:3771 "Button" [3915,2972 24×28] r=2 flex=VERTICAL pad=6,6,10,6
+                  VECTOR9:3772 "Icon" [3921,2978 12×12] bg=#777586 r=0
+                FRAME9:3773 "Button" [3943,2972 24×28] r=2 flex=VERTICAL pad=6,6,10,6
+                  VECTOR9:3774 "Icon" [3949,2978 12×12] bg=#777586 r=0
+                FRAME9:3775 "Button" [3971,2971 24×30] r=2 flex=VERTICAL pad=6,6,10,6
+                  VECTOR9:3776 "Icon" [3977,2977 12×14] bg=#777586 r=0
+            FRAME9:3777 "Member 2: Marcus" [3278,3027 729×62] bg=#ffffff r=4 flex=HORIZONTAL gap=209 pad=12,12,12,12 fx=drop:2
+              FRAME9:3778 "Container" [3290,3039 387×38] r=0 flex=HORIZONTAL gap=12
+                FRAME9:3779 "Container" [3290,3050 8×16] r=0 flex=VERTICAL pad=0,0,4,0 ASSET=agent_20261117-164127.assets/icon_9_3779.svg
+                  VECTOR9:3780 "Icon" [3290,3050 8×12] bg=#777586 r=0
+                FRAME9:3781 "Background" [3310,3042 32×32] bg=#2170e4 r=12 flex=HORIZONTAL
+                  TEXT9:3782 "Text" [3318,3051 14×14] bg=#ffffff TEXT("02") 700/11px lh=14 color=
+                FRAME9:3783 "Container" [3354,3039 324×38] r=0 flex=VERTICAL gap=4
+                  FRAME9:3784 "Container" [3354,3039 324×18] r=0 flex=HORIZONTAL gap=8
+                    FRAME9:3785 "Container" [3354,3039 129×18] r=0 flex=VERTICAL
+                      TEXT9:3786 "Text" [3354,3039 129×18] bg=#0b1c30 TEXT("Marcus 策略实现专家") 700/13px lh=18 color=
+                    FRAME9:3787 "Background" [3490,3042 71×12] bg=#e5eeff r=2 flex=VERTICAL pad=0,6,0,6
+                      TEXT9:3788 "Text" [3496,3042 59×12] bg=#0058be TEXT("rev.4 固定") 500/10px lh=12 ls=0.40 color=
+                    FRAME9:3789 "Background" [3569,3042 108×12] bg=#dce9ff r=2 flex=VERTICAL pad=0,6,0,6
+                      TEXT9:3790 "Text" [3575,3042 96×12] bg=#464554 TEXT("ID: implementer") 500/10px lh=12 ls=0.40 color=
+                  FRAME9:3791 "Container" [3354,3061 324×16] r=0 flex=HORIZONTAL gap=6
+                    FRAME9:3792 "Background" [3354,3061 99×16] bg=#eff4ff r=2 flex=VERTICAL pad=2,8,2,8
+                      TEXT9:3793 "Text" [3362,3063 83×12] bg=#464554 TEXT("#envoy-filter") 500/10px lh=12 ls=0.40 color=
+                    FRAME9:3794 "Background" [3459,3061 118×16] bg=#eff4ff r=2 flex=VERTICAL pad=2,8,2,8
+                      TEXT9:3795 "Text" [3467,3063 102×12] bg=#464554 TEXT("#redis-ratelimit") 500/10px lh=12 ls=0.40 color=
+              FRAME9:3796 "Container" [3915,3043 80×30] r=0 flex=HORIZONTAL gap=4 ASSET=agent_20261117-164127.assets/icon_9_3796.svg
+                FRAME9:3797 "Button" [3915,3044 24×28] r=2 flex=VERTICAL pad=6,6,10,6
+                  VECTOR9:3798 "Icon" [3921,3050 12×12] bg=#777586 r=0
+                FRAME9:3799 "Button" [3943,3044 24×28] r=2 flex=VERTICAL pad=6,6,10,6
+                  VECTOR9:3800 "Icon" [3949,3050 12×12] bg=#777586 r=0
+                FRAME9:3801 "Button" [3971,3043 24×30] r=2 flex=VERTICAL pad=6,6,10,6
+                  VECTOR9:3802 "Icon" [3977,3049 12×14] bg=#777586 r=0
+            FRAME9:3803 "Member 3: Iris" [3278,3099 729×62] bg=#ffffff r=4 flex=HORIZONTAL gap=263 pad=12,12,12,12 fx=drop:2
+              FRAME9:3804 "Container" [3290,3111 334×38] r=0 flex=HORIZONTAL gap=12
+                FRAME9:3805 "Container" [3290,3122 8×16] r=0 flex=VERTICAL pad=0,0,4,0 ASSET=agent_20261117-164127.assets/icon_9_3805.svg
+                  VECTOR9:3806 "Icon" [3290,3122 8×12] bg=#777586 r=0
+                FRAME9:3807 "Background" [3310,3114 32×32] bg=#495167 r=12 flex=HORIZONTAL
+                  TEXT9:3808 "Text" [3318,3123 15×14] bg=#ffffff TEXT("03") 700/11px lh=14 color=
+                FRAME9:3809 "Container" [3354,3111 271×38] r=0 flex=VERTICAL gap=4
+                  FRAME9:3810 "Container" [3354,3111 271×18] r=0 flex=HORIZONTAL gap=8
+                    FRAME9:3811 "Container" [3354,3111 101×18] r=0 flex=VERTICAL
+                      TEXT9:3812 "Text" [3354,3111 101×18] bg=#0b1c30 TEXT("Iris 规则合规审计") 700/13px lh=18 color=
+                    FRAME9:3813 "Background" [3462,3114 71×12] bg=#e5eeff r=2 flex=VERTICAL pad=0,6,0,6
+                      TEXT9:3814 "Text" [3468,3114 59×12] bg=#323a4f TEXT("rev.2 固定") 500/10px lh=12 ls=0.40 color=
+                    FRAME9:3815 "Background" [3542,3114 82×12] bg=#dce9ff r=2 flex=VERTICAL pad=0,6,0,6
+                      TEXT9:3816 "Text" [3548,3114 70×12] bg=#464554 TEXT("ID: auditor") 500/10px lh=12 ls=0.40 color=
+                  FRAME9:3817 "Container" [3354,3133 271×16] r=0 flex=HORIZONTAL gap=6
+                    FRAME9:3818 "Background" [3354,3133 106×16] bg=#eff4ff r=2 flex=VERTICAL pad=2,8,2,8
+                      TEXT9:3819 "Text" [3362,3135 90×12] bg=#464554 TEXT("#syntax-linter") 500/10px lh=12 ls=0.40 color=
+                    FRAME9:3820 "Background" [3465,3133 125×16] bg=#eff4ff r=2 flex=VERTICAL pad=2,8,2,8
+                      TEXT9:3821 "Text" [3473,3135 109×12] bg=#464554 TEXT("#secops-whitelist") 500/10px lh=12 ls=0.40 color=
+              FRAME9:3822 "Container" [3915,3115 80×30] r=0 flex=HORIZONTAL gap=4 ASSET=agent_20261117-164127.assets/icon_9_3822.svg
+                FRAME9:3823 "Button" [3915,3116 24×28] r=2 flex=VERTICAL pad=6,6,10,6
+                  VECTOR9:3824 "Icon" [3921,3122 12×12] bg=#777586 r=0
+                FRAME9:3825 "Button" [3943,3116 24×28] r=2 flex=VERTICAL pad=6,6,10,6
+                  VECTOR9:3826 "Icon" [3949,3122 12×12] bg=#777586 r=0
+                FRAME9:3827 "Button" [3971,3115 24×30] r=2 flex=VERTICAL pad=6,6,10,6
+                  VECTOR9:3828 "Icon" [3977,3121 12×14] bg=#777586 r=0
+            FRAME9:3829 "Member 4: Leo with ERROR" [3278,3171 729×62] bg=#ffdad6@0.30000001192092896 r=4 flex=HORIZONTAL gap=32 pad=12,12,12,12 fx=drop:2
+              FRAME9:3830 "Container" [3290,3183 564×38] r=0 flex=HORIZONTAL gap=12
+                FRAME9:3831 "Container" [3290,3194 8×16] r=0 flex=VERTICAL pad=0,0,4,0 ASSET=agent_20261117-164127.assets/icon_9_3831.svg
+                  VECTOR9:3832 "Icon" [3290,3194 8×12] bg=#777586 r=0
+                FRAME9:3833 "Background" [3310,3186 32×32] bg=#ba1a1a r=12 flex=HORIZONTAL
+                  TEXT9:3834 "Text" [3318,3195 15×14] bg=#ffffff TEXT("04") 700/11px lh=14 color=
+                FRAME9:3835 "Container" [3354,3183 500×38] r=0 flex=VERTICAL gap=4
+                  FRAME9:3836 "Container" [3354,3183 500×18] r=0 flex=HORIZONTAL gap=8
+                    FRAME9:3837 "Container" [3354,3183 109×18] r=0 flex=VERTICAL
+                      TEXT9:3838 "Text" [3354,3183 109×18] bg=#0b1c30 TEXT("Leo 异常自愈/修复") 700/13px lh=18 color=
+                    FRAME9:3839 "Background" [3471,3186 71×12] bg=#e5eeff r=2 flex=VERTICAL pad=0,6,0,6
+                      TEXT9:3840 "Text" [3477,3186 59×12] bg=#777586 TEXT("rev.1 固定") 500/10px lh=12 ls=0.40 color=
+                    FRAME9:3841 "Background" [3550,3184 99×16] bg=#ba1a1a r=2 flex=VERTICAL pad=2,8,2,8
+                      TEXT9:3842 "Text" [3558,3186 83×12] bg=#ffffff TEXT("ID: architect") 600/10px lh=12 ls=0.40 color=
+                    FRAME9:3843 "Container" [3657,3185 197×14] r=0 flex=HORIZONTAL gap=4
+                      FRAME9:3844 "Container" [3657,3186 13×11] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_3844.svg
+                        VECTOR9:3845 "Icon" [3657,3186 13×11] bg=#ba1a1a r=0
+                      TEXT9:3846 "Text" [3674,3185 180×14] bg=#ba1a1a TEXT("岗位 ID 重复: architect (需全局唯一)") 600/11px lh=14 color=
+                  FRAME9:3847 "Container" [3354,3205 500×16] r=0 flex=HORIZONTAL gap=6
+                    FRAME9:3848 "Background" [3354,3205 99×16] bg=#eff4ff r=2 flex=VERTICAL pad=2,8,2,8
+                      TEXT9:3849 "Text" [3362,3207 83×12] bg=#464554 TEXT("#hotfix-patch") 500/10px lh=12 ls=0.40 color=
+                    FRAME9:3850 "Background" [3459,3205 99×16] bg=#eff4ff r=2 flex=VERTICAL pad=2,8,2,8
+                      TEXT9:3851 "Text" [3467,3207 83×12] bg=#464554 TEXT("#canary-drain") 500/10px lh=12 ls=0.40 color=
+              FRAME9:3852 "Container" [3915,3187 80×30] r=0 flex=HORIZONTAL gap=4 ASSET=agent_20261117-164127.assets/icon_9_3852.svg
+                FRAME9:3853 "Button" [3915,3188 24×28] r=2 flex=VERTICAL pad=6,6,10,6
+                  VECTOR9:3854 "Icon" [3921,3194 12×12] bg=#777586 r=0
+                FRAME9:3855 "Button" [3943,3188 24×28] r=2 flex=VERTICAL pad=6,6,10,6
+                  VECTOR9:3856 "Icon" [3949,3194 12×12] bg=#777586 r=0
+                FRAME9:3857 "Button" [3971,3187 24×30] r=2 flex=VERTICAL pad=6,6,10,6
+                  VECTOR9:3858 "Icon" [3977,3193 12×14] bg=#ba1a1a r=0
+          FRAME9:3859 "Button - Add Member Bar" [3278,3245 729×34] bg=#eff4ff r=2 flex=HORIZONTAL gap=6 pad=8,12,8,12
+            FRAME9:3860 "Container" [3578,3256 17×12] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_3860.svg
+              VECTOR9:3861 "Icon" [3578,3256 17×12] bg=#0b1c30 r=0
+            FRAME9:3862 "Container" [3601,3253 106×18] r=0 flex=VERTICAL
+              TEXT9:3863 "Text" [3601,3253 106×18] bg=#0b1c30 TEXT("添加新成员 Agent") 500/13px lh=18 color=
+        FRAME9:3864 "PART 04: Handover Table" [3266,3303 753×242] bg=#ffffff r=8 flex=VERTICAL gap=12 pad=12,12,12,12 fx=drop:2
+          FRAME9:3865 "Container" [3278,3315 729×30] r=0 flex=HORIZONTAL gap=248
+            FRAME9:3866 "Container" [3278,3320 268×20] r=0 flex=HORIZONTAL gap=8
+              FRAME9:3867 "Background" [3278,3322 57×16] bg=#e5eeff r=2 flex=VERTICAL pad=2,6,2,6
+                TEXT9:3868 "Text" [3284,3324 45×12] bg=#4338ca TEXT("PART 04") 600/10px lh=12 ls=0.40 color=
+              FRAME9:3869 "Container" [3343,3320 203×20] r=0 flex=VERTICAL
+                TEXT9:3870 "Text" [3343,3320 203×20] bg=#0b1c30 TEXT("交接规则表 (Handover Table)") 700/15px lh=20 ls=-0.08 color=
+            FRAME9:3871 "Button" [3797,3315 210×30] bg=#eff4ff r=2 flex=HORIZONTAL gap=4 pad=6,12,6,12
+              FRAME9:3872 "Container" [3809,3324 13×12] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_3872.svg
+                VECTOR9:3873 "Icon" [3809,3324 13×12] bg=#4338ca r=0
+              FRAME9:3874 "Container" [3826,3321 169×18] r=0 flex=VERTICAL
+                TEXT9:3875 "Text" [3826,3321 169×18] bg=#4338ca TEXT("按当前成员顺序生成交接关系") 500/13px lh=18 color=
+          FRAME9:3876 "Table" [3278,3357 729×176] r=0 flex=VERTICAL
+            FRAME9:3877 "Header → Row" [3278,3357 729×32] bg=#eff4ff r=0 flex=HORIZONTAL
+              FRAME9:3878 "Cell" [3278,3357 200×32] flex=VERTICAL pad=10,12,10,12
+                TEXT9:3879 "Text" [3290,3367 55×12] bg=#777586 TEXT("从 (FROM)") 600/10px lh=12 ls=0.40 color=
+              FRAME9:3880 "Cell" [3478,3357 227×32] r=0 flex=VERTICAL pad=10,12,10,39
+                TEXT9:3881 "Text" [3517,3367 42×12] bg=#777586 TEXT("到 (TO)") 600/10px lh=12 ls=0.40 color=
+              FRAME9:3882 "Cell" [3704,3357 248×32] r=0 flex=VERTICAL pad=10,12,10,12
+                TEXT9:3883 "Text" [3716,3367 118×12] bg=#777586 TEXT("触发条件 (CONDITION)") 600/10px lh=12 ls=0.40 color=
+              FRAME9:3884 "Cell" [3953,3357 54×32] flex=VERTICAL pad=10,12,10,12
+                TEXT9:3885 "Text" [3974,3367 21×12] bg=#777586 TEXT("操作") 700/10px lh=12 ls=0.40 color=
+            FRAME9:3886 "Body" [3278,3389 729×144] r=0 flex=VERTICAL
+              FRAME9:3887 "Row" [3278,3389 729×48] r=0 flex=HORIZONTAL pad=0,0,0,12
+                FRAME9:3888 "Data" [3290,3404 176×18] r=0 flex=HORIZONTAL gap=6
+                  RECTANGLE9:3889 "Background" [3290,3409 8×8] bg=#4338ca r=12
+                  FRAME9:3890 "Container" [3304,3404 105×18] r=0 flex=VERTICAL
+                    TEXT9:3891 "Text" [3304,3404 105×18] bg=#0b1c30 TEXT("Sarah (architect)") 600/13px lh=18 color=
+                FRAME9:3892 "Data" [3466,3392 39×43] r=0 flex=VERTICAL pad=14,4,18,16 ASSET=agent_20261117-164127.assets/icon_9_3892.svg
+                  VECTOR9:3893 "Icon" [3482,3406 11×11] bg=#777586 r=0
+                FRAME9:3894 "Data" [3505,3404 188×18] r=0 flex=HORIZONTAL gap=6 pad=0,0,0,12
+                  RECTANGLE9:3895 "Background" [3517,3409 8×8] bg=#2170e4 r=12
+                  FRAME9:3896 "Container" [3531,3404 139×18] r=0 flex=VERTICAL
+                    TEXT9:3897 "Text" [3531,3404 139×18] bg=#0b1c30 TEXT("Marcus (implementer)") 600/13px lh=18 color=
+                FRAME9:3898 "Data" [3692,3389 260×48] r=0 flex=VERTICAL pad=15,12,13,24
+                  FRAME9:3899 "Background" [3716,3404 196×20] bg=#eff4ff r=2 flex=HORIZONTAL pad=2,8,2,8
+                    TEXT9:3900 "Text" [3724,3406 180×16] bg=#0b1c30 TEXT("status == 'ARCH_APPROVED'") 400/12px lh=16 color=
+                FRAME9:3901 "Data" [3953,3390 54×45] r=0 flex=VERTICAL pad=10,12,10,12 ASSET=agent_20261117-164127.assets/icon_9_3901.svg
+                  FRAME9:3902 "Button" [3974,3400 21×25] r=2 flex=HORIZONTAL pad=4,4,8,4
+                    VECTOR9:3903 "Icon" [3978,3404 13×13] bg=#777586 r=0
+              FRAME9:3904 "Row" [3278,3437 729×48] r=0 flex=HORIZONTAL pad=0,0,0,12
+                FRAME9:3905 "Data" [3290,3452 176×18] r=0 flex=HORIZONTAL gap=6
+                  RECTANGLE9:3906 "Background" [3290,3457 8×8] bg=#2170e4 r=12
+                  FRAME9:3907 "Container" [3304,3452 139×18] r=0 flex=VERTICAL
+                    TEXT9:3908 "Text" [3304,3452 139×18] bg=#0b1c30 TEXT("Marcus (implementer)") 600/13px lh=18 color=
+                FRAME9:3909 "Data" [3466,3440 39×43] r=0 flex=VERTICAL pad=14,4,18,16 ASSET=agent_20261117-164127.assets/icon_9_3909.svg
+                  VECTOR9:3910 "Icon" [3482,3454 11×11] bg=#777586 r=0
+                FRAME9:3911 "Data" [3505,3452 188×18] r=0 flex=HORIZONTAL gap=6 pad=0,0,0,12
+                  RECTANGLE9:3912 "Background" [3517,3457 8×8] bg=#495167 r=12
+                  FRAME9:3913 "Container" [3531,3452 77×18] r=0 flex=VERTICAL
+                    TEXT9:3914 "Text" [3531,3452 77×18] bg=#0b1c30 TEXT("Iris (auditor)") 600/13px lh=18 color=
+                FRAME9:3915 "Data" [3692,3437 260×48] r=0 flex=VERTICAL pad=15,12,13,24
+                  FRAME9:3916 "Background" [3716,3452 189×20] bg=#eff4ff r=2 flex=HORIZONTAL pad=2,8,2,8
+                    TEXT9:3917 "Text" [3724,3454 173×16] bg=#0b1c30 TEXT("filter_generated == true") 400/12px lh=16 color=
+                FRAME9:3918 "Data" [3953,3438 54×45] r=0 flex=VERTICAL pad=10,12,10,12 ASSET=agent_20261117-164127.assets/icon_9_3918.svg
+                  FRAME9:3919 "Button" [3974,3448 21×25] r=2 flex=HORIZONTAL pad=4,4,8,4
+                    VECTOR9:3920 "Icon" [3978,3452 13×13] bg=#777586 r=0
+              FRAME9:3921 "Row" [3278,3485 729×48] r=0 flex=HORIZONTAL pad=0,0,0,12
+                FRAME9:3922 "Data" [3290,3500 176×18] r=0 flex=HORIZONTAL gap=6
+                  RECTANGLE9:3923 "Background" [3290,3505 8×8] bg=#495167 r=12
+                  FRAME9:3924 "Container" [3304,3500 77×18] r=0 flex=VERTICAL
+                    TEXT9:3925 "Text" [3304,3500 77×18] bg=#0b1c30 TEXT("Iris (auditor)") 600/13px lh=18 color=
+                FRAME9:3926 "Data" [3466,3488 39×43] r=0 flex=VERTICAL pad=14,4,18,16 ASSET=agent_20261117-164127.assets/icon_9_3926.svg
+                  VECTOR9:3927 "Icon" [3482,3502 11×11] bg=#777586 r=0
+                FRAME9:3928 "Data" [3505,3500 188×18] r=0 flex=HORIZONTAL gap=6 pad=0,0,0,12
+                  RECTANGLE9:3929 "Background" [3517,3505 8×8] bg=#ba1a1a r=12
+                  FRAME9:3930 "Container" [3531,3500 72×18] r=0 flex=VERTICAL
+                    TEXT9:3931 "Text" [3531,3500 72×18] bg=#0b1c30 TEXT("Leo (hotfix)") 600/13px lh=18 color=
+                FRAME9:3932 "Data" [3692,3485 260×48] r=0 flex=VERTICAL pad=15,12,13,24
+                  FRAME9:3933 "Background" [3716,3500 189×20] bg=#ffdad6 r=2 flex=HORIZONTAL pad=2,8,2,8
+                    TEXT9:3934 "Text" [3724,3502 173×16] bg=#ba1a1a TEXT("on_fail || sec_violation") 500/12px lh=16 color=
+                FRAME9:3935 "Data" [3953,3486 54×45] r=0 flex=VERTICAL pad=10,12,10,12 ASSET=agent_20261117-164127.assets/icon_9_3935.svg
+                  FRAME9:3936 "Button" [3974,3496 21×25] r=2 flex=HORIZONTAL pad=4,4,8,4
+                    VECTOR9:3937 "Icon" [3978,3500 13×13] bg=#777586 r=0
+        FRAME9:3938 "PART 05: Tool Whitelist Grid" [3266,3557 753×138] bg=#ffffff r=8 flex=VERTICAL gap=12 pad=12,12,12,12 fx=drop:2
+          FRAME9:3939 "Container" [3278,3569 729×20] r=0 flex=HORIZONTAL gap=340
+            FRAME9:3940 "Container" [3278,3569 283×20] r=0 flex=HORIZONTAL gap=8
+              FRAME9:3941 "Background" [3278,3571 57×16] bg=#e5eeff r=2 flex=VERTICAL pad=2,6,2,6
+                TEXT9:3942 "Text" [3284,3573 45×12] bg=#4338ca TEXT("PART 05") 600/10px lh=12 ls=0.40 color=
+              FRAME9:3943 "Container" [3343,3569 218×20] r=0 flex=VERTICAL
+                TEXT9:3944 "Text" [3343,3569 218×20] bg=#0b1c30 TEXT("工具白名单网格 (Tool Whitelist)") 700/15px lh=20 ls=-0.08 color=
+            FRAME9:3945 "Background" [3901,3571 106×16] bg=#e3dfff r=2 flex=VERTICAL pad=2,8,2,8
+              TEXT9:3946 "Text" [3909,3573 90×12] bg=#2a14b4 TEXT("5 / 8 工具已激活") 600/10px lh=12 ls=0.40 color=
+          FRAME9:3947 "Container" [3278,3601 729×82] r=0 flex=GRID
+            FRAME9:3948 "Tool 1: Enabled" [3278,3601 175×36] bg=#e5eeff r=2 flex=HORIZONTAL gap=28 pad=10,10,10,10
+              FRAME9:3949 "Container" [3288,3611 108×16] r=0 flex=HORIZONTAL gap=8
+                FRAME9:3950 "Container" [3288,3614 13×11] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_3950.svg
+                  VECTOR9:3951 "Icon" [3288,3614 13×11] bg=#2a14b4 r=0
+                FRAME9:3952 "Container" [3309,3611 86×16] r=0 flex=VERTICAL
+                  TEXT9:3953 "Text" [3309,3611 86×16] bg=#2a14b4 TEXT("k8s-mesh-api") 600/12px lh=16 color=
+              FRAME9:3954 "Container" [3431,3613 12×12] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_3954.svg
+                VECTOR9:3955 "Icon" [3431,3613 12×12] bg=#2a14b4 r=0
+            FRAME9:3956 "Tool 2: Enabled" [3463,3601 175×36] bg=#e5eeff r=2 flex=HORIZONTAL gap=7 pad=10,10,10,10
+              FRAME9:3957 "Container" [3473,3611 129×16] r=0 flex=HORIZONTAL gap=8
+                FRAME9:3958 "Container" [3473,3615 13×8] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_3958.svg
+                  VECTOR9:3959 "Icon" [3473,3615 13×8] bg=#2a14b4 r=0
+                FRAME9:3960 "Container" [3494,3611 108×16] r=0 flex=VERTICAL
+                  TEXT9:3961 "Text" [3494,3611 108×16] bg=#2a14b4 TEXT("envoy-evaluator") 600/12px lh=16 color=
+              FRAME9:3962 "Container" [3616,3613 12×12] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_3962.svg
+                VECTOR9:3963 "Icon" [3616,3613 12×12] bg=#2a14b4 r=0
+            FRAME9:3964 "Tool 3: Enabled" [3648,3601 175×36] bg=#e5eeff r=2 flex=HORIZONTAL gap=14 pad=10,10,10,10
+              FRAME9:3965 "Container" [3658,3611 122×16] r=0 flex=HORIZONTAL gap=8
+                FRAME9:3966 "Container" [3658,3614 13×11] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_3966.svg
+                  VECTOR9:3967 "Icon" [3658,3614 13×11] bg=#2a14b4 r=0
+                FRAME9:3968 "Container" [3679,3611 101×16] r=0 flex=VERTICAL
+                  TEXT9:3969 "Text" [3679,3611 101×16] bg=#2a14b4 TEXT("redis-lua-lint") 600/12px lh=16 color=
+              FRAME9:3970 "Container" [3800,3613 12×12] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_3970.svg
+                VECTOR9:3971 "Icon" [3800,3613 12×12] bg=#2a14b4 r=0
+            FRAME9:3972 "Tool 4: Enabled" [3832,3601 175×36] bg=#e5eeff r=2 flex=HORIZONTAL gap=14 pad=10,10,10,10
+              FRAME9:3973 "Container" [3842,3611 119×16] r=0 flex=HORIZONTAL gap=8
+                FRAME9:3974 "Container" [3842,3612 11×13] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_3974.svg
+                  VECTOR9:3975 "Icon" [3842,3612 11×13] bg=#2a14b4 r=0
+                FRAME9:3976 "Container" [3861,3611 101×16] r=0 flex=VERTICAL
+                  TEXT9:3977 "Text" [3861,3611 101×16] bg=#2a14b4 TEXT("cve-audit-scan") 600/12px lh=16 color=
+              FRAME9:3978 "Container" [3985,3613 12×12] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_3978.svg
+                VECTOR9:3979 "Icon" [3985,3613 12×12] bg=#2a14b4 r=0
+            FRAME9:3980 "Tool 5: Enabled" [3278,3647 175×36] bg=#e5eeff r=2 flex=HORIZONTAL gap=28 pad=10,10,10,10
+              FRAME9:3981 "Container" [3288,3657 108×16] r=0 flex=HORIZONTAL gap=8
+                FRAME9:3982 "Container" [3288,3658 14×14] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_3982.svg
+                  VECTOR9:3983 "Icon" [3288,3658 14×14] bg=#2a14b4 r=0
+                FRAME9:3984 "Container" [3310,3657 86×16] r=0 flex=VERTICAL
+                  TEXT9:3985 "Text" [3310,3657 86×16] bg=#2a14b4 TEXT("patch-gen-v2") 600/12px lh=16 color=
+              FRAME9:3986 "Container" [3431,3659 12×12] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_3986.svg
+                VECTOR9:3987 "Icon" [3431,3659 12×12] bg=#2a14b4 r=0
+            FRAME9:3988 "Tool 6: Disabled" [3463,3647 175×36] bg=#eff4ff r=2 flex=HORIZONTAL gap=14 pad=10,10,10,10
+              FRAME9:3989 "Container" [3473,3657 122×16] r=0 flex=HORIZONTAL gap=8
+                FRAME9:3990 "Container" [3473,3660 13×11] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_3990.svg
+                  VECTOR9:3991 "Icon" [3473,3660 13×11] bg=#777586 r=0
+                FRAME9:3992 "Container" [3494,3657 101×16] r=0 flex=VERTICAL
+                  TEXT9:3993 "Text" [3494,3657 101×16] bg=#777586 TEXT("aws-cloudwatch") 400/12px lh=16 color=
+              FRAME9:3994 "Container" [3616,3659 12×12] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_3994.svg
+                VECTOR9:3995 "Icon" [3616,3659 12×12] bg=#777586 r=0
+            FRAME9:3996 "Tool 7: Disabled" [3648,3647 175×36] bg=#eff4ff r=2 flex=HORIZONTAL gap=7 pad=10,10,10,10
+              FRAME9:3997 "Container" [3658,3657 128×16] r=0 flex=HORIZONTAL gap=8
+                FRAME9:3998 "Container" [3658,3660 12×11] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_3998.svg
+                  VECTOR9:3999 "Icon" [3658,3660 12×11] bg=#777586 r=0
+                FRAME9:4000 "Container" [3678,3657 108×16] r=0 flex=VERTICAL
+                  TEXT9:4001 "Text" [3678,3657 108×16] bg=#777586 TEXT("sql-schema-dump") 400/12px lh=16 color=
+              FRAME9:4002 "Container" [3800,3659 12×12] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_4002.svg
+                VECTOR9:4003 "Icon" [3800,3659 12×12] bg=#777586 r=0
+            FRAME9:4004 "Tool 8: Disabled" [3832,3647 175×36] bg=#eff4ff r=2 flex=HORIZONTAL gap=14 pad=10,10,10,10
+              FRAME9:4005 "Container" [3842,3657 122×16] r=0 flex=HORIZONTAL gap=8
+                FRAME9:4006 "Container" [3842,3658 13×13] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_4006.svg
+                  VECTOR9:4007 "Icon" [3842,3658 13×13] bg=#777586 r=0
+                FRAME9:4008 "Container" [3864,3657 101×16] r=0 flex=VERTICAL
+                  TEXT9:4009 "Text" [3864,3657 101×16] bg=#777586 TEXT("pagerduty-call") 400/12px lh=16 color=
+              FRAME9:4010 "Container" [3985,3659 12×12] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_4010.svg
+                VECTOR9:4011 "Icon" [3985,3659 12×12] bg=#777586 r=0
+        FRAME9:4012 "Details - PART 06: Advanced Settings & Fallback Strategy (Collapsible)" [3266,3707 753×44] bg=#ffffff r=8 flex=VERTICAL pad=12,12,12,12 fx=drop:2
+          FRAME9:4013 "Slot → Summary" [3278,3719 729×20] r=0 flex=HORIZONTAL gap=264
+            FRAME9:4014 "Container" [3278,3719 441×20] r=0 flex=HORIZONTAL gap=8
+              FRAME9:4015 "Background" [3278,3721 57×16] bg=#eff4ff r=2 flex=VERTICAL pad=2,6,2,6
+                TEXT9:4016 "Text" [3284,3723 45×12] bg=#777586 TEXT("PART 06") 600/10px lh=12 ls=0.40 color=
+              FRAME9:4017 "Container" [3343,3719 377×20] r=0 flex=VERTICAL
+                TEXT9:4018 "Text" [3343,3719 377×20] bg=#0b1c30 TEXT("高级 · 预算与回退策略 (Advanced Quotas & Fallbacks)") 700/15px lh=20 ls=-0.08 color=
+            FRAME9:4019 "Container" [3995,3725 12×7] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_4019.svg
+              VECTOR9:4020 "Icon" [3995,3725 12×7] bg=#777586 r=0
+        FRAME9:4021 "BOTTOM INTERACTIVE DECK: Dry Run Sandbox" [3266,3763 753×377] bg=#ffffff r=8 flex=VERTICAL gap=12 pad=12,12,12,12 fx=drop:2
+          FRAME9:4022 "Container" [3278,3775 729×30] r=0 flex=HORIZONTAL gap=210
+            FRAME9:4023 "Container" [3278,3780 361×20] r=0 flex=HORIZONTAL gap=8
+              RECTANGLE9:4024 "Background" [3278,3785 10×10] bg=#4338ca r=12
+              FRAME9:4025 "Container" [3296,3780 229×20] r=0 flex=VERTICAL
+                TEXT9:4026 "Text" [3296,3780 229×20] bg=#0b1c30 TEXT("团队协作测试 (Dry Run Sandbox)") 700/15px lh=20 ls=-0.08 color=
+              FRAME9:4027 "Background" [3533,3782 106×16] bg=#e5eeff r=2 flex=VERTICAL pad=2,8,2,8
+                TEXT9:4028 "Text" [3541,3784 90×12] bg=#464554 TEXT("ISOLATED V-ENV") 500/10px lh=12 ls=0.40 color=
+            FRAME9:4029 "Button" [3858,3775 149×30] bg=#4338ca r=2 flex=HORIZONTAL gap=6 pad=6,16,6,16 fx=drop:2
+              FRAME9:4030 "Container" [3874,3785 7×9] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_4030.svg
+                VECTOR9:4031 "Icon" [3874,3785 7×9] bg=#ffffff r=0
+              FRAME9:4032 "Container" [3887,3781 104×18] r=0 flex=VERTICAL
+                TEXT9:4033 "Text" [3887,3781 104×18] bg=#ffffff TEXT("运行团队协作测试") 500/13px lh=18 color=
+          FRAME9:4034 "Testing Payload & Schema Viewer" [3278,3817 729×181] r=0 flex=VERTICAL gap=6
+            FRAME9:4035 "Container" [3278,3817 729×14] r=0 flex=HORIZONTAL gap=400
+              FRAME9:4036 "Container" [3278,3817 176×14] r=0 flex=VERTICAL
+                TEXT9:4037 "Text" [3278,3817 176×14] bg=#777586 TEXT("输入测试 Payload (JSON Schema)") 500/11px lh=14 color=
+              FRAME9:4038 "Container" [3853,3818 154×12] r=0 flex=VERTICAL
+                TEXT9:4039 "Text" [3853,3818 154×12] bg=#777586 TEXT("UTF-8 · application/json") 500/10px lh=12 ls=0.40 color=
+            FRAME9:4040 "Background+Shadow" [3278,3837 729×161] bg=#eff4ff r=2 flex=VERTICAL pad=12,12,12,12 fx=inner:4
+              FRAME9:4041 "Pre" [3290,3849 705×137] r=0
+                TEXT9:4042 "Code → {
+  "traffic_surge_pct": 320,
+  "target_service": "payments-gateway-mesh",
+  "allowed_sla_p99_ms": 150,
+  "dry_run_flag": true,
+  "enforce_dry_run_validation": "STRICT_MODE"
+}" [3290,3848 324×137] bg=#0b1c30 TEXT("{ "traffic_surge_pct": 320, "target_service": "payments-gateway-mesh", "allowed_sla_p99_ms": 150, "dry_run_flag": true, "enforce_dry_run_validation": "STRICT_MODE" }") 400/12px lh=20 color=
+          FRAME9:4043 "Execution Trail Readout" [3278,4010 729×118] r=0 flex=VERTICAL gap=8 pad=4,0,0,0
+            FRAME9:4044 "Container" [3278,4014 729×18] r=0 flex=HORIZONTAL gap=365
+              FRAME9:4045 "Container" [3278,4014 238×18] r=0 flex=HORIZONTAL gap=8
+                FRAME9:4046 "Container" [3278,4014 185×18] r=0 flex=VERTICAL
+                  TEXT9:4047 "Text" [3278,4014 185×18] bg=#0b1c30 TEXT("执行轨迹追踪 (Execution Trail)") 700/13px lh=18 color=
+                FRAME9:4048 "Background" [3471,4017 46×12] bg=#e5eeff r=2 flex=VERTICAL pad=0,6,0,6
+                  TEXT9:4049 "Text" [3477,4017 34×12] bg=#2a14b4 TEXT("4 阶段") 500/10px lh=12 ls=0.40 color=
+              FRAME9:4050 "Container" [3885,4015 122×16] r=0 flex=HORIZONTAL gap=4
+                FRAME9:4051 "Container" [3885,4016 12×14] r=0 flex=VERTICAL ASSET=agent_20261117-164127.assets/icon_9_4051.svg
+                  VECTOR9:4052 "Icon" [3885,4016 12×14] bg=#2a14b4 r=0
+                FRAME9:4053 "Container" [3901,4015 106×16] r=0 flex=VERTICAL
+                  TEXT9:4054 "Text" [3901,4015 106×16] bg=#2a14b4 TEXT("1,840ms 正常完成") 600/12px lh=16 color=
+            FRAME9:4055 "Visual Progress Chart" [3278,4040 729×8] bg=#eff4ff r=2 flex=HORIZONTAL ASSET=agent_20261117-164127.assets/icon_9_4055.svg
+              RECTANGLE9:4056 "Background" [3278,4040 95×8] bg=#4338ca r=0
+              RECTANGLE9:4057 "Background" [3373,4040 204×8] bg=#2170e4 r=0
+              RECTANGLE9:4058 "Background" [3577,4040 270×8] bg=#495167 r=0
+              RECTANGLE9:4059 "Background" [3847,4040 160×8] bg=#777586 r=0
+            FRAME9:4060 "Trail Cards Grid" [3278,4056 729×72] r=0 flex=HORIZONTAL gap=8 pad=4,0,0,0
+              FRAME9:4061 "Stage 1" [3278,4060 176×68] bg=#eff4ff r=2 flex=VERTICAL gap=4 pad=10,10,10,10
+                FRAME9:4062 "Container" [3288,4070 156×12] r=0 flex=HORIZONTAL gap=33
+                  FRAME9:4063 "Container" [3288,4070 91×12] r=0 flex=VERTICAL
+                    TEXT9:4064 "Text" [3288,4070 91×12] bg=#0b1c30 TEXT("1. Sarah (架构)") 600/10px lh=12 ls=0.40 color=
+                  FRAME9:4065 "Container" [3412,4070 32×12] r=0 flex=VERTICAL
+                    TEXT9:4066 "Text" [3412,4070 32×12] bg=#4338ca TEXT("240ms") 600/10px lh=12 ls=0.40 color=
+                FRAME9:4067 "Container" [3288,4086 156×14] r=0 flex=VERTICAL
+                  TEXT9:4068 "生成流量拓扑与限流阈值矩阵" [3288,4086 156×14] bg=#464554 TEXT("生成流量拓扑与限流阈值矩阵") 500/11px lh=14 color=
+                FRAME9:4069 "Container" [3288,4104 156×14] r=0 flex=VERTICAL
+                  TEXT9:4070 "OK · PASS" [3288,4104 156×14] bg=#2a14b4 TEXT("OK · PASS") 500/10px lh=14 color=
+              FRAME9:4071 "Stage 2" [3462,4060 176×68] bg=#eff4ff r=2 flex=VERTICAL gap=4 pad=10,10,10,10
+                FRAME9:4072 "Container" [3472,4070 156×12] r=0 flex=HORIZONTAL gap=27
+                  FRAME9:4073 "Container" [3472,4070 98×12] r=0 flex=VERTICAL
+                    TEXT9:4074 "Text" [3472,4070 98×12] bg=#0b1c30 TEXT("2. Marcus (策略)") 600/10px lh=12 ls=0.40 color=
+                  FRAME9:4075 "Container" [3597,4070 32×12] r=0 flex=VERTICAL
+                    TEXT9:4076 "Text" [3597,4070 32×12] bg=#0058be TEXT("510ms") 600/10px lh=12 ls=0.40 color=
+                FRAME9:4077 "Container" [3472,4086 156×14] r=0 flex=VERTICAL
+                  TEXT9:4078 "编译 EnvoyFilter 与 Redis 规则" [3472,4086 156×14] bg=#464554 TEXT("编译 EnvoyFilter 与 Redis 规则") 500/11px lh=14 color=
+                FRAME9:4079 "Container" [3472,4104 156×14] r=0 flex=VERTICAL
+                  TEXT9:4080 "OK · COMPILED" [3472,4104 156×14] bg=#0058be TEXT("OK · COMPILED") 500/10px lh=14 color=
+              FRAME9:4081 "Stage 3" [3647,4060 176×68] bg=#eff4ff r=2 flex=VERTICAL gap=4 pad=10,10,10,10
+                FRAME9:4082 "Container" [3657,4070 156×12] r=0 flex=HORIZONTAL gap=39
+                  FRAME9:4083 "Container" [3657,4070 85×12] r=0 flex=VERTICAL
+                    TEXT9:4084 "Text" [3657,4070 85×12] bg=#0b1c30 TEXT("3. Iris (审计)") 600/10px lh=12 ls=0.40 color=
+                  FRAME9:4085 "Container" [3781,4070 32×12] r=0 flex=VERTICAL
+                    TEXT9:4086 "Text" [3781,4070 32×12] bg=#323a4f TEXT("680ms") 600/10px lh=12 ls=0.40 color=
+                FRAME9:4087 "Container" [3657,4086 156×14] r=0 flex=VERTICAL
+                  TEXT9:4088 "通过零日安全防护策略校验" [3657,4086 156×14] bg=#464554 TEXT("通过零日安全防护策略校验") 500/11px lh=14 color=
+                FRAME9:4089 "Container" [3657,4104 156×14] r=0 flex=VERTICAL
+                  TEXT9:4090 "OK · AUDITED" [3657,4104 156×14] bg=#2a14b4 TEXT("OK · AUDITED") 500/10px lh=14 color=
+              FRAME9:4091 "Stage 4" [3831,4060 176×68] bg=#eff4ff r=2 flex=VERTICAL gap=4 pad=10,10,10,10 op=0.75
+                FRAME9:4092 "Container" [3841,4070 156×12] r=0 flex=HORIZONTAL gap=46
+                  FRAME9:4093 "Container" [3841,4070 78×12] r=0 flex=VERTICAL
+                    TEXT9:4094 "Text" [3841,4070 78×12] bg=#0b1c30 TEXT("4. Leo (自愈)") 600/10px lh=12 ls=0.40 color=
+                  FRAME9:4095 "Container" [3965,4070 32×12] r=0 flex=VERTICAL
+                    TEXT9:4096 "Text" [3965,4070 32×12] bg=#777586 TEXT("410ms") 600/10px lh=12 ls=0.40 color=
+                FRAME9:4097 "Container" [3841,4086 156×14] r=0 flex=VERTICAL
+                  TEXT9:4098 "无违规告警，处于巡航待命态" [3841,4086 156×14] bg=#464554 TEXT("无违规告警，处于巡航待命态") 500/11px lh=14 color=
+                FRAME9:4099 "Container" [3841,4104 156×14] r=0 flex=VERTICAL
+                  TEXT9:4100 "SKIPPED · STANDBY" [3841,4104 156×14] bg=#777586 TEXT("SKIPPED · STANDBY") 500/10px lh=14 color=

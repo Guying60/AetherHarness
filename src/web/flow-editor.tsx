@@ -188,7 +188,7 @@ function Editor() {
         <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={connect}
           onNodeClick={(_, n) => setSelected(n.id)} onPaneClick={() => setSelected('')} onNodeDragStart={() => { if (editable) { setHistory(h => [...h.slice(-39), structuredClone(graph)]); setRedo([]); } }}
           onMoveEnd={(event, viewport) => { if (event && editable) setGraph(g => g && ({ ...g, viewport })); }} nodesDraggable={editable} nodesConnectable={editable} deleteKeyCode={editable ? ['Backspace', 'Delete'] : null}
-          colorMode="dark" defaultViewport={graph.viewport} minZoom={0.1} maxZoom={4} fitView><Background gap={22} size={1} /><Controls /><MiniMap pannable zoomable nodeColor="#5167a8" maskColor="#0b1120bb" /></ReactFlow>
+          colorMode="light" defaultViewport={graph.viewport} minZoom={0.1} maxZoom={4} fitView><Background gap={22} size={1} color="#dbe3f4" /><Controls /><MiniMap pannable zoomable nodeColor="#a5b4fc" maskColor="#f8fafccc" /></ReactFlow>
         <div className="flow-controls flow-actions"><button className="btn" disabled={!history.length || !editable} onClick={() => undoChange()}>撤销</button><button className="btn" disabled={!redo.length || !editable} onClick={() => undoChange(true)}>重做</button></div>
       </div>
       <aside className="flow-properties"><div className="flow-prop-title"><h3>{node ? node.name : '工作流属性'}</h3>{node && <button className="link" onClick={() => setSelected('')}>工作流</button>}</div>

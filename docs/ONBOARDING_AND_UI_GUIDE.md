@@ -1,0 +1,956 @@
+# AetherHarness 上手指南与页面实现详解
+
+> 面向两类读者：**刚加入项目的新同学**（第 1–6 章 + 第 11 章），**准备重构 Web UI 的工程师**（第 7–10 章 + 第 12 章）。
+>
+> **文档基准**：`main` @ `f808f8f`（feat(studio): add custom agent teams and executable workflow designer），TypeScript 7.0.2，Node ≥ 20.3。
+> **可信度**：本文所有结论来自**逐文件通读**代码 + **实际执行**构建/测试/服务探针。实测基线：`tsc --noEmit` 0 error；tsc+esbuild 构建通过；`303 + 81 + 57 = 441` 条断言全过；Web 服务实启（`/login` 200、未登录 `/api/dashboard` 401）。
+> 凡标注「推断」的是我从代码行为反推、未单独跑实验证的内容。
+
+---
+
+## 0. 变更记录
+
+### 0.1 2026-11-17 · 控制台换上 Figma 新版 UI（本轮）
+
+| 项 | 旧 | 新 |
+|:---|:---|:---|
+| 主题 | 深色（`--bg #0b1120`） | **浅色**（`#f8fafc` 底 / `#fff` 卡 / Tailwind Slate + Indigo） |
+| 外壳 | `.sidebar` + `.brand/.mark` + `.top` 顶栏 | **240px 侧栏（56px 品牌带 + 图标导航 + 运行态卡）+ 56px 玻璃顶栏（面包屑 / 连接态 / 账号 / 齿轮 / 退出）** |
+| 工作台 | hero + 场景卡 + 概览指标 + 最近任务列表 | **页面头（eyebrow + 总线态 + H1 + 模式徽标 + 刷新/全部运行）· 仓库任务卡 · 三张预设卡（节点数/轮次/阈值）· 四格 KPI · 最近任务执行表格（分段筛选 + 空状态）** |
+| 图标 | 无（字符/emoji） | `src/web/icons.ts`（25 个 SVG，由同一 Figma 导出生成；单色图标归一为 `currentColor`） |
+| 导航 | 各页面硬编码 | `src/web/nav.ts`（唯一来源，工作台与 Studio 共用） |
+| 设计源 | — | `design/console-20261117/`（Framelink 导出：节点树 JSON + 图标 SVG + 帧 PNG） |
+
+**新增工具**：`scripts/generate-console-icons.mjs`（从设计导出重建图标模块）、`scripts/screenshot-console.mjs`（零依赖 CDP 截图；`--seed=rl-normal` 会先跑一次真实运行再截图）。
+**数据契约（仅新增字段）**：`/api/dashboard` 增加 `runtime{rss,agents,teams,workflows}` 与 `runs[].verificationScore`。
+**测试契约**：`tests/run-tests.ts` 的工作台断言由「预设案例」改为「编排预设」；`pipeline-flow` 与路由集合不变，441 条断言全绿。
+**后续**：`/login` 仍是浅色绿主题的独立页；工作流设计器仍是「浅色外壳 + 深色画布」，等各自设计稿。以下章节中凡描述「深色控制台」的，以本节为准。
+
+### 0.2 2026-11-18 · 其余页面按第二批设计稿改造
+
+设计来源：`design/<timestamp>/`（8 份 Framelink 导出，Figma 帧名均为 `Main`，只含内容区）。
+
+| 页面 | 稿件 | 状态 |
+|:---|:---|:---|
+| 工作台 `/` | `console-20261117` | ✅ 已改（§0.1） |
+| 登录 `/login` | `20261117-164159` | ✅ 独立双栏：品牌/使命/三步时间轴 + 400px 登录卡；端口徽标取真实端口；`loginPage(port)` 取代常量导出 |
+| 系统设置 `/settings` | `20261117-164141` | ✅ 四页签重做：配置舱导航 + 只读横幅（FNV-1a 内容指纹）+ 模型/工具/策略/环境四卡 |
+| Agent 运行 `/agents` | `20261117-163756` | ✅ 调度舱四格 + 队列条 + 3×Agent 卡（能力评分 ×10）+ 工具表 + 提示词日志 |
+| 验收与交付 `/delivery` | `20261117-163738` | ✅ 结果概览（KPI + 加权条 + 图例）/ 测试与自愈（三层证据 + 交付物 + 归档）/ 执行记录（时间线） |
+| 运行详情 `/runs/:id` | `20261117-163709` | ✅ 驾驶舱状态条 + 三列（步骤时间轴 / DAG + 浮动指标坞 / 节点详情 + 摘要 + Agent） |
+| Agent 中心 `/studio/agents` | `20261117-164026` | ⏳ 待做 |
+| 团队 `/teams` | `20261117-164127` | ⏳ 待做 |
+| 工作流设计器 `/workflows` | `20261117-163816` | ⏳ 待做（React，需重排画布/属性/调试三区） |
+
+**令牌决策（重要）**：8 份稿子内部有两套配色——4 份 Tailwind slate（`#f8fafc`/`#0f172a`/`#4338ca`，r12）+ 2 份 Material violet（`#f8f9ff`/`#0b1c30`/`#2a14b4`，r2）+ 登录页蓝紫。统一策略：**全局 slate + r12（多数派，工作台已上线）**；登录页保留自己的蓝紫（独立页）；设置页把卡片圆角局部收到 6px 以贴近其小圆角语言。若要「严格每页照稿」，只需改 `console-style.ts` 的 `:root`。
+**数据契约（仍为加法）**：`/api/dashboard` 的 `runtime.rss/uptimeMs/agents/teams/workflows`、`runs[].verificationScore`。
+**新增工具**：`scripts/figma-outline.mjs`（设计导出 → 布局清单）、`scripts/screenshot-console.mjs`（CDP 截图，支持 `--anon`/`--eval`/`--seed`/`--full`）。
+**加权条不撒谎**：交付页的 Tier 权重按 `VerificationEngine` 真实公式计算（三层齐备 30/40/30，仅沙箱 40/60，仅投票 50/50），未照抄设计稿的 40/40/20。
+
+---
+
+## 目录
+
+1. [项目是什么（一段话）](#1-项目是什么一段话)
+2. [30 秒上手](#2-30-秒上手)
+3. [系统全景与一次运行的全链路](#3-系统全景与一次运行的全链路)
+4. [代码地图](#4-代码地图)
+5. [核心概念字典](#5-核心概念字典)
+6. [后端功能清单与实现落点](#6-后端功能清单与实现落点)
+7. [Web 服务端契约](#7-web-服务端契约)
+8. [页面实现详解（四套前端）](#8-页面实现详解四套前端)
+9. [前端共享机制](#9-前端共享机制)
+10. [设计约束与地雷（重构前必读）](#10-设计约束与地雷重构前必读)
+11. [新人任务手册（我要改 X）](#11-新人任务手册我要改-x)
+12. [UI 重构施工指南](#12-ui-重构施工指南)
+13. [Debug 手册](#13-debug-手册)
+14. [附录](#14-附录)
+
+---
+
+## 1. 项目是什么（一段话）
+
+AetherHarness 是一个 **TypeScript 单进程、零运行时依赖**（React 只被工作流设计器使用）的多 Agent 编排平台：它把「Agent 团队 / 声明式 DAG / 负载感知调度 / PDCA 自愈 / 三层验收 / 提示词自愈」串成**一条真实链路**，并同时提供 **Web 控制台**、**工作流可视化设计器**、**终端 TUI** 三套呈现。默认离线确定性运行（CI/演示不依赖网络），加 `--live` 换成 DeepSeek / 任意 OpenAI 兼容端点的真实模型，而**引擎一行不改**。
+
+一个关键判断：这个项目的**内核质量明显高于它的前端**。引擎有环检测、检查点、结构化失败回灌、回归保护、容器隔离验收；而前端是「能跑通、信息齐全、但工程化程度低」的状态——这正是本次重构的出发点，也决定了重构应当**保护内核、只改呈现**。
+
+---
+
+## 2. 30 秒上手
+
+```powershell
+# 环境：Node >= 20.3，可选 pnpm / Git / Docker（仅仓库验收需要）
+npm.cmd install            # 或 pnpm.cmd install --frozen-lockfile
+npm.cmd run build          # tsc + esbuild（设计器 bundle）
+npm.cmd test               # 三套测试：441 断言
+npm.cmd run web            # http://127.0.0.1:3300  （终端会打印临时账号 + 令牌）
+```
+
+| 命令 | 作用 | 备注 |
+|:---|:---|:---|
+| `npm run web` | 构建 + 起 Web 控制台 | 打印 bootstrap 账号/令牌 |
+| `npm start` | 交互式 TUI（备用屏幕） | `↑↓` 选择、`⏎` 运行、`a` 全跑、`e` 升级卡 |
+| `npm run auto` | TUI 自动播放 | 无需键盘 |
+| `npm run live` | 全队走 DeepSeek | 需 `DEEPSEEK_API_KEY`，无 key 自动退回离线 |
+| `npm run preview` | 渲染 N 帧后退出 | 非 TTY 布局预览 / CI |
+| `npm run demo` | 无头纯文本端到端报告 | 录屏用 |
+| `npm test` | 构建 + 三套测试 | 见第 3 章末尾 |
+
+**Windows 注意事项**
+- `pnpm` 可能被 PowerShell 执行策略拦住 → 用 `pnpm.cmd`，或直接 `node dist/src/cli.js --web`。
+- 本机沙箱/部分环境对「原生命令 + `2>&1 |` 管道」会报 `Access is denied`（不是项目 bug）。**跑 node/npm 时请用 `> file` 重定向再读文件**，不要用管道合并 stderr。
+- 控制台输出中文在 GBK 代码页下会乱码，属终端编码问题。
+
+---
+
+## 3. 系统全景与一次运行的全链路
+
+### 3.1 分层图
+
+```
+┌──────────────────────── 呈现层（4 个 HTML 文档，互不复用）────────────────────────┐
+  /login            /  /runs/:id  /agents  /delivery  /settings
+  login.ts          DASHBOARD_HTML（内联 JS 字符串）          /studio/agents  /teams
+                    client.ts + dashboard.ts                STUDIO_HTML（内联 JS 字符串）
+                    + console-style.ts                      studio-page.ts
+                                                            /workflows  /workflows/:id
+                                                            FLOW_HTML + React 19 + @xyflow/react
+                                                            flow-editor.tsx（esbuild bundle）
+└───────────────────────────────────┬────────────────────────────────────────────────┘
+                                    │ HTTP + SSE
+┌───────────────────────────────────▼────────────────────────────────────────────────┐
+│ src/web/server.ts  零依赖 HTTP 服务：鉴权 / 会话 / 路由 / DTO / SSE / 静态资源        │
+│ src/web/studio-api.ts  把 /api/studio/* 分派到 StudioService + catalog + workflows   │
+└───────────────────────────────────┬────────────────────────────────────────────────┘
+┌───────────────────────────────────▼────────────────────────────────────────────────┐
+│ src/orchestrator.ts  门面（960 行）：run 生命周期 / 事件总线 / 升级卡 / 审批 / 取消     │
+│   容量 maxConcurrentRuns=3  ·  run 队列  ·  持久化（RunStore）  ·  LLM 装配            │
+└──┬────────────┬──────────────┬───────────────┬────────────────┬───────────────┬──────┘
+   │            │              │               │                │               │
+WorkflowEngine  Scheduler   SelfLoopEngine  VerificationEngine  Optimizer     KnowledgeBase
+DAG/7类节点    老化+派发     PDCA 自愈        Tier1/2/3         提示词/工具    CJK+哈希向量
+   │            │              │               │
+   └── AgentRegistry → BaseAgent → AgentBrain（Deterministic｜LlmBrain+Fallback｜ConfiguredBrain）
+                                   │
+                         ToolRegistry（超时清理 / 参数校验 / 可靠性 / scope 白名单）
+                                   │
+   code_sandbox · test_runner · static_analyzer · git_patch_manager
+   container_test_runner · git_read_baseline · git_check_patch
+```
+
+### 3.2 一次 run 的真实链路
+
+以 `/api/tasks/run {taskId:'rl-normal'}` 为例：
+
+1. **HTTP**：`server.ts` 校验 loopback Host → 会话/角色 → `orchestrator.runTask(task)`
+2. **准入**：`Orchestrator.executeTask` 分配 `run-NN`、建 `AbortController`；若 `runningCount >= 3` 则进 `runQueue` 并 emit `log("Waiting for a run slot")`
+3. **RAG**：`knowledge.query(task.prompt, 2)` → 写 `snapshot.citations / knowledgeHits`（离线知识库由 `seedKnowledge()` 在构造时注入 3 篇文档）
+4. **建图**：`buildRateLimiterWorkflow(task)` → `n_requirement → n_architecture → n_complexity_gate → (n_loop_full | n_loop_quick) → n_verify → n_scan → n_patch`
+5. **执行**：`WorkflowEngine.execute(workflow, input, hooks)`
+   - 每节点前 `pushCheckpoint`（保留最近 20 个快照）
+   - `executeNode` 按类型分派：agent / tool / condition / parallel_group / subworkflow / verification / self_loop / human_approval / transform
+6. **调度**：agent 节点**不**直接调 Agent，而是 `scheduler.run(...)`：
+   `enqueue → acquire → 派发 → release`
+   有效优先级 `= min(10, base + ⌊wait / τ⌋)`（`τ = 5000ms`，**只读计算**，不改写 `basePriority`）
+7. **认知**：`BaseAgent.execute` → `brain.think(ctx)`；`--live` 时是 `FallbackBrain(LlmBrain, DeterministicBrain)`
+8. **自愈**：`self_loop` → `SelfLoopEngine.runLoop`：
+   DO(develop, 经调度器) → CHECK(`VerificationEngine.verify` 三层) → EVAL(阈值 0.9) → ACT(`failedRuleIds` 累积 + Critic 归因) → PLAN(幂等改 prompt)
+9. **验收**：Tier-1 规则 / Tier-2 `test_runner`（子进程 + 双 realm）/ Tier-3 审计投票（信号 id 白名单）→ 加权分 + `blockingReasons` + `failedRuleIds`
+10. **事件**：每个 hook 进 `Orchestrator.emit`：追加 run 事件历史（非 Studio run 截断 100 条）→ **同步全量 persist** → 广播 SSE
+11. **收敛/升级**：不收敛 → `needs_human` + 三选一升级卡；人工决策写审计并落盘
+
+**关键性质（重构时必须守住）**：模型的自我评价**不参与**收敛判定；`testSuiteCode` 永远取领域模块里的规范测试集，不让模型写自己的考题。
+
+### 3.3 测试基线
+
+| 文件 | 断言数 | 覆盖 |
+|:---|:---|:---|
+| `tests/run-tests.ts` | 303 | 沙箱/diff/注册中心/知识库/工作流引擎/调度器/验证/自愈/端到端/LLM mock/Web API/Git 仓库修复/持久化与人工决策/环境别名/鉴权取消 |
+| `tests/studio-tests.ts` | 81 | 定义库不可变版本 / 真实引擎执行 / 容量与内存隔离 / HTTP 授权与幂等与持久化 |
+| `tests/workflow-studio-tests.ts` | 57 | 图编译器 / 并行子流程反馈环 / 审批续跑 / 服务端验证权限 / API 与导入导出 |
+
+无测试框架：`describe()` / `check()` / `equal()` + `process.exit(failed?1:0)`。
+
+---
+
+## 4. 代码地图
+
+### 4.1 逐文件职责表
+
+| 文件 | 行数 | 职责 | 关键导出 |
+|:---|--:|:---|:---|
+| `src/types/index.ts` | 439 | 领域模型与契约（每个字段都被引擎消费） | `AgentProfile` `WorkflowNode` `WorkflowDefinition` `VerificationResult` `OrchestratorEvent` `TaskSpec` |
+| `src/orchestrator.ts` | 960 | 门面：run 生命周期、事件、升级、审批、取消、容量、LLM 装配 | `Orchestrator` `RunSnapshot` |
+| `src/cli.ts` | 224 | 入口：web / TUI / auto / preview / headless | `parseArgs` |
+| `src/index.ts` | 35 | 公共出口（不含 cli/tui） | — |
+| `src/demo.ts` | 206 | 无头纯文本报告 | `runHeadless` |
+| `src/agent/brain.ts` | 81 | `AgentBrain` 接口 + 确定性大脑 + token 估算 | `DeterministicBrain` |
+| `src/agent/base-agent.ts` | 192 | 画像、滑动记忆、工具授权、并发槽位 | `BaseAgent` |
+| `src/agent/agent-registry.ts` | 109 | 注册、深拷贝版本历史、能力×负载匹配 | `AgentRegistry` |
+| `src/agent/llm/provider.ts` | 280 | OpenAI 兼容客户端（重试/超时/脱敏/用量） | `DeepSeekProvider` `MockLlmProvider` |
+| `src/agent/llm/prompt.ts` | 147 | 分层 JSON 抽取、fenced code、规则格式化 | `extractJson` |
+| `src/agent/llm/llm-brain.ts` | 131 | `LlmBrain` + `FallbackBrain` + 遥测 | `createTelemetry` |
+| `src/agent/llm/specs.ts` | 477 | 6 角色提示词与响应校验（审计信号白名单） | `SPEC_FACTORIES` `AUDIT_SIGNAL_CATALOG` |
+| `src/agent/llm/index.ts` | 139 | 配置解析 + `applyLlm` | `resolveLlmConfig` `applyLlm` |
+| `src/workflow/workflow-engine.ts` | 898 | 校验/环检测/执行/检查点/超时 | `WorkflowEngine` |
+| `src/workflow/execution-context.ts` | 10 | AsyncLocalStorage 追踪上下文 | `executionContext` `trace` |
+| `src/scheduler/dynamic-scheduler.ts` | 316 | 老化、依赖门控、容量预留、重试/故障转移 | `DynamicScheduler` |
+| `src/selfloop/self-loop-engine.ts` | 353 | PDCA 循环、失败累积、最佳候选、升级卡 | `SelfLoopEngine` |
+| `src/verification/verification-engine.ts` | 367 | 三层验证 + 可归因信号 | `VerificationEngine` `AUDIT_CHECKS` |
+| `src/optimization/feedback-optimizer.ts` | 117 | 幂等提示词自愈、工具可靠性 | `FeedbackOptimizer` |
+| `src/knowledge/knowledge-base.ts` | 223 | CJK 双字分词 + 哈希向量混合检索 | `KnowledgeBase` |
+| `src/tools/tool-registry.ts` | 225 | 超时清理、参数类型校验、可靠性、scope | `ToolRegistry` |
+| `src/tools/builtin-tools.ts` | 391 | vm 沙箱、静态扫描、LCS diff | `createBuiltinTools` `buildUnifiedDiff` |
+| `src/tools/test-runner.ts` | 81 | 双 realm 断言驱动器（子进程内） | `runTests` |
+| `src/tools/container-runner.ts` | 88 | Docker 隔离验收 | `containerTestRunner` |
+| `src/store/json-store.ts` | 66 | pid 锁 + 原子替换 JSON 存储 | `JsonStore` |
+| `src/store/run-store.ts` | 46 | schema 校验封装 | `RunStore` |
+| `src/scenarios/rate-limiter.ts` | 772 | 业务域：特征渲染、修复策略、团队、规则、DAG、任务 | `buildAgentTeam` `buildRateLimiterWorkflow` `createRateLimiterTasks` |
+| `src/scenarios/repository-repair.ts` | 182 | 固定 Git 仓库 + 容器验收 + 补丁交付 | `repositoryConfig` `buildRepositoryWorkflow` |
+| `src/studio/definitions.ts` | 203 | 定义/修订/校验器/哈希（无外部依赖） | `validateAgent` `hash` `StudioError` |
+| `src/studio/catalog.ts` | 158 | Agent/团队定义库（ETag、修订、审计） | `StudioCatalog` `agentTemplate` |
+| `src/studio/workflow-store.ts` | 74 | 工作流草稿/修订/发布库 | `WorkflowStore` |
+| `src/studio/graph.ts` | 238 | 图 schema + 校验 + 编译成 `WorkflowDefinition` | `compileGraph` `blankGraph` `graphShape` |
+| `src/studio/service.ts` | 204 | 运行准备：冻结快照、实例化 Agent/Tool、验收配置 | `StudioService` |
+| `src/studio/configured-brain.ts` | 68 | 用户配置驱动的 Brain（含工具回合循环） | `ConfiguredBrain` |
+| `src/web/server.ts` | 612 | HTTP/SSE/鉴权/路由/DTO/静态资源 | `WebServer` |
+| `src/web/studio-api.ts` | 134 | `/api/studio/*` 分派 | `studioRequest` |
+| `src/web/client.ts` | 124 | 控制台 HTML 外壳 + 注入内联脚本 | `DASHBOARD_HTML` |
+| `src/web/dashboard.ts` | 986 | 控制台浏览器逻辑（**函数被 toString 注入**） | `dashboard` |
+| `src/web/studio-page.ts` | 288 | Agent/团队页（同上注入方式） | `STUDIO_HTML` |
+| `src/web/flow-page.ts` | 4 | 设计器 HTML 外壳 | `FLOW_HTML` |
+| `src/web/flow-editor.tsx` | 245 | 设计器 React 应用（真 bundle） | — |
+| `src/web/flow-editor.css` | 4 | 设计器样式（行极长，压缩风格） | — |
+| `src/web/console-style.ts` | 153 | **全站唯一 CSS 字符串** | `CONSOLE_STYLE` |
+| `src/web/login.ts` | 141 | 登录页（独立浅色主题 + 内联脚本） | `LOGIN_HTML` |
+| `src/web/accounts.ts` | 55 | 账号/令牌哈希/时序安全比较 | `authenticate` |
+| `src/tui/app.ts` | 878 | 终端 UI 帧渲染 + 输入 | `TuiApp` |
+| `src/tui/ansi.ts` | 216 | ANSI 样式、宽度、盒子、并排 | `box` `sideBySide` |
+| `src/tui/keys.ts` | 140 | raw stdin 按键解析 | `KeyReader` |
+
+### 4.2 三条启动路径
+
+```
+node dist/src/cli.js            → TuiApp（交互终端）
+node dist/src/cli.js --web      → WebServer（HTTP + SSE）
+node dist/src/cli.js --headless → runHeadless（纯文本报告）
+```
+三者共用同一个 `Orchestrator` 实现，**没有分叉的引擎逻辑**。
+
+---
+
+## 5. 核心概念字典
+
+| 概念 | 类型 | 谁生产 | 谁消费 | 一句话 |
+|:---|:---|:---|:---|:---|
+| **AgentProfile** | `types` | `buildAgentTeam` / Studio 运行时 | registry、scheduler | 运行期画像：能力分、工具白名单、并发上限、记忆窗口 |
+| **AgentBrain** | 接口 | `Deterministic` / `LlmBrain` / `ConfiguredBrain` | `BaseAgent` | 唯一认知接口，引擎不知道它怎么想 |
+| **ToolDefinition** | `types` | `createBuiltinTools` / `repositoryTools` / MCP 桥 | `ToolRegistry` | 工具 + 参数 schema + 超时 + 沙箱标记 |
+| **WorkflowDefinition** | `types` | 场景模块 / `compileGraph` | `WorkflowEngine` | 声明式 DAG（节点含 JS 闭包，故不可序列化——Studio 因此引入 `Graph`） |
+| **Graph** | `studio/graph.ts` | 设计器（浏览器） | `compileGraph` | 可序列化的编辑图（节点/边/位置/绑定/配置），**位置不影响执行顺序** |
+| **StudioSnapshot** | `studio/definitions.ts` | `StudioService.prepare*` | 运行快照、报告 | 冻结的依赖闭包（团队/成员/子流程/模型引用/执行指纹） |
+| **Revision / ETag** | `studio` | catalog / store | 前端 `If-Match` | 修订单调只增不改；ETag 乐观锁 |
+| **ScheduledTask** | `types` | `DynamicScheduler.enqueue` | scheduler 自身 | 排队任务（基础优先级 + 提交时间 + 依赖） |
+| **VerificationResult** | `types` | `VerificationEngine` | SelfLoop / UI / 报告 | 三层结果 + 加权分 + `blockingReasons` + `failedRuleIds` |
+| **RuleFailure / failedRuleIds** | `types` | verify 三层 | 修复大脑 | **自愈的驱动信号**（不是自然语言反馈） |
+| **SelfLoopIterationRecord** | `selfloop` | `runLoop` | UI 轮次视图 | 单轮产物/分数/失败/回归标记 |
+| **HumanEscalationRequest** | `types` | SelfLoop（不收敛时） | TUI 卡片 / Web 决策卡 | 三选一：加倍预算 / 转人工复审 / 中止回滚 |
+| **OrchestratorEvent** | `types` | `Orchestrator.emit` | SSE、TUI、报告 | `{seq,id,at,runId,kind,message,tag,data}` |
+| **RunSnapshot** | `orchestrator` | run 生命周期 | server DTO / 持久化 | 一次运行的完整视图（**UI 不直接拿 `state`**，见 §7.3） |
+
+---
+
+## 6. 后端功能清单与实现落点
+
+| 赛题要求能力 | 实现位置 | 真实机制（不是摆设） | 回归证据 |
+|:---|:---|:---|:---|
+| Agent 定义/注册/发现/版本 | `agent/*`、`studio/catalog.ts` | 画像 + 深拷贝版本历史 + 能力×负载匹配；Studio 侧不可变修订 + ETag | `[3]`、studio-tests 版本段 |
+| 自定义角色与模型 | `studio/service.ts`、`configured-brain.ts` | 配置 → Profile + ConfiguredBrain；纯 JSON 动作契约（final 或单次 tool）；maxTurns | studio-tests 指令生效段 |
+| 团队定义与协作 | `studio/catalog.ts`、`service.ts` | `sequence`（交接必须严格相邻）/ `capability`（每次选一人）；成员版本固定 | studio-tests 团队段 |
+| 工作流编排 | `workflow/workflow-engine.ts`、`studio/graph.ts` | 9 类执行节点；图编译器做支配树映射校验、并行/子流程命名空间 | `[5]`、workflow-studio-tests |
+| 智能调度 | `scheduler/dynamic-scheduler.ts` | 只读老化公式 + 依赖门控 + `capacityKey` 合并并发 + 重试换人 | `[6]` |
+| 自我循环 | `selfloop/self-loop-engine.ts` | 结构化失败驱动；跨轮累积；回归保护交付最佳候选；`unresolved` 影响推荐项 | `[8]` |
+| 工具集成 | `tools/*` | 7 个内置工具；vm / 子进程 / Docker 三种隔离级别；MCP 注册桥 | `[1]`、`[2]`、`[12]` |
+| 执行监控与证据 | `orchestrator.ts`、`web/server.ts` | SSE + `Last-Event-ID` 续传；节点记录、轮次、工具调用、报告下载 | `[11]`、`[13]` |
+| 结果验证 | `verification/verification-engine.ts` | 三层加权 + 显式 blocking + 可归因信号 | `[7]` |
+| 反馈优化 | `optimization/feedback-optimizer.ts` | 幂等 prompt 追加、工具可靠性、路径重路由 | `[8]` |
+| 安全与边界 | 见 §7.1、`tools/*` | loopback + 会话 Cookie + 角色 + 跨站写拒绝 + 工具 scope 白名单 | `[11]`、`[15]`、studio-tests 权限段 |
+
+---
+
+## 7. Web 服务端契约
+
+### 7.1 请求处理顺序（`src/web/server.ts`）
+
+```
+1. Host 必须是 loopback（127.0.0.1 / localhost / [::1]）        → 否则 403 请使用本机控制台地址。
+2. 非 GET/HEAD/OPTIONS 且 (sec-fetch-site: cross-site 或 Origin 不匹配 Host) → 403
+3. OPTIONS → 204
+4. 统一响应头：Vary / X-Frame-Options: DENY / Referrer-Policy: no-referrer（未设 CSP）
+5. 会话：Cookie 名 aether_session_<port>（HttpOnly, SameSite=Strict, 8h）
+   Basic 认证仅在请求没有 sec-fetch-site 头时兜底
+6. 未登录：页面路由 → 303 /login?next=…；API → 401 JSON（不带 WWW-Authenticate）
+7. 写操作要求 role = operator（viewer 只读）→ 否则 403
+8. 路由分派（见下表）
+```
+
+> ⚠️ **Cookie 名含端口**。换端口重新登录是设计如此，不是 bug。
+
+### 7.2 路由表
+
+| 方法 | 路径 | 返回 |
+|:---|:---|:---|
+| GET | `/login` | `LOGIN_HTML`（已有会话 → 303 到 `next`） |
+| POST | `/api/login` | `{next}` + `Set-Cookie`；非 JSON → 415；错凭证 → 401 |
+| POST | `/api/logout` | 204（并撤销该会话绑定的 SSE） |
+| GET | 页面白名单（见 §7.4） | `DASHBOARD_HTML` / `STUDIO_HTML`（`/studio/agents*`、`/teams*`）/ `FLOW_HTML`（`/workflows*`）；`/runs/:id` 不存在 → 404（**仍返回 HTML 壳**） |
+| GET | `/studio-assets/flow-editor.{js,css}` | 从 `dist/src/assets/` 读取，`Cache-Control: no-store` |
+| * | `/api/studio/*` | 交给 `studioRequest()`（§7.5） |
+| GET | `/api/events` | 全局 SSE（无历史、无 `id:`） |
+| GET | `/api/runs/:id/events` | run 级 SSE：先回放历史，支持 `Last-Event-ID`；游标失效发 `event: reset` |
+| GET | `/api/dashboard` | **控制台唯一主快照**（§7.3） |
+| GET | `/api/status` | `{runs, agents, llm, tools}` |
+| GET | `/api/agents` | Agent 视图（`profile` + `brainName`，**不含** systemPrompt/memory/key） |
+| GET | `/api/agents/:id/history` | `{versions, activity}`（最多 10 条 run） |
+| GET | `/api/runs` | 全部 run（DTO） |
+| GET | `/api/runs/:id` | 单个 run（DTO） |
+| GET | `/api/runs/:id/report` | JSON 附件 `attachment; filename="<runId>-report.json"` |
+| POST | `/api/runs` | 仓库任务 `{projectId, goal}` → 202 `{runId}`；未配置 → 503 |
+| POST | `/api/tasks/run` | `{taskId}` 或 `all`；预设任务 → 200 `{success, runId}` |
+| POST | `/api/runs/:id/cancel` | 202 / 409（已不可取消） |
+| POST | `/api/runs/:id/escalate` | `{optionIndex, reason?}` → 200 `{run}`；无待决策 → 409 |
+| * | 其他 | 404 `{error:'Not Found', path}` |
+
+错误映射：`StudioError → {error:{code,message,issues?}}` + 其 status；`SyntaxError → 400`；其他 `→ 500 {error: message}`。
+
+### 7.3 `/api/dashboard` 的入参与 DTO（重构时最常改的地方）
+
+**查询参数语义**（很反直觉，务必记牢）：
+
+| `runId` 参数 | 结果 |
+|:---|:---|
+| **缺省**（无该参数） | 选**最近一次**运行；若 `view=delivery` 则选**最近一次已结束**的运行 |
+| **空字符串** `?runId=` | `run: null` → 前端进入「工作流预览」模式 |
+| `run-07` | 该运行；不存在 → `run: null`（前端显示 404 文案） |
+
+**响应字段**：`tasks`（含每个任务的 `workflow` 定义，供预览）/ `scheduler` / `tools` / `llm` / `knowledgeChunks` / `settings` / `account` / `repository` / `persistentStorage` / `agents`（附 `version`、`toolIds`、`capabilities`）/ `pending`（队列）/ `optimizations`（最近 12 条）/ `runs`（摘要数组）/ **`run`（选中运行的 DTO）** / `events`（选中运行的事件，普通 run 最多 100 条）。
+
+**`runDetail()` 的 DTO 边界**（`server.ts:45`）：
+
+```ts
+// 剥离（绝不外发）
+state, definitions, requestKey, resumeRecords, runInput
+// 新增
+design: { kind, executionHash, workflow{id,revision,hash,name},
+          team{id,revision,hash,name}, agents[{id,memberId,revision,hash,name}] }
+// 保留
+attempts, nodeProgress, loopRounds, verification, patch, artifact, approvals,
+escalation, citations, knowledgeHits, plan, project, goal, baselineVerification,
+baselineScan, iterations, summary, error, cancellation, modelLabel, requestedBy,
+retryAvailable, restored, humanDecision, retryOf, status, startedAt, finishedAt
+```
+
+> **推论（推断）**：UI 看不到 `state`，所以节点级证据只能靠 `nodeProgress`（每节点最后一次状态）+ `attempts`（Studio run 才有完整记录）。这是「普通 run 的节点 inspector 明细不如 Studio run」的根因。
+
+### 7.4 页面白名单（新增路由必须改这里）
+
+```ts
+// server.ts:42
+/^\/(?:index\.html|agents|studio\/agents(?:\/[\w-]+)?|teams(?:\/[\w-]+)?|
+     workflows(?:\/[\w-]+)?|settings|delivery|runs(?:\/run-\d+(?:\/delivery)?)?)?$/
+```
+不在白名单里的路径**不会报错，会静默落到 `/`**（`workspacePath()` 返回 `/`）。改路由时同时要看 `dashboard.ts` 的 `routePage()` 与测试 `[11]`。
+
+### 7.5 `/api/studio/*` 契约
+
+| 方法与路径 | 说明 |
+|:---|:---|
+| `GET /api/studio/catalog` | 模型引用、工具目录（含 `available`/`reason`）、角色、模板、`repositoryVerification`/`repositoryDelivery`、`persistentStorage` |
+| `GET/POST /api/studio/{agents,teams}` | 列表 / 创建（`{slug,config}` 或 `{slug,copyFrom:{id,revision}}`） |
+| `GET /api/studio/{agents,teams}/:id` | 详情 + ETag |
+| `PUT …/:id/draft` | 全量草稿，**必须 `If-Match`** |
+| `POST …/:id/revisions` | 把草稿固定为下一修订 |
+| `GET …/:id/revisions[/:rev]` | 不可变历史 |
+| `PATCH …/:id` | `{enabled}` |
+| `DELETE …/:id` | 归档（不物理删） |
+| `POST /api/studio/tests` | 单 Agent 测试 → 202 `{runId}` |
+| `POST /api/studio/runs` | `{kind:'team'|'workflow'|'node-test', …Ref, input, capability?, nodeId?}` → 202 |
+| `GET /api/studio/runs/:runId` | 完整快照 + attempts + events（operator only） |
+| `POST /api/studio/runs/:runId/approvals/:id` | `{decision:'approve'|'reject', reason, key}` |
+| `GET/POST /api/studio/workflows[/:id][/draft|/revisions|/publish|/export]` | 工作流库 |
+| `POST /api/studio/workflow-validate` | `{valid, errors[], executionHash, compiled}` |
+| `GET /api/studio/workflow-templates` | `{blank}` 空图 |
+| `POST /api/studio/workflow-import` | 依赖指纹必须匹配 |
+
+**幂等**：`POST /api/studio/{runs,tests}` 支持 `Idempotency-Key`；同账号同键同内容 → 复用原 run；同键不同内容 → 409 `IDEMPOTENCY_CONFLICT`。
+
+**错误码（文档化清单）**：`422 INVALID_CONFIG`、`428 ETAG_REQUIRED`、`409 VERSION_CONFLICT`、`409 DISABLED`、`409 MODEL_REVISION_UNAVAILABLE`、`503 MODEL_UNAVAILABLE`、`503 STORAGE_FAILED`、`409 VERIFICATION_PROFILE_CHANGED`、`409 APPROVAL_CONFLICT`、`409 APPROVAL_EXPIRED`、`403 OPERATOR_REQUIRED`、`422 IMPORT_HASH`、`422 IMPORT_DEPENDENCY`。
+
+---
+
+## 8. 页面实现详解（四套前端）
+
+### 8.0 总览
+
+| 页面 | URL | 服务端返回 | 浏览器执行体 | 数据源 | 渲染方式 |
+|:---|:---|:---|:---|:---|:---|
+| 登录 | `/login` | `LOGIN_HTML` | 页内 45 行内联脚本 | `POST /api/login` | 静态 HTML |
+| 工作台 | `/` | `DASHBOARD_HTML` | `dashboard()`（986 行） | `GET /api/dashboard?runId=` | 字符串 `innerHTML` |
+| 任务执行 | `/runs/:id` | 同上 | 同上（`page='execution'`） | 同上 | 同上 |
+| 验收与交付 | `/delivery`、`/runs/:id/delivery` | 同上 | 同上（`page='delivery'`） | 同上（`view=delivery`） | 同上 |
+| 系统 Agent 实时视图 | `/agents` | 同上 | 同上（`page='agents'`） | 同上 + `/api/agents/:id/history` | 同上 |
+| 系统设置 | `/settings` | 同上 | 同上（`page='settings'`） | 同上（`settings` 字段） | 同上 |
+| Agent 中心 | `/studio/agents`、`/studio/agents/:id` | `STUDIO_HTML` | `studioPage()`（288 行） | `/api/studio/agents*` + `/api/dashboard` | 字符串 `innerHTML` |
+| 团队 | `/teams`、`/teams/:id` | 同上 | 同上（`kind='teams'`） | `/api/studio/teams*` | 同上 |
+| 工作流设计器 | `/workflows`、`/workflows/:id` | `FLOW_HTML` | `flow-editor.tsx`（真 React） | `/api/studio/*` + `/api/runs/:id/events` | React 组件树 |
+
+> ⚠️ **两个 "Agent" 页面语义完全不同**：`/studio/agents` 是**定义编辑器**（Studio），`/agents` 是**运行期实时视图**（负载/历史/调度）。后者的入口藏在 Studio 页顶部一个 `link` 里。导航栏「Agent 中心」指向 `/studio/agents`。重构时应明确区分命名（如「Agent 定义」vs「Agent 运行」）。
+
+### 8.1 登录页 `/login`（`src/web/login.ts`，141 行）
+
+- **结构**：两栏（左：品牌 + 三步流程说明；右：表单）。窄屏（≤780px）隐藏左栏，品牌回到右栏。
+- **DOM id**：`login`(form)、`username`、`token`、`toggle`（显示/隐藏令牌，`aria-pressed`）、`submit`、`login-error`、`title`。
+- **脚本**（页内 45 行）：`preventDefault` → `fetch(form.action, JSON)` → 成功 `location.replace(next)`；401 → 「账号或访问令牌不正确。」；`?expired` → 「登录已过期」。
+- **主题**：**浅色 + 绿色（`#176348`）+ `◈` 标记**，与全站深色 + 紫色 `#aab9ff` + `A` 标记**不一致**（重构第一刀，见 §12）。
+- **测试约束**：页面必须包含字符串「登录工作台」。
+
+### 8.2 控制台外壳（`src/web/client.ts`）
+
+```html
+<aside class="sidebar">
+  .sidebar-head（56px 空白品牌带，只作对齐）
+  nav[aria-label] ← src/web/nav.ts 的 NAV_MARKUP（7 项，含图标）
+  .sidebar-foot → .runtime-card(#rt-memory/#rt-defs/#rt-flows) + #storage-status
+<div class="surface">
+  <header class="topbar">
+    .crumbs（AetherHarness › #current-page）
+    .top-actions（#connection/.conn + #session-account → #session-name + 齿轮 icon-btn + #sign-out）
+  <main class="shell"><div class="page">
+    #notice
+    <section data-page="workbench">            ← 新版工作台
+    <section data-page="execution delivery">   ← 旧布局（继承新 token）
+    <section data-page="agents">               ← 旧布局
+    <section data-page="settings">             ← 旧布局
+<script>(${dashboard.toString()})();</script>
+```
+
+导航项与页面的对应（`NAV` 数组，唯一来源）：
+
+| 导航 | href | `data-nav` | 是否走 SPA 路由 |
+|:---|:---|:---|:---|
+| 工作台 | `/` | `workbench` | ✅（`data-route`） |
+| 任务执行 | `/runs` | `execution` | ✅ |
+| Agent 中心 | `/studio/agents` | — | ❌ 整页跳转（换文档） |
+| 团队 | `/teams` | — | ❌ |
+| 工作流 | `/workflows` | — | ❌ |
+| 验收与交付 | `/delivery` | `delivery` | ✅ |
+| 系统设置 | `/settings` | `settings` | ✅ |
+
+> `page='agents'`（`/agents`）仍**没有导航项**，侧栏不高亮——等该页设计稿时一并处理。
+> `data-route` 只对内联脚本生效；跨 HTML 文档的链接必须是普通跳转。
+> 全新标记沿用设计稿的语义命名（`.page-head/.card-head/.preset/.kpi/.runs-table`），`id` 与 `dashboard.ts` 一一对应（见 §8.3.5）。
+
+### 8.3 控制台主逻辑（`src/web/dashboard.ts`，986 行）
+
+#### 8.3.1 顶层状态（第 109–130 行）
+
+| 变量 | 含义 |
+|:---|:---|
+| `data` | 最近一次 `/api/dashboard` 响应（**唯一数据源**） |
+| `page` | `'workbench' \| 'execution' \| 'agents' \| 'delivery' \| 'settings'`（由 `location.pathname` 推导） |
+| `requestedRun` | 选中的 runId；`''` = 预览模式；`undefined` = 未指定 |
+| `taskId` | 当前场景（`rl-easy/normal/hard`）或仓库项目 id |
+| `nodeId` | 画布上选中的节点 |
+| `tab` / `settingsTab` | 当前页签 |
+| `connected` / `stream` / `streamRun` | SSE 连接与"是否 run 级流" |
+| `refreshing/refreshAgain` | 刷新互斥（避免并发重入） |
+| `rendered` | `{容器id → 上次 HTML}` 的渲染缓存（`show()` 的 diff 依据） |
+| `agentHistories` | `Map<agentId, AgentHistory \| string>`（懒加载 + 就地存错误文案） |
+
+#### 8.3.2 函数清单
+
+| 函数 | 职责 | 关键点 |
+|:---|:---|:---|
+| `show(id, html)` | **唯一的 DOM 写入口** | 相同 HTML 直接跳过；保留 `details[id].open`；按 `data-focus` 还原焦点 |
+| `renderPage()` | 页面级切换 | 遍历 `[data-page]` 按 `dataset.page.split(' ')` 命中；设 `aria-current`；切 `#execution-body`/`#delivery-body` |
+| `render()` | 总渲染 | 概览指标 → 场景卡 → 最近任务 → 再按 page 分派 |
+| `renderWorkflow(workflow, run)` | **DAG 布局与节点状态** | 见 §8.3.3 |
+| `renderRun(run,title,prompt)` | 运行摘要卡 | 自动验证徽标、耗时、`lineage`（固定版本指纹）、取消按钮、**升级卡**、报告下载 |
+| `renderRunAgents(run)` | 本次参与的 Agent | 从 `events(kind=scheduler)` + `loopRounds` 反推参与关系 |
+| `renderDelivery(run)` | 验收与交付概览 | 4 个指标（断言数/得分/轮数/耗时）+ 交付物 + 报告 |
+| `verification(result)` | 三层验收视图复用组件 | tiers / blockingReasons / ruleResults / sandbox 输出 / 审查意见 |
+| `renderEvidence(run)` | 证据区（4 个页签） | `tools` / `context` / `artifact` / `events` / 其余走「轮次验证」 |
+| `renderOperations(snapshot)` | Agent 实时视图 + 系统 | 调度指标、队列、Agent 卡（`<details>` + `<progress>`）、工具统计、提示词优化 |
+| `renderPresets(canOperate, selected, starting)` | 工作台三张预设卡 | 从 `task.workflow.nodes[].selfLoopConfig` 推导「节点数 / 轮次 / 阈值」；`rl-normal` 走 featured 样式 |
+| `renderKpi()` | 四格 KPI | 实时运行中（含容量占比）/ 队列等待 / 已完成（含今日增量）/ 平均验收分（含合格率） |
+| `renderRuns()` | 最近任务执行表格 | 分段筛选（`runsTab`）、状态药丸、得分着色、`mm:ss` 耗时、行内操作（进入/审批/复盘/取消/查看） |
+| `runRow(item)` / `runPill(item)` | 表格行与状态药丸 | `humanDecision` 优先于机器状态；`scoreClass()` 决定得分颜色 |
+| `renderSettings(snapshot)` | 4 个设置页签 | 模型/工具权限/执行策略/运行环境（**全部只读**） |
+| `agentHistory(id)` | Agent 历史片段 | 版本列表 + 最近参与运行 |
+| `request(url, body?)` | fetch 封装 | 401 → 关闭 SSE 并跳登录 |
+| `scheduleRefresh()` | 90ms debounce 刷新 | 防抖 + 互斥 |
+| `connectEvents(runId?)` | SSE 连接管理 | 同一 run 不重复连；全局流与 run 流切换 |
+| `refresh()` | 拉快照 + 重渲染 | 用 `selectedRoute !== routePath` 丢弃过期响应（**竞态保护**） |
+| `syncRoute(focus)` | 路由 → 状态同步 | 重置 `nodeId/tab/decision*` |
+| `navigate(path)` | `pushState` + `syncRoute(true)` | |
+| `selectRun(id, view)` | 生成 URL 并导航 | `''` → `/runs?scenario=`；`undefined` → `/runs` |
+| `start(id, goal?)` | 启动运行 | `id==='all'` → 并发全部；有 goal → 仓库任务 |
+| `decide(runId, option?)` | 取消 / 升级决策 | `option === undefined` → `/cancel`，否则 `/escalate` |
+
+#### 8.3.3 DAG 的绘制方式（重点，重构时会被完全替换）
+
+**不是 SVG，也不是 Canvas**，而是 **CSS 网格 + 伪元素连线**：
+
+1. **分层**：`layers` 从 `entryNodeId=0` 出发，对所有边做 `nodes.length` 轮松弛（最长路径），得到每个节点层级。
+2. **分列**：按层级把节点装进 `stages[layer][]`。
+3. **fork / merge 判定**：相邻两层「1 → 多个」且都从同一前驱连出 → `stage.fork`；「多个 → 1」且都连向同一后继 → `stage.merge`。
+4. **输出**：每个 stage 是 `grid-template-columns: repeat(var(--branch-count), 1fr)` 的 div；连线完全由 `::before/::after` 的 `border-left`/`border-top` 画出（`console-style.ts:86-94`）。
+5. **节点**：`<button class="node" data-node data-state>`，`data-state` ∈ pending/running/completed/failed/needs_human/skipped。
+6. **状态推导**：`progress[node.id]?.status`，否则若该节点是未走的分支或运行已结束 → `skipped`，否则 `pending`。
+7. **子结构**：`self_loop` 的 target/verify 节点从主流中抽出来，放在 inspector 里叫「自愈循环内部」；`parallel_group` 的子节点同理；`subworkflow` 的子节点按 `nodeId/xxx` 前缀从 `nodeProgress` 里捞出。
+
+**因此**：`pipeline-flow` 这个类名就是测试锚点；一旦改成真 SVG，测试断言与 CSS 都要一起改。
+
+#### 8.3.4 交互与事件
+
+采用 **文档级事件委托**（`document.addEventListener('click')`），按 `button.dataset` 分派：
+
+| data 属性 | 行为 |
+|:---|:---|
+| `data-route`（`<a>`） | 拦截左键点击 → `navigate()` |
+| `data-run` | 启动预设任务 |
+| `data-preview` | 预览该场景的编排（不发请求） |
+| `data-select-run` | 切换运行 |
+| `data-node` | 选中/取消节点（toggle） |
+| `data-tab` | 切换证据页签 |
+| `data-settings` | 切换设置页签 |
+| `data-agent-history` | 懒加载 Agent 历史 |
+| `data-decision="0|1|2"` | 升级卡三选一 |
+| `data-cancel` | 取消运行 |
+| `data-copy` / `data-download` | 复制 / 下载补丁（Blob + `URL.createObjectURL`） |
+
+其他监听：`#run-all`、`#sign-out`、`#project-form submit`、`#run-history change`、`#run-summary input`（决策备注）、`popstate`、`pageshow`（bfcache）、`setInterval(3000)`（未连 SSE / 刷新失败 / run 级流 / 有活跃 run 时兜底轮询）。
+
+#### 8.3.5 页面骨架 id 清单（重构时逐个对照）
+
+| 区块 | id |
+|:---|:---|
+| 外壳 | `notice` `current-page` `connection` `connection-label` `session-account` `session-name` `sign-out` `storage-status` |
+| 侧栏运行态 | `rt-memory` `rt-defs` `rt-flows` |
+| 工作台·页头 | `heading` `bus-state` `bus-label` `mode` `refresh-view` `run-all` |
+| 工作台·仓库卡 | `project-form` `repo-badge` `schema-badge` `project-select` `repo-target` `repo-tree` `project-goal` `project-sample` `project-submit` `project-status` |
+| 工作台·预设 | `preset-count` `scenario-cards` |
+| 工作台·KPI | `stat-running` `stat-running-note` `stat-queued` `stat-queued-note` `stat-done` `stat-delta` `stat-score` `stat-score-note` |
+| 工作台·表格 | `runs-tabs` `runs-count-all` `runs-count-active` `runs-count-done` `runs-table-wrap` `runs-tbody` `runs-empty` |
+| 任务执行 | `execution-title` `run-caption` `run-history` `execution-body` `flow-content` `execution-steps` `pipeline-flow` `workflow-version` `node-inspector` `execution-evidence` `run-summary` `run-agents` |
+| 验收交付 | `delivery-body` `delivery-summary` `delivery-evidence` |
+| Agent 视图 | `team-title` `team` `scheduler` `system` |
+| 设置 | `settings-title` `settings-policy` |
+| 动态生成 | `copy-result`（artifact 页签内） |
+
+客户端事件（`data-*` 委托）：`data-route` `data-nav` `data-run` `data-preview` `data-select-run` `data-node` `data-tab` `data-settings` `data-agent-history` `data-decision` `data-cancel` `data-copy` `data-download`，本轮新增 **`data-runs-tab`**（全部/进行中/已结束）与 **`data-cancel-run`**（表内取消排队运行）。
+
+### 8.4 Agent 中心 / 团队页（`src/web/studio-page.ts`，288 行）
+
+**一个函数服务两个页面**，靠 `kind = pathname.startsWith('/teams') ? 'teams' : 'agents'` 切换。
+
+- **布局**：`.studio-grid` = 左侧 270px 定义列表 + 右侧编辑器/测试证据。≤1000px 变单列，列表变 300px 高滚动区。
+- **列表**：`#list`（`button.definition-row[data-open]`）+ `#search` + `#filter`（全部/自定义/系统/已归档）+ `#list-count`。
+- **编辑器分区**（Agent）：基本信息 → 基础角色/执行行为/模型引用 → 系统指令 → 行为约束 → 能力标签 → 工具白名单 → `<details>`记忆/预算/IO Schema。
+- **编辑器分区**（团队）：名称/说明 → 任务分配（`sequence`/`capability`）+ 协调成员 → 成员卡（上移/下移/移除 + 固定版本下拉 + 岗位 id + 职责 + 能力）→ 交接表 → 「按当前成员顺序生成交接关系」→ 工具白名单。
+- **读写分离**：`renderEditor()` 把 `draft` 渲染成表单；`readConfig()` 从 DOM 反向读出配置对象（**没有受控组件，全靠 id 取值**）；`dirty` 由 `input`/`change` 事件置位；`beforeunload` 拦截。
+- **只读判定**：系统定义 / 已归档 → `fieldset#config-fields` 禁用 + 保存按钮禁用；viewer → 整个编辑器替换为提示文案。
+- **测试面板**：`<details id="testing">` → 输入 JSON + 可选能力 → `POST /api/studio/tests` 或 `/api/studio/runs` → `followRun()` 订阅 run 级 SSE → `refreshRun()` 拉 `/api/studio/runs/:id` 渲染 attempts（输入/输出/工具调用）。
+- **可写操作**：`保存草稿` / `保存固定版本`(submit) / `复制` / `停用·启用` / `删除·归档` / `基于此版本编辑` / `重新载入` / `取消运行`。
+
+### 8.5 工作流设计器（`src/web/flow-page.ts` + `flow-editor.tsx` + `flow-editor.css`）
+
+**唯一真正的组件化前端**：React 19 + `@xyflow/react`，esbuild 打成单 bundle（438KB），CSS 走独立文件（`@import '@xyflow/react/dist/style.css'` + 自定义）。
+
+**布局**（`.flow-app` 四行网格）：
+
+```
+[.flow-nav]          品牌 + 4 个导航 + 状态文字
+[.flow-bar]          打开 / 名称 / 版本 / 保存草稿 / 校验 / 保存固定版本 / 运行 / 发布
+[.flow-workspace]    [.flow-library 200px] [.flow-canvas] [.flow-properties 320px]
+[.flow-debug]        运行调试与证据（左：测试输入与操作；右：4 个证据页签）
+```
+
+**核心状态**：`graph`（编辑图）/ `saved`（`GraphDefinition`，含 `etag`、`revisions`、`publishedRevision`）/ `revision`（`'draft'` 或版本号）/ `selected` / `history[]`+`redo[]`（撤销栈，上限 40）/ `dimensions`（节点测量尺寸，喂给 MiniMap）/ `run` / `debugTab`。
+
+**派生量**（都是纯函数式推导，值得学习）：
+
+| 派生 | 表达式 |
+|:---|:---|
+| `editable` | `revision === 'draft' && !saved?.archivedAt` |
+| `dirty` | `revision === 'draft' && JSON(graph) !== JSON(saved.draft)` |
+| `matchingRun` | `JSON(graph) === JSON(run.definitions.workflow?.graph)`（**决定是否叠加节点状态**） |
+| `team` | 从 `teams` 列表按 `graph.teamRef` 取对应修订的 config |
+
+**交互要点**：
+- 节点库支持**点击添加**和**拖拽落点**（`screenToFlowPosition`）。
+- 连线规则在 `connect()` 里硬校验：普通节点只能一条后继（要并行请用 Parallel 节点）；condition 必须从 `true`/`false` 端口出；同端口不可重复连。
+- 另有「键盘连线」兜底：起点/出口/终点三个下拉 + 「连接节点」按钮。
+- 属性面板按节点类型条件渲染（agent/tool/condition/loop/verification/parallel/subworkflow/approval/delivery）。
+- Node 组件 `StudioNode`：`node-kind` 小标题 + 名称 + `flow-node-meta` 摘要 + 状态文字；condition 有两个 source handle（`true` 在 35%、`false` 在 75%）。
+- 保存/运行前置：`validEditors()` 检查属性面板里未修复的 JSON 错误（`textarea[aria-invalid="true"]`）。
+- 运行门槛：必须已保存固定版本，且草稿与最后修订一致（否则按钮禁用）。
+- 审批：`run.approvals` 渲染批准/拒绝按钮 + 备注 prompt，`POST /api/studio/runs/:id/approvals/:aid`，带 `crypto.randomUUID()` 作为 `key`。
+- `?run=` 深链：进入页面自动 `followRun()`（SSE + `refreshRun`）。
+
+**技术注意**：`flow-editor.css` 是**超长单行压缩风格**（可读性极差）；`flow-editor.tsx` 同样是「多语句塞一行」的风格——这是重构时**最需要格式化**的文件（但注意：格式化会制造巨大 diff，建议单独一个 commit）。
+
+---
+
+## 9. 前端共享机制
+
+| 机制 | 实现 | 作用 | 重构注意 |
+|:---|:---|:---|:---|
+| **样式** | `CONSOLE_STYLE` 一个字符串，注入 3 个页面的 `<style>` | 无构建、无 FOUC、无外部请求 | 全局作用域，类名冲突无保护；改样式必须重新编译 TS 并重启 |
+| **设计令牌** | `:root` 上的 `--bg/--side/--paper/--inset/--ink/--muted/--line/--accent/--radius` + `color-scheme: dark` | 唯一的主题抽象 | 只有 color/radius，没有 spacing/type scale/shadow 变量 |
+| **转义** | 每个页内 `esc()`（`& < > " '`） | 防 XSS | **所有插值必须过 `esc()`**，重构时最容易漏的就是新增字段 |
+| **渲染** | `show(id, html)` + `rendered{}` 缓存 | 极简 diff，避免整树重绘 | 保 `details[id].open`、按 `data-focus` 还原焦点；新增容器必须走 `show()` |
+| **数据** | 单次 `/api/dashboard` 全量快照 | 简单、无缓存失效问题 | 见 §10-R3/R4 的性能隐患 |
+| **实时** | SSE 只当"失效信号"，收到就 `scheduleRefresh()` | 天然最终一致、无需增量合并 | 每个事件 → 全量快照；事件风暴下会被放大 |
+| **路由** | `history.pushState` + `popstate` + `data-route` | 文档内 SPA | 跨文档链接必须普通跳转；新路由要进 `workspacePath()` |
+| **字典** | 每页各写一份（`scenarios/nodeNames/roles/tools/capabilities/statusNames/tierNames/eventNames`） | 中文化显示 | **重复 3 份**，见 §10-R7；导航与图标已收口到 `nav.ts` / `icons.ts` |
+| **图标** | `src/web/icons.ts`：25 个内联 SVG，单色归一为 `currentColor` | 无外部请求、可随文字变色、服务端直出 | 生成文件，改设计后跑 `scripts/generate-console-icons.mjs`；**不要手改** |
+| **导航** | `src/web/nav.ts` 的 `NAV_MARKUP` | 三个页面共用一份导航 | 新增页面只改这里 + `workspacePath()` |
+| **设计令牌** | `:root` 上 30+ 变量（Slate/Indigo + 语义色 + 圆角/阴影/字体栈） | 全站唯一主题抽象 | 旧名 `--paper`/`--inset` 保留为别名（设计器仍在用） |
+| **无障碍** | `aria-pressed` / `aria-current` / `role="status"` / `role="alert"` / `:focus-visible` | 基本可用 | 重构时必须保留，测试和验收都依赖这些语义 |
+
+---
+
+## 10. 设计约束与地雷（重构前必读）
+
+> 这一章是本文最重要的部分。前 7 条是「不知道就会写出必挂代码」的硬约束。
+
+### R1 ★★★ `function.toString()` 就是前端构建管线
+
+```ts
+// src/web/client.ts:122
+<script>(${dashboard.toString()})();</script>
+
+// src/web/studio-page.ts:288
+<script>(${studioPage.toString()})();</script>
+```
+
+`dashboard.ts:39` 的注释是这条约束的原始说明：*"Browser entry point. Everything it uses at runtime is defined inside this function."*
+
+**三条硬规则**
+1. **函数体内不得引用任何模块级运行时值**。目前 `dashboard.ts` / `studio-page.ts` 顶部只有 `import type`（编译后被擦除），所以能跑。一旦你写 `import { nodeNames } from './domain.js'` 并在函数里用 → 浏览器 `ReferenceError: nodeNames is not defined`。
+2. **不能改变 TS 降级目标**。`tsconfig.json` 是 `target: ESNext`。若降到 ≤ ES2016，tsc 会为 `async/await`、对象展开注入 `__awaiter`/`__spreadArray` 等**模块级辅助函数** → 注入到浏览器的脚本直接崩。**改 target 前必须先把 dashboard 换成 bundle。**
+3. **不能对 `dashboard.ts` / `studio-page.ts` 做压缩或 tree-shaking**。esbuild 只处理 `flow-editor.tsx`，这是有意的。
+
+**验证方法**（每次改完跑一遍）：
+```powershell
+node dist/src/cli.js --web --port 3399   # 打开页面看 console；任何 ReferenceError 都指向本条
+```
+
+### R2 ★★★ UI 契约被测试断言钉死
+
+`tests/run-tests.ts:1283-1419` 直接断言服务端返回的 HTML/JSON 字符串：
+
+| 断言 | 位置 |
+|:---|:---|
+| `/login` 页面含「登录工作台」 | 1283 |
+| 页面含 `class="pipeline-flow"` | 1328、1417 |
+| 工作台含「预设案例」 | 1329 |
+| 路由 `/`、`/runs`、`/agents`、`/delivery`、`/settings` 均 200 | 1300 附近 |
+| `/api/dashboard` 恰好 3 个任务（1343）、任务 DAG 有指向 `n_loop_quick` 的边（1345） | 1342 起 |
+| `/api/agents` 恰好 6 个 Agent，且含 Sarah / Marcus | 1351–1353 |
+| 未登录 `/runs/run-01` → 303 到 `/login?next=%2Fruns%2Frun-01` | 1284 附近 |
+| 401 **不得**带 `WWW-Authenticate` | 1284 |
+| `/runs/run-99` 404 页面**仍须含** `pipeline-flow` | 1419 |
+
+**结论**：DOM 大改必然红。这不是"禁止改"，而是**必须同一 PR 内同步改断言**；更稳的做法是给关键节点加 `data-testid`，把断言从"文案/类名"迁移到"稳定锚点"，分两步走。
+
+### R3 ★★ 每个事件都同步全量落盘
+
+```ts
+// orchestrator.ts:300-325
+emit(...) {
+  history = runs.get(runId)?.definitions ? [...prev, event]           // Studio run 不截断
+                                            : [...prev, event].slice(-100);
+  events.set(runId, history);
+  if (kind !== 'scheduler') this.persist();   // ← 同步：整库序列化 + fsync + rename
+}
+```
+`persist()` 写的是**全部 run + 全部事件**（仓库里现存 `state.json` 已 102KB）。事件越密、run 越多 → 单次写入越慢，且阻塞事件循环（连带 SSE 抖动）。
+
+**重构相关**：UI 刷新越频繁，事件产生越密。若做「实时图表/高频进度」，先解决这条，否则会把引擎拖慢。
+
+### R4 ★★ SSE → 全量快照的放大效应
+
+信号链：任一事件 → 每个 SSE 客户端收到 → 90ms debounce → `GET /api/dashboard`（**全量快照，含 `attempts`/`loopRounds`/`events`**）→ 全量重渲染。
+多 run 并发 + Studio run（`attempts` 无上限）时，单次响应体积线性膨胀。
+
+**改造方向**（重构时可选）：给 `/api/dashboard` 加 `?slim=1`（只返回摘要 + 选中 run 的增量），或让 SSE 直接推 `{runId, seq}` 让前端按需拉单个 run（`/api/runs/:id` 已存在）。
+
+### R5 ★★ 没有前端 dev loop
+
+- CSS 在 `console-style.ts` 的 TS 模板字符串里 → 改一行样式要 `tsc` 重编译 + **重启服务** + 刷新。
+- 设计器要额外跑 esbuild。
+- 没有 HMR，没有 sourcemap 开发流。
+
+**最小修复（无需新依赖）**：
+```powershell
+# 终端 A：持续编译
+node node_modules/typescript/bin/tsc -p tsconfig.json --watch
+# 终端 B：设计器增量打包
+node node_modules/esbuild/bin/esbuild src/web/flow-editor.tsx --bundle --format=esm --sourcemap --outdir=dist/src/assets
+# 终端 C：不自动重启，Ctrl+C 后重跑
+node dist/src/cli.js --web
+```
+（Node 的 `--watch` 也能带起 C，但它会重启进程 → 内存会话/未落盘的 run 会中断，`--web` 模式下慎用。）
+
+### R6 ★★ 主题 / 品牌裂开 — **控制台部分已解决（2026-11-17）**
+
+| | 登录页 | 控制台 | 设计器 |
+|:---|:---|:---|:---|
+| 配色 | **浅色** + 绿 `#176348`（未改） | **浅色 Tailwind Slate/Indigo（已改）** | 浅色外壳 + 深色画布（未改） |
+| 标记 | `◈` | `A`（仅面包屑文字，无 logo） | `AetherHarness` 纯文字 |
+| 圆角 | 8–12px 混用 | 12/8/6 + 999 药丸 | 11px（.studio-node） |
+
+剩余两处：`/login` 仍是绿牌独立页，设计器画布仍是 `#0b1120` 深底（等各自设计稿）。
+
+### R7 ★★ 领域字典重复三份 — **未解决（仅导航与图标已收口）**
+
+导航与图标已经单一来源（`src/web/nav.ts`、`src/web/icons.ts`），但**领域文案仍是三份**：
+
+同一份「节点名 / 角色名 / 工具名 / 场景文案」在下列位置各存一份：
+
+| 位置 | 内容 |
+|:---|:---|
+| `dashboard.ts:41-85` | `scenarios` `nodeNames` `nodeTypes` `roles` `tools` `capabilities` `statusNames` `tierNames` `eventNames` `actions` |
+| `studio-page.ts:61,172` | `names`（运行状态） |
+| `flow-editor.tsx:9,12` | `kinds`（节点类型 → 标签/说明）、`statuses` |
+
+新增一个节点类型 / 任务 / 工具，要改 3–5 处，漏一处就是"界面上显示成英文 id"。
+
+**低风险解法（推荐，见 §12.2）**：把字典抽成一个**纯数据**模块，服务端在注入内联脚本前把它序列化成 `window.__AETHER__`；设计器直接 `import` 同一模块。这样既保住 R1 约束（数据不是运行时引用），又消灭重复。
+
+### R8 ★ 三份 `esc()`、两份 `request()`、两份 `api()`
+
+`dashboard.ts` / `studio-page.ts` / `flow-editor.tsx` 各写一份转义与请求封装。行为还不完全一致（设计器的 `api()` 会自动跳登录；控制台的 `request()` 只在 401 时跳）。重构时统一，**尤其不要把转义函数漏在某个新组件里**。
+
+### R9 ★ 单写者假设与 pid 复用
+
+`JsonStore` 只在**构造时**抢 `owner.lock`（`{pid,token}`，用 `kill(pid,0)` 判活）。PID 被复用时会误判；三把锁（runs / studio / workflows）可能分片失败。**不支持多进程共用同一数据目录**（文档已声明）。UI 重构期间若要并行起多个服务，请给每个进程不同的 `AETHER_DATA_DIR`。
+
+### R10 ★ Cookie 名含端口 / 无 CSP / 跨站判定依赖 Sec-Fetch
+
+- Cookie：`aether_session_<port>` → 换端口 = 重新登录。
+- 安全头只有 `X-Frame-Options: DENY` 和 `Referrer-Policy: no-referrer`，**没有 CSP**。重构若引入内联 `<style>`/`<script>`（现状就是内联），加 CSP 会直接打挂自己，需要先把样式/脚本外置。
+- 写操作防护靠 `Sec-Fetch-Site` + `Origin`；没有该头的客户端退化为「必须 operator + loopback」。
+
+### R11 ★ TUI 有个硬编码的假数字
+
+```ts
+// src/tui/app.ts:765
+`${paint('threshold', style.dim)} ${((v.ruleResults.length || 1) ? 0.9 : 0.9).toFixed(2)}  `
+```
+三元两边都是 `0.9`，即阈值恒显示 0.9，并不读本次 spec。演示/答辩时容易被追问「为什么显示 0.9」。顺手修。
+
+### R12 ★ 页面语义重叠
+
+- `/studio/agents`（定义编辑）vs `/agents`（运行期实时视图）→ 命名要区分。
+- `/delivery`（最近结束的运行的交付）vs `/runs/:id/delivery`（指定运行交付）→ 靠 `runId` 缺省/显式区分，很容易和 `view=delivery` 参数搞混（见 §7.3）。
+- `page='agents'` 在侧栏没有导航项（不会高亮）。
+
+---
+
+## 11. 新人任务手册（我要改 X）
+
+| 我想… | 改哪里 | 别忘了 |
+|:---|:---|:---|
+| **改某个 Agent 的系统提示词（离线团队）** | `scenarios/rate-limiter.ts` 的 `buildAgentTeam()` | 提示词里提到的规则 id 必须与 `makeVerificationSpec` 一致 |
+| **改/加一条验收规则** | `makeVerificationSpec()`（规则 id + `check`）+ `verification-engine.ts` 的 `AUDIT_CHECKS`（若需审计信号） | 新 id 要在 `specs.ts` 的 `AUDIT_SIGNAL_CATALOG` 里登记，否则 LLM 审计员引用会被过滤 |
+| **加一个修复策略** | `FIX_BY_RULE` + `renderRateLimiter()` | 不加策略规则就永远不收敛（`DIST-001` 就是这么设计的） |
+| **加一个工具** | `tools/builtin-tools.ts` 的 `createBuiltinTools()` | ① `studio/service.ts:16` 的 `allowedTools` ② `dashboard.ts` 的 `tools` 字典 ③ `flow-editor` 的 catalog 里自动出现 |
+| **加一个工作流节点类型** | `types` 的 `WorkflowNodeType` → `workflow-engine` 的 `validate()` + `executeNodeInternal()` → `studio/graph.ts` 的 `graphKinds`+`fields`+`compileGraph` → `flow-editor.tsx` 的 `kinds`+`defaults`+属性面板 | 5 个地方 + 至少 1 条测试 |
+| **加一个预设任务** | `createRateLimiterTasks()` + `buildRateLimiterWorkflow()` | `dashboard.ts` 的 `scenarios` 与 `nodeNames` 字典；`tests` 里「恰好 3 个任务」的断言 |
+| **加一个 API** | `web/server.ts` 路由 + 前端 `request()` | 写操作要过 operator 校验；页面路由还要进 `workspacePath()` |
+| **加一个页面** | `server.ts` 的 `workspacePath()` + HTML 选择逻辑 + 新 HTML 模块 | SPA 内新增则改 `routePage()`+`[data-page]`；跨文档则加导航项；**测试 `[11]` 会检查路由 200** |
+| **改样式** | `web/console-style.ts` | 改完 `tsc` + 重启；新类名要考虑 3 个页面共用 |
+| **改设计器** | `web/flow-editor.tsx` + `flow-editor.css` | 必须重跑 esbuild；`/studio-assets/flow-editor.js` 返回 200 有测试 |
+| **改 TUI** | `tui/app.ts`（布局常量在文件顶部） | `--frames 3` 可预览；宽度下限 76×20 |
+| **接真实模型** | 无需改代码：`$env:DEEPSEEK_API_KEY=…; node dist/src/cli.js --web --live` | 严格模式加 `--no-fallback` |
+| **跑真实仓库验收** | 设 `AETHER_PROJECT_REPO` / `AETHER_PROJECT_BASE` / `AETHER_RUNNER_IMAGE` | 三者必须同时设置；镜像必须是本地已缓存的 `sha256:` id；需严格 Live |
+
+---
+
+## 12. UI 重构施工指南
+
+### 12.1 先划边界：三个"绝对不要动"
+
+1. **不要动引擎**（`workflow/ scheduler/ selfloop/ verification/ orchestrator`）——它的回归网最厚，收益最低。
+2. **不要动 `/api/dashboard` 与 `/api/studio/*` 的字段语义**（可加字段，不可改/删），否则前端与 441 条断言同时震荡。
+3. **不要动 `dashboard()`/`studioPage()` 的注入方式**，除非你同时完成"换 bundle"（见路径 B）。
+
+### 12.2 组件切分表（按现有 CSS 已具备的原子性）
+
+| 层 | 组件 | 现有实现 | 目标 |
+|:---|:---|:---|:---|
+| **Token** | 颜色/圆角/间距/字号/阴影 | 只有 9 个 CSS 变量 | 补齐 `--space-*` `--text-*` `--shadow-*`；把硬编码的 `#0b1120` 等收进变量 |
+| **Atom** | `Badge`(5 色) `Button`(primary/danger) `Link` `Field`(select/input/textarea) `Notice` `Empty` `CodeBlock` `Metric` `Progress` | CSS 类已存在，用法是字符串拼接 | 抽出 `badge(label,color)`、`btn(label,{variant})` 等纯函数（**同文件内**，守住 R1） |
+| **Molecule** | `SectionTitle` `Tabs` `Panel` `Inset` `RecordList` `LogList` `AgentCard` `Inspector` `NodeChip` `StageColumn` `DecisionCard` `MetricGrid` | 分散在 `render*` 里 | 每个渲染函数只负责"取数 + 调组件" |
+| **Organism** | `Sidebar` `TopBar`(连接态/账号/退出) `WorkbenchGrid` `ExecutionWorkspace`(步骤列+DAG+inspector+证据) `DeliveryBody` `AgentsLiveView` `SettingsTabs` `StudioSplitView`(列表+编辑器+测试) `FlowEditor`(nav/bar/library/canvas/properties/debug) | 4 个 HTML 文档 + 3 个脚本 | 见路径选择 |
+| **Domain 数据** | 节点名/角色/工具/场景/状态文案 | 3 份重复 | **一份**，服务端注入 + 设计器 import（§12.3 第 2 步） |
+
+### 12.3 路径 A：最小侵入（推荐先做，1–2 天）
+
+**目标**：不改 DOM 骨架、不改测试断言，只消除日常最痛的成本。
+
+| 步骤 | 动作 | 验收 |
+|:---|:---|:---|
+| A1 | 加 `scripts/dev.mjs`：并行跑 `tsc --watch` + `esbuild`（设计器），打印提示 | 改一行 CSS → 10 秒内刷新可见 |
+| A2 | 把 `console-style.ts` 里散落的硬编码颜色/间距收敛为 token（**不改类名**） | 视觉零差异；`pipeline-flow` 等锚点仍在 |
+| A3 | 登录页深色化：复用 `CONSOLE_STYLE` + 同一 `A` 标记 | `/login` 仍含「登录工作台」；截图对比 |
+| A4 | 抽 `web/domain-data.ts`（**纯数据，无函数**），服务端拼进 `<script>`：`window.__AETHER__ = {…}`；`dashboard.ts` / `studio-page.ts` 从该全局读；`flow-editor.tsx` 直接 import 同一模块 | 新增节点类型只需改 1 处；4 个页面均正常 |
+| A5 | 修 R11（TUI 阈值）、修侧栏 `agents` 高亮、统一 `Agent 定义`/`Agent 运行` 命名 | 三处小 diff |
+| A6 | 给关键节点补 `data-testid`（**只加不改**） | 后续可把测试从文案锚点迁到 testid |
+
+> A4 是这套方案的关键技巧：它让你在**不动构建管线**的前提下获得"单一数据源"。注意用 `JSON.stringify(...).replace(/</g,'\\u003c')` 防 `</script>` 截断。
+
+### 12.4 路径 B：渐进组件化（4–7 天，A 完成后评估）
+
+- 新增第二个 esbuild 入口：`src/web/app.tsx` → `dist/src/assets/console.js`。
+- `client.ts` 退化为**静态壳**（保留 `pipeline-flow` 等锚点类名与外层结构，先不动测试）。
+- React 接管 `#main` 内部；数据层沿用 `/api/dashboard`；SSE 沿用"失效信号"语义。
+- 同步做 R4 的 `?slim=1`，否则 React 全量重渲染会比现在更贵。
+- 验收：三条路径（执行/交付/设置）视觉等价 → 再逐页替换。
+
+**风险**：`data-focus` 焦点恢复机制会作废（React 自己管焦点），需要显式补 `autoFocus`/`ref` 逻辑；`details` 展开态需要在状态里存。
+
+### 12.5 路径 C：全量统一 SPA（2–3 周，仅当有长期产品目标）
+
+四套前端 + 登录页合成一个应用，路由/鉴权/字典/组件单一实现。成本主要不在写代码，而在：
+- 441 条断言里的一批 HTML 契约要重写（`[11]` 整段）
+- `workspacePath()` / `runPage` / 404 壳语义要重新设计
+- 设计器已是 React，需要统一其样式体系（它有自己的 CSS 文件）
+- TUI 一致性要另外说明（赛题卖点是"双呈现层"）
+
+**建议**：明确写下"这次不做 C"，避免中途摇摆。
+
+### 12.6 重构时的 8 条纪律
+
+1. 新增插值一律过 `esc()`。
+2. 新容器一律经 `show()` 写 DOM（否则丢焦点/展开态）。
+3. 不把函数放进要注入的字典（会被 `JSON.stringify` 丢掉）。
+4. 不新增内联 `onclick=`；继续用 `data-*` 委托。
+5. 保留 `aria-pressed` / `aria-current` / `role` 语义（测试与无障碍都依赖）。
+6. 改类名/文案前先 `grep tests/`。
+7. 每个 PR 只做一类改动（样式 / 结构 / 数据 / 行为），diff 可读。
+8. 每个 PR 结束跑一次：`tsc --noEmit` → `npm test` → `--web` 手动过三页。
+
+---
+
+## 13. Debug 手册
+
+| 症状 | 第一落点 | 命令/位置 |
+|:---|:---|:---|
+| 页面白屏、console 报 `X is not defined` | R1：`dashboard()`/`studioPage()` 引用了模块级值 | 看 `dist/src/web/dashboard.js` 里该标识符是否在函数外声明 |
+| 页面能开但所有数据为空 | 未登录 / `/api/dashboard` 401 | 浏览器 Network，或 `Invoke-WebRequest http://127.0.0.1:3300/api/dashboard` 应 401 |
+| 点运行没反应 | 403（非 operator）或 run 槽位满 | Network 看 status；`scheduler.queued` 见「系统 Agent」页 |
+| run 卡 `pending` 不动 | `maxConcurrentRuns=3` + `runQueue` | `orchestrator.runQueue`；等上一个 run 结束 |
+| 「Run storage is already open in another service」 | `.aether/runs/owner.lock` 的 pid 仍活 | 关掉另一进程，或换 `AETHER_DATA_DIR` |
+| 启动报「…file has been preserved」 | `RunStore.load` schema 校验失败 | 按报错字段修 `state.json`（坏文件被保留，不会静默丢） |
+| 保存配置报 428 / 409 | 缺 `If-Match` / ETag 过期 | 前端应「载入服务端版本」或「另存副本」，不要静默覆盖 |
+| 自愈永远不收敛 | `failedRuleIds` 里有 `FIX_BY_RULE` 未覆盖的 id | 例：`DIST-001` 是故意不可修的 |
+| 审批后没继续 | 冻结依赖无法解析（配置漂移）→ 409 `VERIFICATION_PROFILE_CHANGED` | 检查模型引用/仓库配置是否变更 |
+| SSE 断线不恢复 | 游标过期 | 服务端会发 `event: reset`，前端应重拉快照 |
+| 设计器节点状态不显示 | 画布与运行版本不一致（`matchingRun=false`） | 点「查看运行使用的画布」 |
+| 设计器保存按钮灰 | 属性面板有未修复 JSON，或草稿≠最后修订 | `validEditors()` 与「保存固定版本」 |
+| 中文乱码（终端） | 代码页非 UTF-8 | `chcp 65001`，或忽略（仅显示层） |
+| 测试偶发失败（Git/容器） | 环境依赖 | `AETHER_TEST_RUNNER_IMAGE` 未设时用本地适配器 |
+| 端口被占 | 3300 默认 | `--port 3399`（注意 Cookie 名会变 → 重新登录） |
+
+**常用诊断命令**
+```powershell
+# 类型检查（最快的第一道闸）
+node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit
+
+# 单跑某一套测试
+node dist/tests/run-tests.js | Out-File .tmp-t1.log -Encoding utf8; Get-Content .tmp-t1.log -Tail 5
+
+# 隔离数据目录起服务（不污染 .aether）
+$env:AETHER_DATA_DIR = Join-Path $env:TEMP ('aether-' + [guid]::NewGuid()); node dist/src/cli.js --web --port 3399
+
+# TUI 布局预览（渲染 3 帧后退出，无需键盘/无需 TTY）
+node dist/src/cli.js --frames 3
+
+# 端到端纯文本报告
+node dist/src/cli.js --headless
+```
+
+---
+
+## 14. 附录
+
+### 14.1 环境变量
+
+| 变量 | 默认 | 作用 |
+|:---|:---|:---|
+| `DEEPSEEK_API_KEY` / `AETHER_LLM_API_KEY` / `OPENAI_API_KEY` | — | 模型密钥（优先级从前到后） |
+| `DEEPSEEK_BASE_URL` / `AETHER_LLM_BASE_URL` / `OPENAI_BASE_URL` | `https://api.deepseek.com` | OpenAI 兼容端点 |
+| `DEEPSEEK_MODEL` / `AETHER_LLM_MODEL` / `CHAT_MODEL` | `deepseek-chat` | 模型名 |
+| `AETHER_LLM_TIMEOUT_MS` | 45000 | 单请求硬超时 |
+| `AETHER_LLM_FALLBACK` | `1` | `0` = 严格模式（失败不降级） |
+| `AETHER_PORT` | 3300 | Web 端口（影响 Cookie 名） |
+| `AETHER_DATA_DIR` | `.aether/runs` | 数据目录（三套 JSON 都在这下面） |
+| `AETHER_ACCOUNTS_FILE` | — | 长期账号文件（不设则用启动时的临时账号） |
+| `AETHER_SIM_LATENCY_MS` | 55 | 模拟"一次认知往返"的延迟，`0` 关闭 |
+| `AETHER_PROJECT_REPO` / `AETHER_PROJECT_BASE` / `AETHER_RUNNER_IMAGE` | — | 固定仓库验收三件套（必须同时设） |
+| `AETHER_TEST_RUNNER_IMAGE` | — | 让测试用真实 Docker 跑仓库用例 |
+
+### 14.2 数据文件布局
+
+```
+.aether/runs/
+├── state.json              运行 + 事件（schema v1，原子写）
+├── owner.lock              {pid, token} 单写者锁
+├── studio/state.json       Agent 与团队定义（修订 + ETag + 审计）
+├── studio/owner.lock
+├── workflows/state.json    工作流草稿/修订/发布
+└── workflows/owner.lock
+```
+
+### 14.3 角色与权限
+
+| 角色 | 读 | 运行/取消 | 编辑定义/设计工作流 | 审批 |
+|:---|:---:|:---:|:---:|:---:|
+| `operator` | ✅ | ✅ | ✅ | ✅ |
+| `viewer` | ✅ | ❌ 403 | ❌ 403 | ❌ 403 |
+
+账号文件：`[{username, role, tokenHash}]`，`tokenHash = sha256(64 位 hex 令牌)`；用 `scripts/create-web-account.mjs <name> <role>` 生成。
+
+### 14.4 术语中英对照
+
+| 中文 | 英文/代码 |
+|:---|:---|
+| 运行 / 一次执行 | run (`run-01`) |
+| 节点 | node |
+| 边 | edge |
+| 自愈循环 | self-loop (PDCA) |
+| 升级卡 / 人工决策 | escalation / human decision |
+| 三层验收 | three-tier verification |
+| 冻结版本 / 快照 | frozen revision / snapshot |
+| 修订 | revision |
+| 草稿 | draft |
+| 发布 | publish |
+| 收敛阈值 | convergence threshold |
+| 老化 | priority aging |
+| 能力路由 | capability routing |
+| 审批 | approval |
+
+### 14.5 本文与既有文档的关系
+
+| 文档 | 用途 |
+|:---|:---|
+| `README.md` | 功能与命令的用户视角说明 |
+| `COMPETITION_REQUIREMENTS.md` | 赛题原始要求（评审基准） |
+| `PRODUCT_UPGRADE_DESIGN.md` | Studio/设计器的产品设计（**已实施**） |
+| `PHASE1_ACCEPTANCE.md` / `WORKFLOW_STUDIO_ACCEPTANCE.md` | 已验收范围与边界声明 |
+| `DELIVERY.md` | 评审复现步骤 |
+| **本文** | **新人上手 + 页面实现 + 重构约束**（代码级，随代码演进需同步更新） |
