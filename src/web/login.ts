@@ -163,6 +163,10 @@ export function loginPage(port: string | number): string {
   .field-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .field-head label { color: var(--ink); font-size: 15px; font-weight: 500; letter-spacing: -.08px; }
   .chip { padding: 2px 6px; border-radius: 2px; background: var(--field); color: var(--body); font-size: 10px; font-weight: 500; letter-spacing: .4px; }
+  .fill-link { padding: 0; border: 0; background: none; color: var(--deep); font-size: 11px; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
+  .fill-link:hover:not(:disabled) { color: var(--primary); }
+  .fill-link:disabled { cursor: progress; opacity: .6; }
+  .hint[role="status"]:empty { display: none; }
   .control { position: relative; display: flex; align-items: center; padding: 2px; border-radius: 4px; background: var(--field); }
   .control .ico-slot { position: absolute; left: 12px; display: inline-flex; color: var(--body); font-size: 15px; pointer-events: none; }
   .control input {
@@ -252,11 +256,14 @@ export function loginPage(port: string | number): string {
               <input id="username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false"
                 maxlength="40" placeholder="operator" required>
             </div>
-            <p class="hint">使用启动终端打印的临时账号，或 AETHER_ACCOUNTS_FILE 中配置的账号。</p>
+            <p class="hint" id="account-hint">使用启动终端打印的临时账号，或 AETHER_ACCOUNTS_FILE 中配置的账号。</p>
           </div>
 
           <div class="field">
-            <div class="field-head"><label for="token">访问令牌</label><span class="chip">64 位十六进制</span></div>
+            <div class="field-head"><label for="token">访问令牌</label>
+              <button id="fill-local" class="fill-link" type="button" hidden>填入测试 Token</button>
+              <span id="token-chip" class="chip">64 位十六进制</span>
+            </div>
             <div class="control key">
               <span class="ico-slot">${ICON.key}</span>
               <input id="token" name="token" type="password" autocomplete="current-password" autocapitalize="none"
@@ -265,6 +272,7 @@ export function loginPage(port: string | number): string {
             </div>
           </div>
 
+          <p class="hint" id="fill-state" role="status"></p>
           <button id="submit" class="submit" type="submit"><span id="submit-label">进入控制台</span>${ICON.arrow}</button>
         </form>
 
@@ -293,6 +301,52 @@ export function loginPage(port: string | number): string {
       var error = document.getElementById('login-error');
       var query = new URLSearchParams(location.search);
       if (query.has('expired')) error.textContent = '登录已过期，请重新登录。';
+
+      var fill = document.getElementById('fill-local');
+      var chip = document.getElementById('token-chip');
+      var hint = document.getElementById('account-hint');
+      var state = document.getElementById('fill-state');
+      var account = document.getElementById('username');
+      var escapeHtml = function (value) {
+        return String(value).replace(/[&<>"']/g, function (c) {
+          return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+      };
+
+      // Probe only: tells us whether this process minted an ephemeral bootstrap
+      // account, and its username. The secret is never part of the probe, so
+      // simply loading the sign-in page leaks nothing.
+      fetch('/api/local-account?probe=1', { headers: { accept: 'application/json' } })
+        .then(function (response) { return response.ok ? response.json() : null; })
+        .then(function (info) {
+          if (!info || !info.available) return;
+          fill.hidden = false;
+          chip.hidden = true;
+          hint.innerHTML = '默认单机管理员: <b>' + escapeHtml(info.username) + '</b>';
+        })
+        .catch(function () { /* silent: manual entry still works */ });
+
+      // Explicit user action: this is the only request that carries the token.
+      fill.addEventListener('click', async function () {
+        fill.disabled = true;
+        state.textContent = '正在读取本机临时凭据…';
+        try {
+          var response = await fetch('/api/local-account', { headers: { accept: 'application/json' } });
+          var info = await response.json().catch(function () { return null; });
+          if (!response.ok || !info || !info.token) {
+            state.textContent = (info && info.error) || '本机临时凭据不可用，请手动输入启动终端打印的令牌。';
+            return;
+          }
+          account.value = info.username;
+          token.value = info.token;
+          state.textContent = '已填入本机临时账号，可直接进入控制台。';
+          submit.focus();
+        } catch (_) {
+          state.textContent = '无法读取本机临时凭据，请手动输入启动终端打印的令牌。';
+        } finally {
+          fill.disabled = false;
+        }
+      });
 
       toggle.addEventListener('click', function () {
         var showing = token.type === 'password';

@@ -300,8 +300,9 @@ node dist/src/cli.js --headless → runHeadless（纯文本报告）
 
 | 方法 | 路径 | 返回 |
 |:---|:---|:---|
-| GET | `/login` | `LOGIN_HTML`（已有会话 → 303 到 `next`） |
+| GET | `/login` | `loginPage(port)`（已有会话 → 303 到 `next`） |
 | POST | `/api/login` | `{next}` + `Set-Cookie`；非 JSON → 415；错凭证 → 401 |
+| GET | `/api/local-account` | 登录页「填入测试 Token」用。**仅回环 + 仅临时账号模式**：`?probe=1` 只返回 `{available,username}`（不含令牌），裸 GET 才返回 `{username,token}`；用 `AETHER_ACCOUNTS_FILE` 启动时一律 404。响应 `no-store`，令牌不进日志。回归检查：`node scripts/check-local-account.mjs` |
 | POST | `/api/logout` | 204（并撤销该会话绑定的 SSE） |
 | GET | 页面白名单（见 §7.4） | `DASHBOARD_HTML` / `STUDIO_HTML`（`/studio/agents*`、`/teams*`）/ `FLOW_HTML`（`/workflows*`）；`/runs/:id` 不存在 → 404（**仍返回 HTML 壳**） |
 | GET | `/studio-assets/flow-editor.{js,css}` | 从 `dist/src/assets/` 读取，`Cache-Control: no-store` |

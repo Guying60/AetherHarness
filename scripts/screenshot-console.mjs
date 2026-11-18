@@ -30,6 +30,7 @@ const width = Number(flag('width', '1440'));
 const height = Number(flag('height', '1000'));
 const full = args.includes('--full');
 const anon = args.includes('--anon');
+const bootstrap = args.includes('--bootstrap');
 const seed = flag('seed', '');
 const edgePath = process.env.EDGE_PATH ?? 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 
@@ -112,8 +113,13 @@ try {
   }]));
 
   const port = await freePort();
+  // `--bootstrap` starts WITHOUT an accounts file, so the process mints an
+  // ephemeral account (the only mode where /api/local-account serves secrets).
+  const serverEnv = { ...process.env, AETHER_DATA_DIR: join(dataDir, 'runs') };
+  if (bootstrap) delete serverEnv.AETHER_ACCOUNTS_FILE;
+  else serverEnv.AETHER_ACCOUNTS_FILE = accountsFile;
   const server = spawn(process.execPath, ['dist/src/cli.js', '--web', '--port', String(port)], {
-    env: { ...process.env, AETHER_DATA_DIR: join(dataDir, 'runs'), AETHER_ACCOUNTS_FILE: accountsFile },
+    env: serverEnv,
     stdio: ['ignore', 'pipe', 'pipe']
   });
   children.push(server);

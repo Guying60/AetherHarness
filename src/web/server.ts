@@ -245,6 +245,37 @@ export class WebServer {
         res.end();
         return;
       }
+
+      /**
+       * Local-only convenience for the sign-in page ("填入测试 Token").
+       *
+       * Scope is deliberately narrow:
+       *  - only reachable before authentication, but the loopback Host check above
+       *    already rejected every non-local request;
+       *  - only when this process minted an ephemeral bootstrap account. A
+       *    deployment started with AETHER_ACCOUNTS_FILE never exposes anything;
+       *  - `?probe=1` answers "is it available + which username" WITHOUT the
+       *    secret, so merely loading the page leaks nothing;
+       *  - the token is only serialised for an explicit GET, marked no-store and
+       *    never written to a log line.
+       */
+      if (method === 'GET' && pathname === '/api/local-account') {
+        res.setHeader('Cache-Control', 'no-store');
+        if (!this.bootstrap) {
+          this.json(res, 404, {
+            available: false,
+            error: '当前服务使用 AETHER_ACCOUNTS_FILE 账号启动，不提供自动填入。'
+          });
+          return;
+        }
+        const probe = url.searchParams.get('probe') === '1';
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify(probe
+          ? { available: true, username: this.bootstrap.username }
+          : { available: true, username: this.bootstrap.username, token: this.bootstrap.token }));
+        return;
+      }
+
       if (!account) {
         if (dashboardPage) {
           redirect('/login' + (pathname === '/' ? '' : '?next=' + encodeURIComponent(pathname)));
