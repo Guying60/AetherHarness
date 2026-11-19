@@ -101,6 +101,8 @@ export function loginPage(hasTemporaryAccount: boolean): string {
   form { display: grid; gap: 16px; margin-top: 18px; }
   .field { display: grid; gap: 6px; }
   .field label { font-size: 14px; font-weight: 500; }
+  .field-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .fill-local { padding: 0; border: 0; background: none; color: var(--primary); text-decoration: underline; }
   .control { position: relative; display: flex; align-items: center; padding: 2px; border-radius: 4px; background: var(--field); }
   .control .ico-slot { position: absolute; left: 12px; display: inline-flex; color: var(--body); font-size: 15px; pointer-events: none; }
   .control input {
@@ -164,7 +166,10 @@ export function loginPage(hasTemporaryAccount: boolean): string {
 
         <form id="login" action="/api/login" method="post">
           <div class="field">
-            <label for="username">账号</label>
+            <div class="field-head">
+              <label for="username">账号</label>
+              <button id="fill-local" class="fill-local" type="button" hidden>填入临时账号</button>
+            </div>
             <div class="control">
               <span class="ico-slot">${ICON.user}</span>
               <input id="username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false"
@@ -173,7 +178,7 @@ export function loginPage(hasTemporaryAccount: boolean): string {
           </div>
 
           <div class="field">
-            <label for="password">密码</label>
+            <label id="password-label" for="password">密码</label>
             <div class="control key">
               <span class="ico-slot">${ICON.key}</span>
               <input id="password" name="password" type="password" autocomplete="current-password" autocapitalize="none"
@@ -202,6 +207,20 @@ export function loginPage(hasTemporaryAccount: boolean): string {
       var error = document.getElementById('login-error');
       var query = new URLSearchParams(location.search);
       if (query.has('expired')) error.textContent = '登录已过期，请重新登录。';
+
+      fetch('/api/local-account?probe=1')
+        .then(function (response) { return response.ok ? response.json() : null; })
+        .then(function (info) {
+          if (!info || !info.available || typeof info.username !== 'string') return;
+          var fill = document.getElementById('fill-local');
+          fill.hidden = false;
+          fill.addEventListener('click', function () {
+            form.elements.username.value = info.username;
+            document.getElementById('password-label').textContent = '密码（见启动终端）';
+            password.focus();
+          });
+        })
+        .catch(function () { /* Manual sign-in remains available. */ });
 
       toggle.addEventListener('click', function () {
         var showing = password.type === 'password';

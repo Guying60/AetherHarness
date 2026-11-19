@@ -30,6 +30,7 @@ const width = Number(flag('width', '1440'));
 const height = Number(flag('height', '1000'));
 const full = args.includes('--full');
 const anon = args.includes('--anon');
+const bootstrap = args.includes('--bootstrap');
 const seed = flag('seed', '');
 const edgePath = process.env.EDGE_PATH ?? 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
 
@@ -112,11 +113,19 @@ try {
   }]));
 
   const port = await freePort();
-  const server = spawn(process.execPath, ['dist/src/cli.js', '--web', '--port', String(port)], {
-    env: { ...process.env, AETHER_DATA_DIR: join(dataDir, 'runs'), AETHER_ACCOUNTS_FILE: accountsFile },
+  // Use a clean working directory so bootstrap mode cannot pick up a local accounts file.
+  const serverEnv = { ...process.env, AETHER_DATA_DIR: join(dataDir, 'runs') };
+  if (bootstrap) delete serverEnv.AETHER_ACCOUNTS_FILE;
+  else serverEnv.AETHER_ACCOUNTS_FILE = accountsFile;
+  const server = spawn(process.execPath, [resolve('dist/src/cli.js'), '--web', '--port', String(port)], {
+    env: serverEnv, cwd: dataDir,
     stdio: ['ignore', 'pipe', 'pipe']
   });
   children.push(server);
+  let startupOutput = '';
+  server.stdout.on('data', chunk => {
+    if (bootstrap && startupOutput.length < 4096) startupOutput += chunk;
+  });
   server.stderr.on('data', chunk => process.stderr.write('[server] ' + chunk));
   await waitForPort(port);
   process.stdout.write(`server up on :${port}\n`);
@@ -153,9 +162,14 @@ try {
   await client.send('Page.navigate', { url: `http://127.0.0.1:${port}/login` });
   await loaded;
   if (!anon) {
+    const temporary = startupOutput.match(/本次启动的临时账号 ([\w-]+)，密码 ([a-f0-9]{64})/);
+    if (bootstrap && !temporary) throw new Error('Bootstrap credentials were not printed at startup.');
+    const credentials = temporary
+      ? { username: temporary[1], password: temporary[2] }
+      : { username: 'operator', password: token };
     const login = await client.send('Runtime.evaluate', {
       expression: `fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},`
-        + `body:JSON.stringify({username:'operator',token:'${token}'})}).then(r=>r.status)`,
+        + `body:${JSON.stringify(JSON.stringify(credentials))}}).then(r=>r.status)`,
       awaitPromise: true, returnByValue: true
     });
     if (login.result.value !== 200) throw new Error(`login failed with ${login.result.value}`);

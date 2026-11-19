@@ -245,6 +245,17 @@ export class WebServer {
         res.end();
         return;
       }
+
+      if (method === 'GET' && pathname === '/api/local-account') {
+        // The login page can fill the username. The password stays in the startup terminal.
+        if (this.bootstrap && url.searchParams.get('probe') === '1') {
+          this.json(res, 200, { available: true, username: this.bootstrap.username });
+        } else {
+          this.json(res, 404, { available: false });
+        }
+        return;
+      }
+
       if (!account) {
         if (dashboardPage) {
           redirect('/login' + (pathname === '/' ? '' : '?next=' + encodeURIComponent(pathname)));
