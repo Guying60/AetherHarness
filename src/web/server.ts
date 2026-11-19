@@ -18,7 +18,7 @@ import { studioRequest } from './studio-api.js';
 import { StudioError } from '../studio/definitions.js';
 import { LlmConfig } from '../agent/llm/index.js';
 import { OrchestratorEvent } from '../types/index.js';
-import { authenticate, authenticateToken, createBootstrapAccount, loadWebAccounts, validateAccounts, type WebAccount } from './accounts.js';
+import { authenticate, authenticatePassword, createBootstrapAccount, loadWebAccounts, validateAccounts, type WebAccount } from './accounts.js';
 import {
   MAX_REPOSITORY_GOAL, REPOSITORY_PROJECT_ID, repositoryConfig, type RepositoryConfig
 } from '../scenarios/repository-repair.js';
@@ -35,7 +35,7 @@ export interface WebServerOptions {
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 const SESSION_AGE_SECONDS = 8 * 60 * 60;
-const LOGIN_ERROR = '请使用控制台账号和访问令牌登录。';
+const LOGIN_ERROR = '请使用控制台账号和密码登录。';
 
 function workspacePath(path: unknown): string {
   return typeof path === 'string' && path.trim() === path &&
@@ -198,7 +198,6 @@ export class WebServer {
     const session = sessionId ? this.sessions.get(sessionId) : undefined;
     const liveSession = session && session.expiresAt > Date.now() ? session : undefined;
     if (session && !liveSession) this.revokeSession(sessionId);
-    const account = liveSession?.account ?? (req.headers['sec-fetch-site'] ? undefined : authenticate(this.accounts, req.headers.authorization));
     const cookieValue = (id: string, age: number) => `${cookieName}=${id}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${age}`;
     const redirect = (location: string) => {
       res.writeHead(303, { Location: location, 'Cache-Control': 'no-store' });
@@ -206,6 +205,7 @@ export class WebServer {
     };
 
     try {
+      const account = liveSession?.account ?? (req.headers['sec-fetch-site'] ? undefined : await authenticate(this.accounts, req.headers.authorization));
       const runPage = /^\/runs\/(run-\d+)(?:\/delivery)?$/.exec(pathname)?.[1];
       const dashboardPage = method === 'GET' && workspacePath(pathname) === pathname;
 
@@ -214,7 +214,7 @@ export class WebServer {
           redirect(workspacePath(url.searchParams.get('next')));
         } else {
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
-          res.end(loginPage(serverPort));
+          res.end(loginPage(this.bootstrap !== undefined));
         }
         return;
       }
@@ -223,10 +223,10 @@ export class WebServer {
           this.json(res, 415, { error: '登录请求需要 JSON。' });
           return;
         }
-        const { username, token, next } = await this.readJsonBody(req);
-        const authenticated = authenticateToken(this.accounts, username, token);
+        const { username, password, token, next } = await this.readJsonBody(req);
+        const authenticated = await authenticatePassword(this.accounts, username, password ?? token);
         if (!authenticated) {
-          this.json(res, 401, { error: '账号或访问令牌不正确。' });
+          this.json(res, 401, { error: '账号或密码不正确。' });
           return;
         }
         this.revokeSession(sessionId);
@@ -434,8 +434,9 @@ export class WebServer {
       }
 
       if (method === 'POST' && pathname === '/api/runs') {
-        const { projectId, goal } = await this.readJsonBody(req);
-        if (projectId !== REPOSITORY_PROJECT_ID) {
+        const { projectId, goal, workflowRef } = await this.readJsonBody(req);
+        const { project } = this.orchestrator.getProject();
+        if (projectId !== (project?.id ?? REPOSITORY_PROJECT_ID)) {
           this.json(res, 404, { error: '所选仓库未获授权。' });
           return;
         }
@@ -443,14 +444,13 @@ export class WebServer {
           this.json(res, 400, { error: `请输入 1–${MAX_REPOSITORY_GOAL} 字符的任务描述。` });
           return;
         }
-        const project = this.orchestrator.getProject();
-        if (!project.ready) {
-          this.json(res, 503, { error: project.reason });
-          return;
-        }
-        let runId: string | undefined;
-        this.orchestrator.runProjectTask(goal, id => { runId = id; }, account.username).catch(() => {});
-        this.json(res, runId ? 202 : 500, runId ? { runId } : { error: '无法创建仓库运行。' });
+        const runId = await new Promise<string>((onStart, reject) => {
+          const execution = workflowRef === undefined
+            ? this.orchestrator.runProjectTask(goal, onStart, account.username)
+            : this.orchestrator.runPublishedProjectTask(goal, workflowRef, { onStart, requestedBy: account.username });
+          execution.catch(reject);
+        });
+        this.json(res, 202, { runId });
         return;
       }
 
@@ -591,7 +591,7 @@ export class WebServer {
 async function main(): Promise<void> {
   const port = Number(process.env.AETHER_PORT) || 3300;
   const server = new WebServer({
-    port, project: repositoryConfig(process.env),
+    port, project: repositoryConfig(process.env, resolve('.aether/repository.json')),
     dataDir: resolve(process.env.AETHER_DATA_DIR ?? '.aether/runs'),
     accounts: loadWebAccounts(process.env.AETHER_ACCOUNTS_FILE)
   });
@@ -599,7 +599,7 @@ async function main(): Promise<void> {
   console.log(`\n\x1b[36m⚡ AetherHarness Web 控制台已启动，访问地址：\x1b[1m${info.url}\x1b[0m\n`);
   console.log(`   多智能体协同编排、动态调度、PDCA 自愈与三层可信验证可视化平台`);
   console.log(`   按 Ctrl+C 可停止服务。\n`);
-  if (info.bootstrap) console.log(`本次启动的临时账号 ${info.bootstrap.username}，访问令牌 ${info.bootstrap.token}\n`);
+  if (info.bootstrap) console.log(`本次启动的临时账号 ${info.bootstrap.username}，密码 ${info.bootstrap.token}\n`);
 
   const shutdown = async () => {
     console.log('\n正在优雅关闭 Web 服务...');

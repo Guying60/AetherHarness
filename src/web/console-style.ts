@@ -192,6 +192,11 @@ export const CONSOLE_STYLE = /* css */ `
   .btn.ghost { background: var(--hover); border-color: var(--line); color: var(--ink-3); box-shadow: none; }
   .btn.ghost:hover:not(:disabled) { background: #e9eef6; }
   .btn.danger { border-color: var(--bad-100); background: var(--bad-50); color: var(--bad-700); box-shadow: none; }
+  .draft-dialog { width: min(440px, calc(100vw - 32px)); padding: 20px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+  .draft-dialog::backdrop { background: rgba(15, 23, 42, .32); }
+  .draft-dialog form, .draft-dialog label { display: grid; gap: 10px; }
+  .draft-dialog p { color: var(--muted); overflow-wrap: anywhere; }
+  .draft-dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 6px; }
   .btn.sm { min-height: 28px; padding: 4px 12px; border-radius: var(--radius-xs); font-size: 12px; }
   .btn.block { width: 100%; }
   a.btn { display: inline-flex; }

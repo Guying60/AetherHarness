@@ -1,7 +1,7 @@
 import { dashboard } from './dashboard.js';
 import { CONSOLE_STYLE } from './console-style.js';
 import { icon } from './icons.js';
-import { NAV_MARKUP } from './nav.js';
+import { consoleSidebar } from './nav.js';
 
 /**
  * Console shell + workbench markup.
@@ -24,10 +24,7 @@ export const DASHBOARD_HTML = /* html */ `<!doctype html>
   <style>${CONSOLE_STYLE}</style>
 </head>
 <body>
-<aside class="sidebar">
-  <div class="sidebar-head" aria-hidden="true"></div>
-  <nav aria-label="控制台导航">${NAV_MARKUP}</nav>
-  <div class="sidebar-foot">
+${consoleSidebar(`
     <div class="runtime-card" aria-label="运行态">
       <dl>
         <div class="row"><dt><i class="dot" style="color:#10b981"></i>运行态</dt><dd id="rt-memory">—</dd></div>
@@ -36,8 +33,7 @@ export const DASHBOARD_HTML = /* html */ `<!doctype html>
       </dl>
     </div>
     <p class="sidebar-note" id="storage-status"></p>
-  </div>
-</aside>
+`)}
 
 <div class="surface">
   <header class="topbar">
@@ -83,11 +79,10 @@ export const DASHBOARD_HTML = /* html */ `<!doctype html>
               <h2 id="project-title">仓库任务编排</h2>
               <span id="repo-badge" class="badge">未配置</span>
             </div>
-            <span id="schema-badge" class="badge warn"><i class="dot"></i>Awaiting Input Schema</span>
           </div>
           <div class="repo-body">
             <div class="repo-col">
-              <span class="label">${icon('branch')}目标仓库与分支</span>
+              <label class="label" for="project-select">${icon('branch')}目标仓库</label>
               <div class="repo-select-wrap">
                 <span class="ico-wrap lead" aria-hidden="true">${icon('selectCaret')}</span>
                 <select id="project-select" class="select repo-select" aria-label="目标仓库" disabled>
@@ -95,16 +90,21 @@ export const DASHBOARD_HTML = /* html */ `<!doctype html>
                 </select>
                 <span class="caret" aria-hidden="true">${icon('chevronDown')}</span>
               </div>
-              <p class="repo-meta"><span id="repo-target">Target branch: —</span><span id="repo-tree">未配置</span></p>
+              <p class="muted small" id="repo-target"></p>
+              <label class="label" for="project-workflow">执行工作流</label>
+              <select id="project-workflow" class="select" disabled>
+                <option value="">正在读取发布版</option>
+              </select>
+              <a id="project-workflow-link" class="link small" href="/workflows">在工作流设计器发布版本</a>
             </div>
             <div class="repo-col">
-              <div class="repo-meta tight"><span class="label">${icon('flag')}任务目标与验收基准</span><span class="faint">支持自然语言任务编排</span></div>
+              <label class="label" for="project-goal">${icon('flag')}任务目标与验收要求</label>
               <div class="prompt-field">
                 <textarea id="project-goal" class="select" rows="3" maxlength="2000" required disabled
-                  placeholder="描述你想让团队达成的目标… 例如：修复高并发下滑动窗口限流器计数漂移，并构造 5000 QPS 单元测试验证零漏桶"></textarea>
+                  placeholder="描述要修复的问题和期望行为"></textarea>
                 <div class="prompt-actions">
-                  <button id="project-sample" class="btn ghost sm" type="button" disabled>智能填充</button>
-                  <button id="project-submit" class="btn primary sm" type="submit" disabled>${icon('send')}<span>提交任务</span></button>
+                  <button id="project-sample" class="btn ghost sm" type="button" disabled>填入示例</button>
+                  <button id="project-submit" class="btn primary sm" type="submit" disabled>${icon('send')}<span>开始执行</span></button>
                 </div>
               </div>
               <p class="muted small" id="project-status"></p>

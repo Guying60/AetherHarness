@@ -586,11 +586,11 @@ export interface RateLimiterTask extends TaskSpec {
   requireCluster: boolean;
 }
 
-export function rateLimiterDeliveryNodes(): WorkflowNode[] {
+export function rateLimiterDeliveryNodes(filePath = 'src/rate-limiter.js'): WorkflowNode[] {
   return [
     {
       id: 'n_scan',
-      name: 'static scan',
+      name: '静态扫描',
       type: 'tool',
       toolId: 'static_analyzer',
       priority: 3,
@@ -600,7 +600,7 @@ export function rateLimiterDeliveryNodes(): WorkflowNode[] {
     },
     {
       id: 'n_patch',
-      name: 'git patch',
+      name: '生成 Git 补丁',
       type: 'tool',
       toolId: 'git_patch_manager',
       priority: 2,
@@ -613,7 +613,7 @@ export function rateLimiterDeliveryNodes(): WorkflowNode[] {
         return {
           originalContent: String(ctx.seedSource ?? '// placeholder\n'),
           updatedContent: asCode(ctx.finalCode ?? ctx.lastOutput),
-          filePath: 'src/rate-limiter.js'
+          filePath
         };
       },
       description: 'Emit a real unified diff for review'

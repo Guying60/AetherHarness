@@ -1,0 +1,2006 @@
+{
+  "mode": "simulated job durations; production scheduler and capacity accounting",
+  "runtime": "v24.11.1",
+  "platform": "win32",
+  "batches": 5,
+  "maxParallelJobs": 3,
+  "agents": {
+    "developer": {
+      "development": 1
+    },
+    "reviewer": {
+      "review": 1,
+      "development": 0.6
+    },
+    "generalist": {
+      "testing": 1,
+      "development": 0.7,
+      "review": 0.6
+    }
+  },
+  "primary": {
+    "development": "developer",
+    "review": "reviewer",
+    "testing": "generalist"
+  },
+  "options": {
+    "pollIntervalMs": 2,
+    "agingIntervalMs": 80,
+    "maxRetries": 0,
+    "maxWaitMs": 5000
+  },
+  "comparisons": {
+    "balanced": {
+      "jobs": [
+        {
+          "id": "balanced-1",
+          "capability": "development",
+          "durationMs": 100,
+          "priority": 5
+        },
+        {
+          "id": "balanced-2",
+          "capability": "review",
+          "durationMs": 20,
+          "priority": 5
+        },
+        {
+          "id": "balanced-3",
+          "capability": "testing",
+          "durationMs": 32,
+          "priority": 5
+        },
+        {
+          "id": "balanced-4",
+          "capability": "development",
+          "durationMs": 55,
+          "priority": 5
+        },
+        {
+          "id": "balanced-5",
+          "capability": "review",
+          "durationMs": 31,
+          "priority": 9
+        },
+        {
+          "id": "balanced-6",
+          "capability": "testing",
+          "durationMs": 26,
+          "priority": 5
+        },
+        {
+          "id": "balanced-7",
+          "capability": "development",
+          "durationMs": 76,
+          "priority": 5
+        },
+        {
+          "id": "balanced-8",
+          "capability": "review",
+          "durationMs": 45,
+          "priority": 5
+        },
+        {
+          "id": "balanced-9",
+          "capability": "testing",
+          "durationMs": 24,
+          "priority": 9
+        },
+        {
+          "id": "balanced-10",
+          "capability": "development",
+          "durationMs": 65,
+          "priority": 5
+        },
+        {
+          "id": "balanced-11",
+          "capability": "review",
+          "durationMs": 22,
+          "priority": 9
+        },
+        {
+          "id": "balanced-12",
+          "capability": "testing",
+          "durationMs": 50,
+          "priority": 5
+        }
+      ],
+      "fifoFixed": {
+        "completed": 60,
+        "jobsPerSecond": 39.97,
+        "batchMedianMs": 300,
+        "queueP95Ms": 234,
+        "urgentQueueP95Ms": 105,
+        "routedAwayFromPrimary": 0,
+        "samples": [
+          {
+            "durationMs": 301,
+            "dispatches": [
+              {
+                "id": "balanced-1",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 1,
+                "finishedAfterMs": 103
+              },
+              {
+                "id": "balanced-2",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 1,
+                "finishedAfterMs": 23
+              },
+              {
+                "id": "balanced-3",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 1,
+                "finishedAfterMs": 34
+              },
+              {
+                "id": "balanced-4",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 103,
+                "finishedAfterMs": 157
+              },
+              {
+                "id": "balanced-5",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 23,
+                "finishedAfterMs": 54
+              },
+              {
+                "id": "balanced-6",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 35,
+                "finishedAfterMs": 62
+              },
+              {
+                "id": "balanced-7",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 157,
+                "finishedAfterMs": 235
+              },
+              {
+                "id": "balanced-8",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 56,
+                "finishedAfterMs": 103
+              },
+              {
+                "id": "balanced-9",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 61,
+                "finishedAfterMs": 87
+              },
+              {
+                "id": "balanced-10",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 234,
+                "finishedAfterMs": 301
+              },
+              {
+                "id": "balanced-11",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 105,
+                "finishedAfterMs": 128
+              },
+              {
+                "id": "balanced-12",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 86,
+                "finishedAfterMs": 137
+              }
+            ]
+          },
+          {
+            "durationMs": 300,
+            "dispatches": [
+              {
+                "id": "balanced-1",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 101
+              },
+              {
+                "id": "balanced-2",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 20
+              },
+              {
+                "id": "balanced-3",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 33
+              },
+              {
+                "id": "balanced-4",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 101,
+                "finishedAfterMs": 157
+              },
+              {
+                "id": "balanced-5",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 22,
+                "finishedAfterMs": 53
+              },
+              {
+                "id": "balanced-6",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 33,
+                "finishedAfterMs": 59
+              },
+              {
+                "id": "balanced-7",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 157,
+                "finishedAfterMs": 233
+              },
+              {
+                "id": "balanced-8",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 56,
+                "finishedAfterMs": 101
+              },
+              {
+                "id": "balanced-9",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 62,
+                "finishedAfterMs": 87
+              },
+              {
+                "id": "balanced-10",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 234,
+                "finishedAfterMs": 300
+              },
+              {
+                "id": "balanced-11",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 104,
+                "finishedAfterMs": 126
+              },
+              {
+                "id": "balanced-12",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 87,
+                "finishedAfterMs": 138
+              }
+            ]
+          },
+          {
+            "durationMs": 300,
+            "dispatches": [
+              {
+                "id": "balanced-1",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 100
+              },
+              {
+                "id": "balanced-2",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 21
+              },
+              {
+                "id": "balanced-3",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 33
+              },
+              {
+                "id": "balanced-4",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 100,
+                "finishedAfterMs": 156
+              },
+              {
+                "id": "balanced-5",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 21,
+                "finishedAfterMs": 52
+              },
+              {
+                "id": "balanced-6",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 33,
+                "finishedAfterMs": 61
+              },
+              {
+                "id": "balanced-7",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 159,
+                "finishedAfterMs": 235
+              },
+              {
+                "id": "balanced-8",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 53,
+                "finishedAfterMs": 98
+              },
+              {
+                "id": "balanced-9",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 62,
+                "finishedAfterMs": 87
+              },
+              {
+                "id": "balanced-10",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 235,
+                "finishedAfterMs": 300
+              },
+              {
+                "id": "balanced-11",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 103,
+                "finishedAfterMs": 126
+              },
+              {
+                "id": "balanced-12",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 87,
+                "finishedAfterMs": 137
+              }
+            ]
+          },
+          {
+            "durationMs": 301,
+            "dispatches": [
+              {
+                "id": "balanced-1",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 103
+              },
+              {
+                "id": "balanced-2",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 20
+              },
+              {
+                "id": "balanced-3",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 33
+              },
+              {
+                "id": "balanced-4",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 103,
+                "finishedAfterMs": 159
+              },
+              {
+                "id": "balanced-5",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 23,
+                "finishedAfterMs": 54
+              },
+              {
+                "id": "balanced-6",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 33,
+                "finishedAfterMs": 60
+              },
+              {
+                "id": "balanced-7",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 159,
+                "finishedAfterMs": 235
+              },
+              {
+                "id": "balanced-8",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 56,
+                "finishedAfterMs": 103
+              },
+              {
+                "id": "balanced-9",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 60,
+                "finishedAfterMs": 85
+              },
+              {
+                "id": "balanced-10",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 235,
+                "finishedAfterMs": 301
+              },
+              {
+                "id": "balanced-11",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 103,
+                "finishedAfterMs": 125
+              },
+              {
+                "id": "balanced-12",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 85,
+                "finishedAfterMs": 137
+              }
+            ]
+          },
+          {
+            "durationMs": 299,
+            "dispatches": [
+              {
+                "id": "balanced-1",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 101
+              },
+              {
+                "id": "balanced-2",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 21
+              },
+              {
+                "id": "balanced-3",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 33
+              },
+              {
+                "id": "balanced-4",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 100,
+                "finishedAfterMs": 157
+              },
+              {
+                "id": "balanced-5",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 21,
+                "finishedAfterMs": 54
+              },
+              {
+                "id": "balanced-6",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 35,
+                "finishedAfterMs": 62
+              },
+              {
+                "id": "balanced-7",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 156,
+                "finishedAfterMs": 234
+              },
+              {
+                "id": "balanced-8",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 54,
+                "finishedAfterMs": 101
+              },
+              {
+                "id": "balanced-9",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 62,
+                "finishedAfterMs": 88
+              },
+              {
+                "id": "balanced-10",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 233,
+                "finishedAfterMs": 299
+              },
+              {
+                "id": "balanced-11",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 100,
+                "finishedAfterMs": 124
+              },
+              {
+                "id": "balanced-12",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 87,
+                "finishedAfterMs": 139
+              }
+            ]
+          }
+        ]
+      },
+      "dynamic": {
+        "completed": 60,
+        "jobsPerSecond": 54.05,
+        "batchMedianMs": 226,
+        "queueP95Ms": 175,
+        "urgentQueueP95Ms": 27,
+        "routedAwayFromPrimary": 16,
+        "samples": [
+          {
+            "durationMs": 205,
+            "dispatches": [
+              {
+                "id": "balanced-1",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 5,
+                "finishedAfterMs": 105
+              },
+              {
+                "id": "balanced-2",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 33,
+                "finishedAfterMs": 55
+              },
+              {
+                "id": "balanced-3",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 50,
+                "finishedAfterMs": 82
+              },
+              {
+                "id": "balanced-4",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 55,
+                "finishedAfterMs": 111
+              },
+              {
+                "id": "balanced-5",
+                "agentId": "reviewer",
+                "priority": 9,
+                "queueWaitMs": 1,
+                "finishedAfterMs": 33
+              },
+              {
+                "id": "balanced-6",
+                "agentId": "generalist",
+                "priority": 6,
+                "queueWaitMs": 82,
+                "finishedAfterMs": 109
+              },
+              {
+                "id": "balanced-7",
+                "agentId": "developer",
+                "priority": 6,
+                "queueWaitMs": 107,
+                "finishedAfterMs": 183
+              },
+              {
+                "id": "balanced-8",
+                "agentId": "generalist",
+                "priority": 6,
+                "queueWaitMs": 109,
+                "finishedAfterMs": 155
+              },
+              {
+                "id": "balanced-9",
+                "agentId": "generalist",
+                "priority": 9,
+                "queueWaitMs": 1,
+                "finishedAfterMs": 27
+              },
+              {
+                "id": "balanced-10",
+                "agentId": "reviewer",
+                "priority": 6,
+                "queueWaitMs": 111,
+                "finishedAfterMs": 177
+              },
+              {
+                "id": "balanced-11",
+                "agentId": "generalist",
+                "priority": 9,
+                "queueWaitMs": 27,
+                "finishedAfterMs": 49
+              },
+              {
+                "id": "balanced-12",
+                "agentId": "generalist",
+                "priority": 6,
+                "queueWaitMs": 155,
+                "finishedAfterMs": 205
+              }
+            ]
+          },
+          {
+            "durationMs": 228,
+            "dispatches": [
+              {
+                "id": "balanced-1",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 2,
+                "finishedAfterMs": 104
+              },
+              {
+                "id": "balanced-2",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 31,
+                "finishedAfterMs": 52
+              },
+              {
+                "id": "balanced-3",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 49,
+                "finishedAfterMs": 82
+              },
+              {
+                "id": "balanced-4",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 51,
+                "finishedAfterMs": 107
+              },
+              {
+                "id": "balanced-5",
+                "agentId": "reviewer",
+                "priority": 9,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 31
+              },
+              {
+                "id": "balanced-6",
+                "agentId": "generalist",
+                "priority": 6,
+                "queueWaitMs": 84,
+                "finishedAfterMs": 112
+              },
+              {
+                "id": "balanced-7",
+                "agentId": "developer",
+                "priority": 6,
+                "queueWaitMs": 103,
+                "finishedAfterMs": 181
+              },
+              {
+                "id": "balanced-8",
+                "agentId": "reviewer",
+                "priority": 6,
+                "queueWaitMs": 109,
+                "finishedAfterMs": 155
+              },
+              {
+                "id": "balanced-9",
+                "agentId": "generalist",
+                "priority": 9,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 25
+              },
+              {
+                "id": "balanced-10",
+                "agentId": "generalist",
+                "priority": 6,
+                "queueWaitMs": 111,
+                "finishedAfterMs": 177
+              },
+              {
+                "id": "balanced-11",
+                "agentId": "generalist",
+                "priority": 9,
+                "queueWaitMs": 25,
+                "finishedAfterMs": 48
+              },
+              {
+                "id": "balanced-12",
+                "agentId": "generalist",
+                "priority": 7,
+                "queueWaitMs": 177,
+                "finishedAfterMs": 228
+              }
+            ]
+          },
+          {
+            "durationMs": 226,
+            "dispatches": [
+              {
+                "id": "balanced-1",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 2,
+                "finishedAfterMs": 102
+              },
+              {
+                "id": "balanced-2",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 32,
+                "finishedAfterMs": 51
+              },
+              {
+                "id": "balanced-3",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 49,
+                "finishedAfterMs": 82
+              },
+              {
+                "id": "balanced-4",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 53,
+                "finishedAfterMs": 108
+              },
+              {
+                "id": "balanced-5",
+                "agentId": "reviewer",
+                "priority": 9,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 32
+              },
+              {
+                "id": "balanced-6",
+                "agentId": "generalist",
+                "priority": 6,
+                "queueWaitMs": 82,
+                "finishedAfterMs": 108
+              },
+              {
+                "id": "balanced-7",
+                "agentId": "developer",
+                "priority": 6,
+                "queueWaitMs": 103,
+                "finishedAfterMs": 179
+              },
+              {
+                "id": "balanced-8",
+                "agentId": "reviewer",
+                "priority": 6,
+                "queueWaitMs": 109,
+                "finishedAfterMs": 154
+              },
+              {
+                "id": "balanced-9",
+                "agentId": "generalist",
+                "priority": 9,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 24
+              },
+              {
+                "id": "balanced-10",
+                "agentId": "generalist",
+                "priority": 6,
+                "queueWaitMs": 109,
+                "finishedAfterMs": 175
+              },
+              {
+                "id": "balanced-11",
+                "agentId": "generalist",
+                "priority": 9,
+                "queueWaitMs": 27,
+                "finishedAfterMs": 48
+              },
+              {
+                "id": "balanced-12",
+                "agentId": "generalist",
+                "priority": 7,
+                "queueWaitMs": 175,
+                "finishedAfterMs": 226
+              }
+            ]
+          },
+          {
+            "durationMs": 225,
+            "dispatches": [
+              {
+                "id": "balanced-1",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 3,
+                "finishedAfterMs": 103
+              },
+              {
+                "id": "balanced-2",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 31,
+                "finishedAfterMs": 51
+              },
+              {
+                "id": "balanced-3",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 48,
+                "finishedAfterMs": 82
+              },
+              {
+                "id": "balanced-4",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 51,
+                "finishedAfterMs": 106
+              },
+              {
+                "id": "balanced-5",
+                "agentId": "reviewer",
+                "priority": 9,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 31
+              },
+              {
+                "id": "balanced-6",
+                "agentId": "generalist",
+                "priority": 6,
+                "queueWaitMs": 82,
+                "finishedAfterMs": 109
+              },
+              {
+                "id": "balanced-7",
+                "agentId": "developer",
+                "priority": 6,
+                "queueWaitMs": 104,
+                "finishedAfterMs": 180
+              },
+              {
+                "id": "balanced-8",
+                "agentId": "reviewer",
+                "priority": 6,
+                "queueWaitMs": 106,
+                "finishedAfterMs": 152
+              },
+              {
+                "id": "balanced-9",
+                "agentId": "generalist",
+                "priority": 9,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 23
+              },
+              {
+                "id": "balanced-10",
+                "agentId": "generalist",
+                "priority": 6,
+                "queueWaitMs": 109,
+                "finishedAfterMs": 174
+              },
+              {
+                "id": "balanced-11",
+                "agentId": "generalist",
+                "priority": 9,
+                "queueWaitMs": 26,
+                "finishedAfterMs": 48
+              },
+              {
+                "id": "balanced-12",
+                "agentId": "generalist",
+                "priority": 7,
+                "queueWaitMs": 175,
+                "finishedAfterMs": 225
+              }
+            ]
+          },
+          {
+            "durationMs": 226,
+            "dispatches": [
+              {
+                "id": "balanced-1",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 3,
+                "finishedAfterMs": 104
+              },
+              {
+                "id": "balanced-2",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 32,
+                "finishedAfterMs": 52
+              },
+              {
+                "id": "balanced-3",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 49,
+                "finishedAfterMs": 81
+              },
+              {
+                "id": "balanced-4",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 55,
+                "finishedAfterMs": 110
+              },
+              {
+                "id": "balanced-5",
+                "agentId": "reviewer",
+                "priority": 9,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 31
+              },
+              {
+                "id": "balanced-6",
+                "agentId": "generalist",
+                "priority": 6,
+                "queueWaitMs": 83,
+                "finishedAfterMs": 110
+              },
+              {
+                "id": "balanced-7",
+                "agentId": "developer",
+                "priority": 6,
+                "queueWaitMs": 104,
+                "finishedAfterMs": 181
+              },
+              {
+                "id": "balanced-8",
+                "agentId": "reviewer",
+                "priority": 6,
+                "queueWaitMs": 110,
+                "finishedAfterMs": 156
+              },
+              {
+                "id": "balanced-9",
+                "agentId": "generalist",
+                "priority": 9,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 24
+              },
+              {
+                "id": "balanced-10",
+                "agentId": "generalist",
+                "priority": 6,
+                "queueWaitMs": 110,
+                "finishedAfterMs": 176
+              },
+              {
+                "id": "balanced-11",
+                "agentId": "generalist",
+                "priority": 9,
+                "queueWaitMs": 26,
+                "finishedAfterMs": 49
+              },
+              {
+                "id": "balanced-12",
+                "agentId": "generalist",
+                "priority": 7,
+                "queueWaitMs": 176,
+                "finishedAfterMs": 226
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "developmentBurst": {
+      "jobs": [
+        {
+          "id": "developmentBurst-1",
+          "capability": "development",
+          "durationMs": 100,
+          "priority": 5
+        },
+        {
+          "id": "developmentBurst-2",
+          "capability": "development",
+          "durationMs": 20,
+          "priority": 5
+        },
+        {
+          "id": "developmentBurst-3",
+          "capability": "development",
+          "durationMs": 32,
+          "priority": 5
+        },
+        {
+          "id": "developmentBurst-4",
+          "capability": "development",
+          "durationMs": 55,
+          "priority": 5
+        },
+        {
+          "id": "developmentBurst-5",
+          "capability": "development",
+          "durationMs": 31,
+          "priority": 9
+        },
+        {
+          "id": "developmentBurst-6",
+          "capability": "development",
+          "durationMs": 26,
+          "priority": 5
+        },
+        {
+          "id": "developmentBurst-7",
+          "capability": "development",
+          "durationMs": 76,
+          "priority": 5
+        },
+        {
+          "id": "developmentBurst-8",
+          "capability": "development",
+          "durationMs": 45,
+          "priority": 5
+        },
+        {
+          "id": "developmentBurst-9",
+          "capability": "review",
+          "durationMs": 24,
+          "priority": 9
+        },
+        {
+          "id": "developmentBurst-10",
+          "capability": "testing",
+          "durationMs": 65,
+          "priority": 5
+        },
+        {
+          "id": "developmentBurst-11",
+          "capability": "development",
+          "durationMs": 22,
+          "priority": 9
+        },
+        {
+          "id": "developmentBurst-12",
+          "capability": "review",
+          "durationMs": 50,
+          "priority": 5
+        }
+      ],
+      "fifoFixed": {
+        "completed": 60,
+        "jobsPerSecond": 28.8,
+        "batchMedianMs": 417,
+        "queueP95Ms": 394,
+        "urgentQueueP95Ms": 397,
+        "routedAwayFromPrimary": 0,
+        "samples": [
+          {
+            "durationMs": 417,
+            "dispatches": [
+              {
+                "id": "developmentBurst-1",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 100
+              },
+              {
+                "id": "developmentBurst-2",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 100,
+                "finishedAfterMs": 119
+              },
+              {
+                "id": "developmentBurst-3",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 122,
+                "finishedAfterMs": 156
+              },
+              {
+                "id": "developmentBurst-4",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 156,
+                "finishedAfterMs": 212
+              },
+              {
+                "id": "developmentBurst-5",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 212,
+                "finishedAfterMs": 243
+              },
+              {
+                "id": "developmentBurst-6",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 245,
+                "finishedAfterMs": 271
+              },
+              {
+                "id": "developmentBurst-7",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 272,
+                "finishedAfterMs": 349
+              },
+              {
+                "id": "developmentBurst-8",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 349,
+                "finishedAfterMs": 395
+              },
+              {
+                "id": "developmentBurst-9",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 25
+              },
+              {
+                "id": "developmentBurst-10",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 65
+              },
+              {
+                "id": "developmentBurst-11",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 395,
+                "finishedAfterMs": 417
+              },
+              {
+                "id": "developmentBurst-12",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 27,
+                "finishedAfterMs": 77
+              }
+            ]
+          },
+          {
+            "durationMs": 420,
+            "dispatches": [
+              {
+                "id": "developmentBurst-1",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 101
+              },
+              {
+                "id": "developmentBurst-2",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 101,
+                "finishedAfterMs": 121
+              },
+              {
+                "id": "developmentBurst-3",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 123,
+                "finishedAfterMs": 155
+              },
+              {
+                "id": "developmentBurst-4",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 158,
+                "finishedAfterMs": 213
+              },
+              {
+                "id": "developmentBurst-5",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 213,
+                "finishedAfterMs": 244
+              },
+              {
+                "id": "developmentBurst-6",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 247,
+                "finishedAfterMs": 274
+              },
+              {
+                "id": "developmentBurst-7",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 274,
+                "finishedAfterMs": 351
+              },
+              {
+                "id": "developmentBurst-8",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 351,
+                "finishedAfterMs": 397
+              },
+              {
+                "id": "developmentBurst-9",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 24
+              },
+              {
+                "id": "developmentBurst-10",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 66
+              },
+              {
+                "id": "developmentBurst-11",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 397,
+                "finishedAfterMs": 420
+              },
+              {
+                "id": "developmentBurst-12",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 27,
+                "finishedAfterMs": 77
+              }
+            ]
+          },
+          {
+            "durationMs": 417,
+            "dispatches": [
+              {
+                "id": "developmentBurst-1",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 101
+              },
+              {
+                "id": "developmentBurst-2",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 102,
+                "finishedAfterMs": 123
+              },
+              {
+                "id": "developmentBurst-3",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 122,
+                "finishedAfterMs": 155
+              },
+              {
+                "id": "developmentBurst-4",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 154,
+                "finishedAfterMs": 210
+              },
+              {
+                "id": "developmentBurst-5",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 213,
+                "finishedAfterMs": 246
+              },
+              {
+                "id": "developmentBurst-6",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 245,
+                "finishedAfterMs": 273
+              },
+              {
+                "id": "developmentBurst-7",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 272,
+                "finishedAfterMs": 349
+              },
+              {
+                "id": "developmentBurst-8",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 349,
+                "finishedAfterMs": 395
+              },
+              {
+                "id": "developmentBurst-9",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 26
+              },
+              {
+                "id": "developmentBurst-10",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 66
+              },
+              {
+                "id": "developmentBurst-11",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 395,
+                "finishedAfterMs": 417
+              },
+              {
+                "id": "developmentBurst-12",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 28,
+                "finishedAfterMs": 78
+              }
+            ]
+          },
+          {
+            "durationMs": 413,
+            "dispatches": [
+              {
+                "id": "developmentBurst-1",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 101
+              },
+              {
+                "id": "developmentBurst-2",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 101,
+                "finishedAfterMs": 122
+              },
+              {
+                "id": "developmentBurst-3",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 122,
+                "finishedAfterMs": 154
+              },
+              {
+                "id": "developmentBurst-4",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 155,
+                "finishedAfterMs": 211
+              },
+              {
+                "id": "developmentBurst-5",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 211,
+                "finishedAfterMs": 242
+              },
+              {
+                "id": "developmentBurst-6",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 242,
+                "finishedAfterMs": 268
+              },
+              {
+                "id": "developmentBurst-7",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 268,
+                "finishedAfterMs": 344
+              },
+              {
+                "id": "developmentBurst-8",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 345,
+                "finishedAfterMs": 391
+              },
+              {
+                "id": "developmentBurst-9",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 25
+              },
+              {
+                "id": "developmentBurst-10",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 67
+              },
+              {
+                "id": "developmentBurst-11",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 391,
+                "finishedAfterMs": 413
+              },
+              {
+                "id": "developmentBurst-12",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 25,
+                "finishedAfterMs": 75
+              }
+            ]
+          },
+          {
+            "durationMs": 416,
+            "dispatches": [
+              {
+                "id": "developmentBurst-1",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 100
+              },
+              {
+                "id": "developmentBurst-2",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 101,
+                "finishedAfterMs": 121
+              },
+              {
+                "id": "developmentBurst-3",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 121,
+                "finishedAfterMs": 154
+              },
+              {
+                "id": "developmentBurst-4",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 154,
+                "finishedAfterMs": 209
+              },
+              {
+                "id": "developmentBurst-5",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 210,
+                "finishedAfterMs": 241
+              },
+              {
+                "id": "developmentBurst-6",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 244,
+                "finishedAfterMs": 271
+              },
+              {
+                "id": "developmentBurst-7",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 271,
+                "finishedAfterMs": 347
+              },
+              {
+                "id": "developmentBurst-8",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 348,
+                "finishedAfterMs": 394
+              },
+              {
+                "id": "developmentBurst-9",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 25
+              },
+              {
+                "id": "developmentBurst-10",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 65
+              },
+              {
+                "id": "developmentBurst-11",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 394,
+                "finishedAfterMs": 416
+              },
+              {
+                "id": "developmentBurst-12",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 25,
+                "finishedAfterMs": 76
+              }
+            ]
+          }
+        ]
+      },
+      "dynamic": {
+        "completed": 60,
+        "jobsPerSecond": 60.12,
+        "batchMedianMs": 199,
+        "queueP95Ms": 149,
+        "urgentQueueP95Ms": 0,
+        "routedAwayFromPrimary": 25,
+        "samples": [
+          {
+            "durationMs": 199,
+            "dispatches": [
+              {
+                "id": "developmentBurst-1",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 23,
+                "finishedAfterMs": 124
+              },
+              {
+                "id": "developmentBurst-2",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 25,
+                "finishedAfterMs": 45
+              },
+              {
+                "id": "developmentBurst-3",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 33,
+                "finishedAfterMs": 66
+              },
+              {
+                "id": "developmentBurst-4",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 46,
+                "finishedAfterMs": 102
+              },
+              {
+                "id": "developmentBurst-5",
+                "agentId": "developer",
+                "priority": 9,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 31
+              },
+              {
+                "id": "developmentBurst-6",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 66,
+                "finishedAfterMs": 93
+              },
+              {
+                "id": "developmentBurst-7",
+                "agentId": "developer",
+                "priority": 6,
+                "queueWaitMs": 93,
+                "finishedAfterMs": 170
+              },
+              {
+                "id": "developmentBurst-8",
+                "agentId": "reviewer",
+                "priority": 6,
+                "queueWaitMs": 102,
+                "finishedAfterMs": 149
+              },
+              {
+                "id": "developmentBurst-9",
+                "agentId": "reviewer",
+                "priority": 9,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 25
+              },
+              {
+                "id": "developmentBurst-10",
+                "agentId": "generalist",
+                "priority": 6,
+                "queueWaitMs": 124,
+                "finishedAfterMs": 190
+              },
+              {
+                "id": "developmentBurst-11",
+                "agentId": "generalist",
+                "priority": 9,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 21
+              },
+              {
+                "id": "developmentBurst-12",
+                "agentId": "reviewer",
+                "priority": 6,
+                "queueWaitMs": 149,
+                "finishedAfterMs": 199
+              }
+            ]
+          },
+          {
+            "durationMs": 199,
+            "dispatches": [
+              {
+                "id": "developmentBurst-1",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 23,
+                "finishedAfterMs": 123
+              },
+              {
+                "id": "developmentBurst-2",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 25,
+                "finishedAfterMs": 46
+              },
+              {
+                "id": "developmentBurst-3",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 34,
+                "finishedAfterMs": 66
+              },
+              {
+                "id": "developmentBurst-4",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 46,
+                "finishedAfterMs": 101
+              },
+              {
+                "id": "developmentBurst-5",
+                "agentId": "developer",
+                "priority": 9,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 31
+              },
+              {
+                "id": "developmentBurst-6",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 69,
+                "finishedAfterMs": 96
+              },
+              {
+                "id": "developmentBurst-7",
+                "agentId": "developer",
+                "priority": 6,
+                "queueWaitMs": 96,
+                "finishedAfterMs": 172
+              },
+              {
+                "id": "developmentBurst-8",
+                "agentId": "reviewer",
+                "priority": 6,
+                "queueWaitMs": 101,
+                "finishedAfterMs": 148
+              },
+              {
+                "id": "developmentBurst-9",
+                "agentId": "reviewer",
+                "priority": 9,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 25
+              },
+              {
+                "id": "developmentBurst-10",
+                "agentId": "generalist",
+                "priority": 6,
+                "queueWaitMs": 124,
+                "finishedAfterMs": 189
+              },
+              {
+                "id": "developmentBurst-11",
+                "agentId": "generalist",
+                "priority": 9,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 23
+              },
+              {
+                "id": "developmentBurst-12",
+                "agentId": "reviewer",
+                "priority": 6,
+                "queueWaitMs": 148,
+                "finishedAfterMs": 199
+              }
+            ]
+          },
+          {
+            "durationMs": 199,
+            "dispatches": [
+              {
+                "id": "developmentBurst-1",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 25,
+                "finishedAfterMs": 125
+              },
+              {
+                "id": "developmentBurst-2",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 25,
+                "finishedAfterMs": 45
+              },
+              {
+                "id": "developmentBurst-3",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 34,
+                "finishedAfterMs": 67
+              },
+              {
+                "id": "developmentBurst-4",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 45,
+                "finishedAfterMs": 101
+              },
+              {
+                "id": "developmentBurst-5",
+                "agentId": "developer",
+                "priority": 9,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 31
+              },
+              {
+                "id": "developmentBurst-6",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 67,
+                "finishedAfterMs": 93
+              },
+              {
+                "id": "developmentBurst-7",
+                "agentId": "developer",
+                "priority": 6,
+                "queueWaitMs": 96,
+                "finishedAfterMs": 173
+              },
+              {
+                "id": "developmentBurst-8",
+                "agentId": "reviewer",
+                "priority": 6,
+                "queueWaitMs": 101,
+                "finishedAfterMs": 146
+              },
+              {
+                "id": "developmentBurst-9",
+                "agentId": "reviewer",
+                "priority": 9,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 25
+              },
+              {
+                "id": "developmentBurst-10",
+                "agentId": "generalist",
+                "priority": 6,
+                "queueWaitMs": 125,
+                "finishedAfterMs": 191
+              },
+              {
+                "id": "developmentBurst-11",
+                "agentId": "generalist",
+                "priority": 9,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 23
+              },
+              {
+                "id": "developmentBurst-12",
+                "agentId": "reviewer",
+                "priority": 6,
+                "queueWaitMs": 149,
+                "finishedAfterMs": 199
+              }
+            ]
+          },
+          {
+            "durationMs": 200,
+            "dispatches": [
+              {
+                "id": "developmentBurst-1",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 22,
+                "finishedAfterMs": 122
+              },
+              {
+                "id": "developmentBurst-2",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 24,
+                "finishedAfterMs": 45
+              },
+              {
+                "id": "developmentBurst-3",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 33,
+                "finishedAfterMs": 66
+              },
+              {
+                "id": "developmentBurst-4",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 45,
+                "finishedAfterMs": 100
+              },
+              {
+                "id": "developmentBurst-5",
+                "agentId": "developer",
+                "priority": 9,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 31
+              },
+              {
+                "id": "developmentBurst-6",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 66,
+                "finishedAfterMs": 92
+              },
+              {
+                "id": "developmentBurst-7",
+                "agentId": "developer",
+                "priority": 6,
+                "queueWaitMs": 93,
+                "finishedAfterMs": 169
+              },
+              {
+                "id": "developmentBurst-8",
+                "agentId": "reviewer",
+                "priority": 6,
+                "queueWaitMs": 103,
+                "finishedAfterMs": 149
+              },
+              {
+                "id": "developmentBurst-9",
+                "agentId": "reviewer",
+                "priority": 9,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 24
+              },
+              {
+                "id": "developmentBurst-10",
+                "agentId": "generalist",
+                "priority": 6,
+                "queueWaitMs": 123,
+                "finishedAfterMs": 188
+              },
+              {
+                "id": "developmentBurst-11",
+                "agentId": "generalist",
+                "priority": 9,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 22
+              },
+              {
+                "id": "developmentBurst-12",
+                "agentId": "reviewer",
+                "priority": 6,
+                "queueWaitMs": 150,
+                "finishedAfterMs": 200
+              }
+            ]
+          },
+          {
+            "durationMs": 201,
+            "dispatches": [
+              {
+                "id": "developmentBurst-1",
+                "agentId": "generalist",
+                "priority": 5,
+                "queueWaitMs": 26,
+                "finishedAfterMs": 126
+              },
+              {
+                "id": "developmentBurst-2",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 26,
+                "finishedAfterMs": 46
+              },
+              {
+                "id": "developmentBurst-3",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 34,
+                "finishedAfterMs": 67
+              },
+              {
+                "id": "developmentBurst-4",
+                "agentId": "reviewer",
+                "priority": 5,
+                "queueWaitMs": 47,
+                "finishedAfterMs": 102
+              },
+              {
+                "id": "developmentBurst-5",
+                "agentId": "developer",
+                "priority": 9,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 31
+              },
+              {
+                "id": "developmentBurst-6",
+                "agentId": "developer",
+                "priority": 5,
+                "queueWaitMs": 67,
+                "finishedAfterMs": 93
+              },
+              {
+                "id": "developmentBurst-7",
+                "agentId": "developer",
+                "priority": 6,
+                "queueWaitMs": 95,
+                "finishedAfterMs": 171
+              },
+              {
+                "id": "developmentBurst-8",
+                "agentId": "reviewer",
+                "priority": 6,
+                "queueWaitMs": 105,
+                "finishedAfterMs": 151
+              },
+              {
+                "id": "developmentBurst-9",
+                "agentId": "reviewer",
+                "priority": 9,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 25
+              },
+              {
+                "id": "developmentBurst-10",
+                "agentId": "generalist",
+                "priority": 6,
+                "queueWaitMs": 126,
+                "finishedAfterMs": 192
+              },
+              {
+                "id": "developmentBurst-11",
+                "agentId": "generalist",
+                "priority": 9,
+                "queueWaitMs": 0,
+                "finishedAfterMs": 23
+              },
+              {
+                "id": "developmentBurst-12",
+                "agentId": "reviewer",
+                "priority": 6,
+                "queueWaitMs": 151,
+                "finishedAfterMs": 201
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

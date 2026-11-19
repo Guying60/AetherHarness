@@ -11,6 +11,7 @@ import type { LlmProvider, LlmMessage, LlmChatOptions } from '../src/agent/llm/p
 import { WebServer } from '../src/web/server.js';
 import { hashWebToken } from '../src/web/accounts.js';
 import { BASE_FEATURES, FULLY_FIXED, renderRateLimiter } from '../src/scenarios/rate-limiter.js';
+import { TTL_CACHE_BASELINE, TTL_CACHE_FILE, TTL_CACHE_REFERENCE } from '../src/scenarios/ttl-cache.js';
 import { runTests } from '../src/tools/test-runner.js';
 
 let checks = 0;
@@ -25,6 +26,7 @@ class Provider implements LlmProvider {
       const output = input.auditTarget !== undefined ? { approved: !input.auditTarget.includes('eval('), comments: 'Fixture audit', signals: input.auditTarget.includes('eval(') ? [{ ruleId: 'SEC-001', message: 'remove eval' }] : [] }
         : input.failedRules ? { feedback: 'Remove eval and return const result = 1;' }
         : { code: input.goal === 'repository-repair' ? renderRateLimiter(input.feedback ? FULLY_FIXED : BASE_FEATURES)
+          : input.goal === 'ttl-repair' ? (input.feedback ? TTL_CACHE_REFERENCE : TTL_CACHE_BASELINE)
           : input.goal === 'repair' && !input.feedback ? 'eval(userInput)' : 'const result = 1;', marker: input.goal };
       return { content: JSON.stringify({ type: 'final', output }), usage: { promptTokens: 3, completionTokens: 4, totalTokens: 7 }, model: this.model, latencyMs: 10 };
     } finally { this.active--; }
@@ -159,55 +161,89 @@ try {
   const git = (...args: string[]) => execFileSync('git', ['-C', repoPath, ...args], { encoding: 'utf8' }).trim();
   const baseline = renderRateLimiter(BASE_FEATURES);
   writeFileSync(join(repoPath, 'src', 'rate-limiter.js'), baseline);
-  git('init', '-q'); git('add', '--', 'src/rate-limiter.js'); git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'Baseline');
-  const repoConfig = { path: repoPath, revision: git('rev-parse', 'HEAD'), runnerImage: 'sha256:' + 'b'.repeat(64) };
-  const repository = new Orchestrator({ llm: { provider }, project: repoConfig });
-  try {
-    const systemTeam = repository.studio.catalog.get('teams', 'default-team');
-    const verifiedGraph = blankGraph({ id: systemTeam.id, revision: 1 });
-    verifiedGraph.nodes.splice(1, 0, node('verify', 'verification', { verification: 'repository', auditors: [], target: { source: 'input', path: ['candidate'] } }));
-    verifiedGraph.edges = [{ id: 'in', from: 'start', to: 'verify' }, { id: 'out', from: 'verify', to: 'end' }];
-    const draft = repository.studio.workflows.create({ slug: 'container-verification', config: verifiedGraph }, 'operator');
-    const fixed = repository.studio.workflows.mutate(draft.id, draft.etag, 'revision', {}, 'operator');
-    let trustedSuite = '';
-    repository.tools.register({ ...repository.tools.get('container_test_runner')!, handler: async params => {
-      trustedSuite = params.testCode; return { success: true, report: { passed: 1, failed: 0, total: 1, errors: [] } };
-    } });
-    const body = request(fixed.id, { candidate: { code: 'const value = 1;' }, testCode: 'untrusted replacement' });
-    const prepared = repository.studio.prepare(body);
-    check(!prepared.tools.has('container_test_runner') && prepared.verificationTools?.has('container_test_runner'), 'container access belongs only to the server verification contract');
-    await assert.rejects(prepared.tools.invoke('container_test_runner', {}), /denied|allowed|not found|scope/i); checks++;
-    const result = await repository.runStudio(body);
-    check(trustedSuite.length > 100 && !trustedSuite.includes('untrusted replacement') && repository.getEvents(result.runId).some(e => e.kind === 'tool.finished'), 'trusted fixed suite reaches the runner and emits actual invocation evidence');
-    const changed = new Orchestrator({ llm: { provider }, project: { ...repoConfig, runnerImage: 'sha256:' + 'c'.repeat(64) } });
-    try { assert.throws(() => changed.studio.prepareWorkflow(body, prepared.snapshot), /配置已改变/); checks++; } finally { await changed.close(); }
+  writeFileSync(join(repoPath, TTL_CACHE_FILE), TTL_CACHE_BASELINE);
+  git('init', '-q'); git('add', '--', 'src'); git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'Baseline');
+  const deliveryScenarios = [
+    { scenario: 'rate-limiter', goal: 'repository-repair', candidate: renderRateLimiter(FULLY_FIXED), file: 'src/rate-limiter.js' },
+    { scenario: 'ttl-cache', goal: 'ttl-repair', candidate: TTL_CACHE_REFERENCE, file: TTL_CACHE_FILE }
+  ] as const;
+  for (const profile of deliveryScenarios) await checkRepositoryProfile(profile);
 
-    const repoCatalog = repository.studio.catalog;
-    const repoDeveloper = repoCatalog.create('agents', { slug: 'repository-developer', config: devConfig }, 'operator');
-    const repoTester = repoCatalog.create('agents', { slug: 'repository-tester', config: agentTemplate('qa_verifier', repository.studio.model.ref) }, 'operator');
-    const repoTeam = repoCatalog.create('teams', { slug: 'repository-team', config: { ...team.draft, members: team.draft.members.map((m, i) => ({ ...m, agentRef: { id: i === 0 ? repoDeveloper.id : repoTester.id, revision: 1 } })) } }, 'operator');
-    const delivery = chain([node('repair', 'loop', { developer: 'dev', tester: 'tester', maxIterations: 3, threshold: 1, verification: 'repository' }),
-      node('delivery', 'delivery', { sourceNodeId: 'repair', message: 'Confirm delivery', expiresInMs: 60000 })]);
-    delivery.teamRef = { id: repoTeam.id, revision: 1 };
-    const bypass = structuredClone(delivery); bypass.nodes[1].config.verification = 'static-review';
-    assert.throws(() => repository.studio.compile(bypass), /固定仓库修复循环/); checks++;
-    const deliveryDraft = repository.studio.workflows.create({ slug: 'delivery', config: delivery }, 'operator');
-    const deliveryFlow = repository.studio.workflows.mutate(deliveryDraft.id, deliveryDraft.etag, 'revision', {}, 'operator');
-    // The known fixture candidate is safe to test locally. Production uses the configured Docker runner.
-    repository.tools.register({ ...repository.tools.get('container_test_runner')!, handler: async params => runTests({ ...params, timeoutMs: 3000 }) });
-    const runDelivery = () => repository.runStudio(request(deliveryFlow.id, { goal: 'repository-repair' }));
-    const waiting = await runDelivery();
-    check(waiting.status === 'paused' && waiting.loopRounds?.length === 2 && waiting.verification?.passed && !waiting.patch, 'failed fixed suite feeds repair, then delivery waits for candidate approval');
-    check(!repository.getEvents(waiting.runId).some(e => e.data?.toolId?.startsWith('git_')), 'Git tools are not invoked before delivery approval');
-    assert.equal(waiting.approvals![0].input && (waiting.approvals![0].input as any).finalCode.code, renderRateLimiter(FULLY_FIXED));
-    repository.decideApproval(waiting.runId, waiting.approvals![0].id, { decision: 'approve', key: 'delivery' }, 'operator');
-    for (let i = 0; i < 100 && ['running', 'pending'].includes(waiting.status); i++) await sleep(10);
-    check(waiting.status === 'completed' && waiting.artifact === renderRateLimiter(FULLY_FIXED) && waiting.patch?.patch && waiting.project?.revision === repoConfig.revision, 'approved exact candidate yields a checked Git patch on the pinned baseline');
-    check(git('status', '--porcelain') === '' && repository.getEvents(waiting.runId).some(e => e.kind === 'tool.finished' && e.data?.toolId === 'git_check_patch' && e.data?.output.checked), 'real Git check succeeds without modifying the repository');
-    const denied = await runDelivery();
-    repository.decideApproval(denied.runId, denied.approvals![0].id, { decision: 'reject', key: 'delivery-denied' }, 'operator');
-    check(denied.status === 'failed' && !denied.patch && !repository.getEvents(denied.runId).some(e => e.data?.toolId?.startsWith('git_')), 'rejected delivery cannot invoke Git or release a patch');
-  } finally { await repository.close(); }
+  async function checkRepositoryProfile({ scenario, goal, candidate, file }: typeof deliveryScenarios[number]) {
+    console.log(`\nRepository profile: ${scenario}`);
+    const repoConfig = { path: repoPath, revision: git('rev-parse', 'HEAD'), runnerImage: 'sha256:' + 'b'.repeat(64), scenario };
+    const repository = new Orchestrator({ llm: { provider }, project: repoConfig });
+    const repoServer = new WebServer({ port: 0, orchestrator: repository,
+      accounts: [{ username: 'operator', role: 'operator', tokenHash: hashWebToken('b'.repeat(64)) }] });
+    try {
+      const systemTeam = repository.studio.catalog.get('teams', 'default-team');
+      const verifiedGraph = blankGraph({ id: systemTeam.id, revision: 1 });
+      verifiedGraph.nodes.splice(1, 0, node('verify', 'verification', { verification: 'repository', auditors: [], target: { source: 'input', path: ['candidate'] } }));
+      verifiedGraph.edges = [{ id: 'in', from: 'start', to: 'verify' }, { id: 'out', from: 'verify', to: 'end' }];
+      const draft = repository.studio.workflows.create({ slug: 'container-verification', config: verifiedGraph }, 'operator');
+      const fixed = repository.studio.workflows.mutate(draft.id, draft.etag, 'revision', {}, 'operator');
+      let trustedSuite = '';
+      repository.tools.register({ ...repository.tools.get('container_test_runner')!, handler: async params => {
+        trustedSuite = params.testCode; return { success: true, report: { passed: 1, failed: 0, total: 1, errors: [] } };
+      } });
+      const body = request(fixed.id, { candidate: { code: 'const value = 1;' }, testCode: 'untrusted replacement' });
+      const prepared = repository.studio.prepare(body);
+      check(!prepared.tools.has('container_test_runner') && prepared.verificationTools?.has('container_test_runner'), 'container access belongs only to the server verification contract');
+      await assert.rejects(prepared.tools.invoke('container_test_runner', {}), /denied|allowed|not found|scope/i); checks++;
+      const result = await repository.runStudio(body);
+      check(trustedSuite.length > 100 && !trustedSuite.includes('untrusted replacement') && repository.getEvents(result.runId).some(e => e.kind === 'tool.finished'), 'trusted fixed suite reaches the runner and emits actual invocation evidence');
+      const changed = new Orchestrator({ llm: { provider }, project: { ...repoConfig, runnerImage: 'sha256:' + 'c'.repeat(64) } });
+      try { assert.throws(() => changed.studio.prepareWorkflow(body, prepared.snapshot), /配置已改变/); checks++; } finally { await changed.close(); }
+
+      const repoCatalog = repository.studio.catalog;
+      const repoDeveloper = repoCatalog.create('agents', { slug: 'repository-developer', config: devConfig }, 'operator');
+      const repoTester = repoCatalog.create('agents', { slug: 'repository-tester', config: agentTemplate('qa_verifier', repository.studio.model.ref) }, 'operator');
+      const repoTeam = repoCatalog.create('teams', { slug: 'repository-team', config: { ...team.draft, members: team.draft.members.map((m, i) => ({ ...m, agentRef: { id: i === 0 ? repoDeveloper.id : repoTester.id, revision: 1 } })) } }, 'operator');
+      const delivery = chain([node('repair', 'loop', { developer: 'dev', tester: 'tester', maxIterations: 3, threshold: 1, verification: 'repository' }),
+        node('delivery', 'delivery', { sourceNodeId: 'repair', message: 'Confirm delivery', expiresInMs: 60000 })]);
+      delivery.teamRef = { id: repoTeam.id, revision: 1 };
+      const bypass = structuredClone(delivery); bypass.nodes[1].config.verification = 'static-review';
+      assert.throws(() => repository.studio.compile(bypass), /固定仓库修复循环/); checks++;
+      const deliveryDraft = repository.studio.workflows.create({ slug: 'delivery', config: delivery }, 'operator');
+      const deliveryFlow = repository.studio.workflows.mutate(deliveryDraft.id, deliveryDraft.etag, 'revision', {}, 'operator');
+      // The known fixture candidate is safe to test locally. Production uses the configured Docker runner.
+      repository.tools.register({ ...repository.tools.get('container_test_runner')!, handler: async params => runTests({ ...params, timeoutMs: 3000 }) });
+      const { url } = await repoServer.start();
+      const projectId = repository.getProject().project!.id;
+      const workflowRef = { id: deliveryFlow.id, revision: 1 };
+      const headers = { 'Content-Type': 'application/json', Authorization: 'Basic ' + Buffer.from('operator:' + 'b'.repeat(64)).toString('base64') };
+      const submit = () => fetch(url + '/api/runs', { method: 'POST', headers, body: json({ projectId, workflowRef, goal }) });
+      const unpublished = await submit();
+      check(unpublished.status === 409 && (await unpublished.json()).error.code === 'PUBLICATION_UNAVAILABLE',
+        'workbench cannot submit a fixed revision before publication');
+      repository.studio.workflows.mutate(deliveryFlow.id, deliveryFlow.etag, 'publish', { revision: 1 }, 'operator');
+      const dashboard = await (await fetch(url + '/api/dashboard', { headers })).json();
+      check(dashboard.repository.project.id === projectId && dashboard.repository.workflows.length === 1 &&
+        dashboard.repository.workflows[0].id === workflowRef.id && dashboard.repository.workflows[0].revision === 1,
+        'workbench lists the pinned repository and eligible published revision');
+      const response = await submit();
+      assert.equal(response.status, 202, await response.clone().text());
+      const { runId } = await response.json();
+      const waiting = repository.getRun(runId)!;
+      for (let i = 0; i < 100 && ['running', 'pending'].includes(waiting.status); i++) await sleep(10);
+      check(waiting.definitions?.workflow?.revision === 1 && waiting.project?.revision === repoConfig.revision &&
+        waiting.goal === goal && waiting.runInput?.source === execFileSync('git', ['-C', repoPath, 'show', repoConfig.revision + ':' + file], { encoding: 'utf8' }),
+        'workbench launch freezes the published revision and reads source from the pinned Git commit');
+      const runDelivery = () => repository.runStudio(request(deliveryFlow.id, { goal }));
+      check(waiting.status === 'paused' && waiting.loopRounds?.length === 2 && waiting.verification?.passed && !waiting.patch, 'failed fixed suite feeds repair, then delivery waits for candidate approval');
+      check(!repository.getEvents(waiting.runId).some(e => e.data?.toolId?.startsWith('git_')), 'Git tools are not invoked before delivery approval');
+      assert.equal(waiting.approvals![0].input && (waiting.approvals![0].input as any).finalCode.code, candidate);
+      repository.decideApproval(waiting.runId, waiting.approvals![0].id, { decision: 'approve', key: 'delivery' }, 'operator');
+      for (let i = 0; i < 100 && ['running', 'pending'].includes(waiting.status); i++) await sleep(10);
+      check(waiting.status === 'completed' && waiting.artifact === candidate && waiting.patch?.patch.includes('+++ b/' + file) &&
+        waiting.project?.revision === repoConfig.revision && waiting.project.filePath === file,
+        'approved candidate yields a checked Git patch scoped to the configured source file');
+      check(git('status', '--porcelain') === '' && repository.getEvents(waiting.runId).some(e => e.kind === 'tool.finished' && e.data?.toolId === 'git_check_patch' && e.data?.output.checked), 'real Git check succeeds without modifying the repository');
+      const denied = await runDelivery();
+      repository.decideApproval(denied.runId, denied.approvals![0].id, { decision: 'reject', key: 'delivery-denied' }, 'operator');
+      check(denied.status === 'failed' && !denied.patch && !repository.getEvents(denied.runId).some(e => e.data?.toolId?.startsWith('git_')), 'rejected delivery cannot invoke Git or release a patch');
+    } finally { await repoServer.stop(); await repository.close(); }
+  }
 
   console.log('\nWorkflow API, export/import and evidence');
   server = new WebServer({ port: 0, orchestrator: harness, accounts: [{ username: 'operator', role: 'operator', tokenHash: hashWebToken('b'.repeat(64)) }, { username: 'viewer', role: 'viewer', tokenHash: hashWebToken('a'.repeat(64)) }] });
@@ -219,7 +255,13 @@ try {
   check(importedResponse.status === 201 && json(imported.draft) === json(graph), 'export/import preserves graph semantics and layout');
   bundle.hash = 'tampered'; check((await http('/api/studio/workflow-import', 'POST', { slug: 'tampered', bundle })).status === 422, 'tampered import is rejected before mutation');
   check((await http('/api/studio/workflows', 'GET', undefined, true)).status === 403 && (await http(`/api/studio/runs/${expired.runId}/approvals/${expired.approvals![0].id}`, 'POST', { decision: 'approve', key: 'viewer' }, true)).status === 403, 'viewer cannot access private design or approval actions');
-  check((await http('/workflows')).status === 200 && (await http('/studio-assets/flow-editor.js')).status === 200, 'offline bundled React Flow editor assets are served');
+  const flowPage = await http('/workflows');
+  check(flowPage.status === 200 && (await http('/studio-assets/flow-editor.js')).status === 200, 'offline bundled React Flow editor assets are served');
+  const sidebar = (html: string) => /<aside class="sidebar">[\s\S]*?<nav[^>]*>([\s\S]*?)<\/nav>/.exec(html)?.[1];
+  const flowNav = sidebar(await flowPage.text());
+  const dashboardNav = sidebar(await (await http('/')).text());
+  check(!!flowNav && flowNav.includes('href="/workflows" title="工作流" aria-current="page"') &&
+    flowNav.replace(' aria-current="page"', '') === dashboardNav, 'workflow designer uses the full console sidebar with its own active link');
   const evidence = await (await http('/api/studio/runs/' + repaired.runId)).json();
   check(evidence.events.some((e: any) => e.kind === 'agent.turn') && evidence.events.every((e: any) => e.seq > 0), 'persisted model turns and monotonic event sequence are available to the debugger');
   check(harness.studio.workflows.get(definition.id).publishedRevision === 1, 'published workflow revisions survive restart');

@@ -34,7 +34,7 @@ import { SelfLoopEngine } from '../src/selfloop/self-loop-engine.js';
 import { FeedbackOptimizer } from '../src/optimization/feedback-optimizer.js';
 import { Orchestrator } from '../src/orchestrator.js';
 import { WebServer as HttpWebServer, WebServerOptions } from '../src/web/server.js';
-import { hashWebToken } from '../src/web/accounts.js';
+import { hashWebPassword, hashWebToken } from '../src/web/accounts.js';
 import { REPOSITORY_FILE, REPOSITORY_PROJECT_ID } from '../src/scenarios/repository-repair.js';
 import { RunStore } from '../src/store/run-store.js';
 import { resolveLlmConfig } from '../src/agent/llm/index.js';
@@ -1271,7 +1271,11 @@ async function suiteWebServer(): Promise<void> {
   const limitedResults = await Promise.all([firstRun, secondRun]);
   check(limitedResults.every(run => run.verification?.passed), 'a queued run starts and verifies when the slot is released');
 
-  const server = new WebServer({ port: 0 });
+  const ordinaryPassword = 'demo:pass 42';
+  const server = new HttpWebServer({ port: 0, accounts: [
+    ...accounts.map(({ token, ...account }) => ({ ...account, tokenHash: hashWebToken(token) })),
+    { username: 'password-test', role: 'operator', passwordHash: await hashWebPassword(ordinaryPassword) }
+  ] });
   const info = await server.start();
 
   try {
@@ -1281,6 +1285,15 @@ async function suiteWebServer(): Promise<void> {
       'the browser login redirect preserves the requested run');
     const loginPage = await fetch(info.url + '/login');
     check(loginPage.status === 200 && (await loginPage.text()).includes('登录工作台'), 'GET /login serves the sign-in form');
+    const signInWithPassword = (password: string) => fetch(info.url + '/api/login', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username: 'password-test', password, next: '/workflows' })
+    });
+    equal((await signInWithPassword(ordinaryPassword + ' ')).status, 401, 'password login checks the exact password');
+    const passwordLogin = await signInWithPassword(ordinaryPassword);
+    const passwordCookie = passwordLogin.headers.get('set-cookie')?.split(';')[0];
+    check(passwordLogin.status === 200 && !!passwordCookie && (await passwordLogin.json()).next === '/workflows',
+      'an ordinary password creates a browser session and preserves the requested workspace page');
     for (const path of ['/api/dashboard', '/api/events', '/api/runs/run-01/report']) {
       const response = await fetch(info.url + path);
       check(response.status === 401 && !response.headers.has('www-authenticate'),

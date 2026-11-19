@@ -10,7 +10,8 @@ import { WorkflowStore } from './workflow-store.js';
 import { compileGraph, Graph, GraphError } from './graph.js';
 import type { VerificationSpec } from '../types/index.js';
 import { makeVerificationSpec } from '../scenarios/rate-limiter.js';
-import { buildRepositoryDeliveryWorkflow, type RepositoryProject } from '../scenarios/repository-repair.js';
+import { buildRepositoryDeliveryWorkflow, TTL_CACHE_PROJECT_ID, type RepositoryProject } from '../scenarios/repository-repair.js';
+import { TTL_CACHE_TESTS } from '../scenarios/ttl-cache.js';
 
 // VM subprocesses are not an OS security boundary; generated code execution requires an approval/sandbox policy.
 const allowedTools = new Set(['static_analyzer', 'git_patch_manager']);
@@ -32,9 +33,9 @@ export class StudioService {
   private readonly delivery?: WorkflowDefinition;
   constructor(private readonly tools: ToolRegistry, profiles: AgentProfile[], private readonly provider?: LlmProvider,
     private readonly config?: LlmConfig, directory?: string, private readonly repositoryProfile?: RepositoryProject) {
-    if (repositoryProfile && tools.has('git_read_baseline') && tools.has('git_check_patch')) {
-      const workflow = buildRepositoryDeliveryWorkflow();
-      const baseline = { id: 'n_git_baseline', name: 'Read pinned baseline', type: 'tool' as const, toolId: 'git_read_baseline', outputKey: 'seedSource', inputTransformer: () => ({}) };
+    if (repositoryProfile && tools.has('container_test_runner') && tools.has('git_read_baseline') && tools.has('git_check_patch')) {
+      const workflow = buildRepositoryDeliveryWorkflow(repositoryProfile.filePath);
+      const baseline = { id: 'n_git_baseline', name: '读取固定 Git 基线', type: 'tool' as const, toolId: 'git_read_baseline', outputKey: 'seedSource', inputTransformer: () => ({}) };
       this.delivery = { ...workflow, entryNodeId: baseline.id, nodes: [baseline, ...workflow.nodes],
         edges: [{ from: baseline.id, to: workflow.entryNodeId }, ...workflow.edges] };
     }
@@ -144,6 +145,16 @@ export class StudioService {
   verification(profile: string, auditors: string[]): VerificationSpec {
     if (profile === 'repository') {
       if (!this.repositoryProfile || !this.tools.has('container_test_runner')) throw new Error('服务端尚未配置固定仓库与容器验收。');
+      if (this.repositoryProfile.id === TTL_CACHE_PROJECT_ID) {
+        return {
+          rules: [], confidenceThreshold: 1,
+          executableSandboxCheck: {
+            testScriptGenerator: () => TTL_CACHE_TESTS, bindings: ['createCache'],
+            toolId: 'container_test_runner', timeoutMs: 15000
+          },
+          multiAgentVoting: { auditorAgentIds: auditors, minPassRatio: 1 }
+        };
+      }
       const spec = makeVerificationSpec({ auditors, requireCluster: false });
       return { ...spec, executableSandboxCheck: { ...spec.executableSandboxCheck, toolId: 'container_test_runner', timeoutMs: 15000 },
         multiAgentVoting: { auditorAgentIds: auditors, minPassRatio: 1 } };

@@ -103,7 +103,7 @@ export function compileGraph(raw: unknown, ctx: CompileContext, id = 'draft', re
   if (map.size !== graph.nodes.length) issue(undefined, 'DUPLICATE', '节点 ID 重复。');
   if (new Set(graph.edges.map(e => e.id)).size !== graph.edges.length) issue(undefined, 'DUPLICATE_EDGE', '连接 ID 重复。');
   const starts = graph.nodes.filter(n => n.type === 'start'), ends = graph.nodes.filter(n => n.type === 'end');
-  if (starts.length !== 1 || ends.length < 1) issue(undefined, 'BOUNDARY', '需要一个 Start 和至少一个 End。');
+  if (starts.length !== 1 || ends.length < 1) issue(undefined, 'BOUNDARY', '需要一个开始节点和至少一个结束节点。');
   for (const e of graph.edges) if (!map.has(e.from) || !map.has(e.to)) issue(e.from, 'DANGLING', '连接引用不存在的节点。');
   const outgoing = (id: string) => graph.edges.filter(e => e.from === id);
   const incoming = (id: string) => graph.edges.filter(e => e.to === id);
@@ -117,11 +117,11 @@ export function compileGraph(raw: unknown, ctx: CompileContext, id = 'draft', re
   if (starts[0]) visit(starts[0].id);
   for (const n of graph.nodes) {
     const out = outgoing(n.id), inc = incoming(n.id);
-    if (!seen.has(n.id)) issue(n.id, 'UNREACHABLE', '节点不可从 Start 到达。');
-    if (n.type === 'start' && inc.length || n.type === 'end' && out.length) issue(n.id, 'BOUNDARY_EDGE', 'Start 不能有入边，End 不能有出边。');
+    if (!seen.has(n.id)) issue(n.id, 'UNREACHABLE', '从开始节点无法到达此节点。');
+    if (n.type === 'start' && inc.length || n.type === 'end' && out.length) issue(n.id, 'BOUNDARY_EDGE', '开始节点不能有入边，结束节点不能有出边。');
     if (n.type === 'condition') {
-      if (out.length !== 2 || !out.some(e => e.port === 'true') || !out.some(e => e.port === 'false')) issue(n.id, 'CONDITION_PORTS', '条件必须有 true 和 false（默认）两个出口。');
-    } else if (out.some(e => e.port) || out.length !== (n.type === 'end' ? 0 : 1)) issue(n.id, 'OUTGOING', '普通节点需要一条后继连接；并行请使用 Parallel 节点。');
+      if (out.length !== 2 || !out.some(e => e.port === 'true') || !out.some(e => e.port === 'false')) issue(n.id, 'CONDITION_PORTS', '请分别连接「条件成立」和「条件不成立」两个出口。');
+    } else if (out.some(e => e.port) || out.length !== (n.type === 'end' ? 0 : 1)) issue(n.id, 'OUTGOING', n.type === 'end' ? '结束节点不能有出线。' : '请为这个节点连接一条出线。多路并行使用「并行分支」节点。');
   }
   if (issues.length) throw new GraphError(issues);
   // Dominators enforce that every referenced output exists on every route to this node.
@@ -197,7 +197,7 @@ export function compileGraph(raw: unknown, ctx: CompileContext, id = 'draft', re
         node.loopEnvelope = true;
         const targetId = n.id + '__develop', verifyId = n.id + '__verify';
         node.selfLoopConfig = { targetNodeId: targetId, verificationNodeId: verifyId, criticAgentId: tester, maxIterations: c.maxIterations, convergenceThreshold: c.threshold };
-        nodes.push({ id: targetId, name: n.name + ' / Developer', type: 'agent', agentId: developer, maxRetries: 0, timeoutMs: n.timeoutMs,
+        nodes.push({ id: targetId, name: n.name + ' / 开发', type: 'agent', agentId: developer, maxRetries: 0, timeoutMs: n.timeoutMs,
           inputTransformer: context => ({ ...input(context), previous: clone(context.previousAttempt ?? null), feedback: context.diagnosticFeedback ?? '', iteration: context.__loopIteration ?? 1 }) },
         { id: verifyId, name: n.name + ' / 验收', type: 'verification', verificationSpec: ctx.verification(c.verification ?? 'static-review', [tester]) });
       }

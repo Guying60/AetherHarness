@@ -67,7 +67,7 @@ export function dashboard(): void {
     n_delivery: 'Git 交付子流程', n_git_patch_check: '检查 Git 补丁'
   };
   const nodeTypes: Record<string, string> = {
-    agent: 'Agent 节点', condition: '条件分支', self_loop: 'PDCA 自愈循环',
+    agent: '智能体节点', condition: '条件分支', self_loop: 'PDCA 自愈循环',
     verification: '验证节点', tool: '工具节点', parallel_group: '并行分组', subworkflow: '子工作流'
   };
   const roles: Record<string, string> = {
@@ -116,13 +116,14 @@ export function dashboard(): void {
     location.pathname === '/delivery' || location.pathname.endsWith('/delivery') ? 'delivery' :
       location.pathname.startsWith('/runs') ? 'execution' : 'workbench';
   const routeScenario = () => new URLSearchParams(location.search).get('scenario');
-  const pageNames = { workbench: '工作台', execution: '任务执行', agents: 'Agent 中心', delivery: '验收与交付', settings: '系统设置' };
+  const pageNames = { workbench: '工作台', execution: '任务执行', agents: '智能体中心', delivery: '验收与交付', settings: '系统设置' };
   const runPath = (id: string, view: 'execution' | 'delivery' = 'execution') =>
     '/runs/' + encodeURIComponent(id) + (view === 'delivery' ? '/delivery' : '');
   const runTitle = (run: Pick<RunSnapshot, 'taskId' | 'title'>) => scenarios[run.taskId]?.title ?? run.title ?? taskName(run.taskId);
 
   let data: DashboardData | undefined;
   let page = routePage();
+  let linkedWorkflow = new URLSearchParams(location.search).get('workflow');
   let requestedRun = routeRun() ?? (routeScenario() ? '' : undefined);
   let routePath = location.pathname + location.search;
   let unavailableRun: string | undefined;
@@ -146,7 +147,8 @@ export function dashboard(): void {
   const rendered: Record<string, string> = {};
 
   const taskName = (id: string) => data?.repository.project?.id === id ? data.repository.project.title :
-    scenarios[id]?.title ?? data?.tasks.find(task => task.id === id)?.title ?? id;
+    data?.repository.workflows.find(workflow => workflow.id === id)?.name ?? scenarios[id]?.title ?? data?.tasks.find(task => task.id === id)?.title ?? id;
+  const workflowKey = ({ id, revision }: { id: string; revision: number }) => id + '@' + revision;
   const agentName = (id: string) => data?.agents.find(agent => agent.id === id)?.name ?? id;
 
   function show(id: string, html: string): void {
@@ -222,27 +224,35 @@ export function dashboard(): void {
     get('bus-label').textContent = connected ? '编排总线在线' : '编排总线重连中';
     get<HTMLButtonElement>('run-all').hidden = !canOperate;
     get<HTMLButtonElement>('run-all').disabled = starting || busy || data.tasks.length === 0;
-    const { project, ready, reason } = data.repository;
-    get('project-status').textContent = ready && project
-      ? project.filePath + ' @ ' + project.revision.slice(0, 12) + ' · 目标文件将发送至配置的模型端点。'
-      : reason ?? '仓库任务不可用。';
-    get('repo-badge').textContent = ready ? '已就绪' : '未配置';
-    get('repo-badge').className = 'badge' + (ready ? ' good' : '');
-    get('schema-badge').className = 'badge ' + (ready ? 'good' : 'warn');
-    get('schema-badge').innerHTML = '<i class="dot"></i>' + (ready ? 'Ready · 可提交编排' : 'Awaiting Input Schema');
-    get('repo-target').textContent = project ? 'Target: ' + project.filePath : 'Target: —';
-    get('repo-tree').textContent = ready ? 'CLEAN TREE' : 'DISCONNECTED';
-    get('repo-tree').className = ready ? 'ok' : '';
+    const { project, ready, reason, builtIn, workflows } = data.repository;
+    const workflowSelect = get<HTMLSelectElement>('project-workflow');
+    const previousChoice = workflowSelect.value || linkedWorkflow;
+    linkedWorkflow = null;
+    const options = workflows.map(workflow => '<option value="' + esc(workflowKey(workflow)) + '">' +
+      esc(workflow.name + ' · v' + workflow.revision) + '</option>');
+    if (builtIn) options.push('<option value="builtin">内置限流器修复</option>');
+    show('project-workflow', '<option value="">' + (options.length ? '选择执行工作流' : '暂无可用于仓库的发布版') + '</option>' + options.join(''));
+    workflowSelect.value = previousChoice && Array.from(workflowSelect.options).some(option => option.value === previousChoice) ? previousChoice : '';
+    workflowSelect.disabled = !canOperate || !project || !options.length;
+    get('project-status').textContent = reason ?? (options.length
+      ? '系统从固定 Git 提交读取源文件，再将源文件发送到已配置的模型。候选通过验收后等待人工审批。'
+      : '请先发布包含补丁交付节点的工作流。');
+    get('project-workflow-link').textContent = workflows.length ? '管理发布版' : '在设计器发布仓库工作流';
+    get('repo-badge').textContent = project ? '已登记' : '未登记';
+    get('repo-badge').className = 'badge' + (project ? ' good' : '');
+    get('repo-target').textContent = project ? project.filePath + ' · Git 基线 ' + project.revision.slice(0, 12) : '';
     show('project-select', project ? '<option value="' + esc(project.id) + '">' +
-      esc('repo: ' + project.title + ' (' + project.revision.slice(0, 7) + ')') + '</option>' : '<option value="">无配置仓库</option>');
-    get<HTMLSelectElement>('project-select').disabled = !canOperate || !ready;
+      esc(project.title) + '</option>' : '<option value="">暂无已登记仓库</option>');
+    get<HTMLSelectElement>('project-select').disabled = !canOperate || !project;
     get('project-form').hidden = !canOperate;
     // The goal draft never needs a repository: only dispatch does. Keeping the
     // textarea editable lets an operator prepare a brief before configuring one.
     get<HTMLTextAreaElement>('project-goal').disabled = !canOperate;
     get<HTMLButtonElement>('project-sample').disabled = !canOperate;
-    get<HTMLButtonElement>('project-submit').disabled = !canOperate || starting || !ready ||
-      data.runs.some(item => item.taskId === project?.id && active(item));
+    const workflow = workflows.find(item => workflowKey(item) === workflowSelect.value);
+    const workflowId = workflow?.id ?? (workflowSelect.value === 'builtin' ? project?.id : undefined);
+    get<HTMLButtonElement>('project-submit').disabled = !canOperate || starting || !ready || !workflowId ||
+      data.runs.some(item => item.taskId === workflowId && active(item));
 
     renderPresets(canOperate, task?.id, starting);
     renderKpi();
@@ -589,7 +599,7 @@ export function dashboard(): void {
       design.agents.map(agent => '<p class="small">' + esc(agent.memberId + ' · ' + agent.name) + ' · v' + agent.revision + '</p>').join('') +
       '<details class="small"><summary>执行快照指纹</summary><pre>' + esc(design.executionHash) + '</pre></details>' +
       (canOperate ? '<a class="link" href="' + (design.workflow ? '/workflows/' + esc(design.workflow.id) : design.team ? '/teams/' + esc(design.team.id) : '/studio/agents/' + esc(design.agents[0].id)) +
-        '?run=' + esc(run.runId) + '">查看固定配置与测试证据</a>' : '') + '</div>' : '';
+        '?run=' + esc(run.runId) + (run.status === 'paused' && design.workflow ? '#flow-evidence">前往审批' : '">查看固定配置与运行证据') + '</a>' : '') + '</div>' : '';
     show('run-summary', '<div class="row between"><h4>' + esc(title) + '</h4>' + stateBadge(outcome ?? run.status) + '</div>' +
       '<p class="muted small mono">' + esc(run.runId) + ' · ' + time(run.startedAt) +
       (run.finishedAt ? ' · ' + duration(run.finishedAt - run.startedAt) : '') + '</p>' +
@@ -1126,7 +1136,7 @@ export function dashboard(): void {
         ['模型端点', snapshot.llm.label, '环境变量 / --base-url'],
         ['固定 Git 仓库', project ? project.filePath : '未配置', 'AETHER_PROJECT_REPO'],
         ['固定基线提交', project ? project.revision.slice(0, 12) : '—', 'AETHER_PROJECT_BASE'],
-        ['固定验收镜像', project ? project.runnerImage.slice(0, 26) + '…' : '—', 'AETHER_RUNNER_IMAGE'],
+        ['固定验收镜像', project?.runnerImage ? project.runnerImage.slice(0, 26) + '…' : '未配置', 'AETHER_RUNNER_IMAGE'],
         ['定义库 / 工作流', (runtime ? runtime.agents + runtime.teams : 0) + ' 项 / ' +
           (runtime ? runtime.workflows : 0) + ' 项', '本地 JSON 存储']
       ];
@@ -1189,7 +1199,7 @@ export function dashboard(): void {
       location.replace('/login?expired=1&next=' + encodeURIComponent(location.pathname));
     }
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error ?? 'HTTP ' + response.status);
+    if (!response.ok) throw new Error(payload.error?.message ?? payload.error ?? 'HTTP ' + response.status);
     return payload;
   }
 
@@ -1296,17 +1306,17 @@ export function dashboard(): void {
       id === '' ? '/runs?scenario=' + encodeURIComponent(taskId) : '/runs');
   }
 
-  async function start(id: string, goal?: string): Promise<void> {
+  async function start(id: string, goal?: string, workflowRef?: { id: string; revision: number }): Promise<void> {
     if (starting || data?.account.role !== 'operator') return;
     starting = true;
     render();
     try {
       const result = goal === undefined
         ? await request<{ runId?: string }>('/api/tasks/run', { taskId: id })
-        : await request<{ runId: string }>('/api/runs', { projectId: id, goal });
-      if (id !== 'all') taskId = id;
+        : await request<{ runId: string }>('/api/runs', { projectId: id, goal, workflowRef });
+      if (id !== 'all') taskId = workflowRef?.id ?? id;
       selectRun(result.runId);
-      notice(id === 'all' ? '并发演示已启动。可用运行历史切换各案例。' : '已启动' + taskName(id) + '。');
+      notice(id === 'all' ? '并发演示已启动。可用运行历史切换各案例。' : '已启动' + taskName(workflowRef?.id ?? id) + '。');
     } catch (error) {
       notice('启动失败。' + (error instanceof Error ? error.message : ''), true);
     } finally {
@@ -1346,7 +1356,9 @@ export function dashboard(): void {
   get('project-sample').addEventListener('click', () => {
     const goal = get<HTMLTextAreaElement>('project-goal');
     if (!goal.value.trim()) {
-      goal.value = '修复限流器容量、补充速率和令牌参数的边界校验，保证 consume() 拒绝非有限数值，并保留正常补充行为。';
+      goal.value = data?.repository.project?.id === 'ttl-cache-repository'
+        ? '修复 TTL 缓存的过期边界与容量限制。确保过期项不会被返回，保留现有公共接口。'
+        : '修复限流器容量、补充速率和令牌参数的边界校验，保证 consume() 拒绝非有限数值，并保留正常补充行为。';
     }
     goal.focus();
     notice('已填入示例任务目标，可继续编辑后提交。');
@@ -1364,6 +1376,7 @@ export function dashboard(): void {
       button.disabled = false;
     }
   });
+  get<HTMLSelectElement>('project-workflow').addEventListener('change', render);
   get<HTMLFormElement>('project-form').addEventListener('submit', event => {
     event.preventDefault();
     const project = data?.repository;
@@ -1373,7 +1386,10 @@ export function dashboard(): void {
       notice('请输入任务描述。', true);
       return;
     }
-    void start(project.project.id, goal);
+    const selection = get<HTMLSelectElement>('project-workflow').value;
+    const workflow = project.workflows.find(item => workflowKey(item) === selection);
+    if (workflow) void start(project.project.id, goal, { id: workflow.id, revision: workflow.revision });
+    else if (selection === 'builtin' && project.builtIn) void start(project.project.id, goal);
   });
   get<HTMLSelectElement>('run-history').addEventListener('change', event =>
     selectRun((event.target as HTMLSelectElement).value, page === 'delivery' ? 'delivery' : 'execution'));

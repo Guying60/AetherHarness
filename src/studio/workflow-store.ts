@@ -26,6 +26,14 @@ export class WorkflowStore {
   }
   close() { this.storage?.close(); }
   list() { return clone(this.data.workflows); }
+  listPublishedRepositoryWorkflows() {
+    return this.data.workflows.flatMap(item => {
+      const published = item.enabled && !item.archivedAt && item.publishedRevision
+        ? item.revisions[item.publishedRevision - 1] : undefined;
+      return published?.config.nodes.some(node => node.type === 'delivery')
+        ? [{ id: item.id, revision: published.revision, name: published.config.name }] : [];
+    });
+  }
   get(id: string): GraphDefinition {
     const item = this.data.workflows.find(w => w.id === id);
     if (!item) throw new StudioError(404, 'NOT_FOUND', '工作流不存在。');

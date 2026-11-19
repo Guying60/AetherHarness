@@ -4,19 +4,9 @@
    Design: design/20261117-163816. Tokens come from CONSOLE_STYLE (:root), which
    is injected into the same document before this sheet. */
 
-body { display: block; background: var(--bg); }
-
-.flow-app { min-height: 100vh; display: grid; grid-template-rows: auto auto minmax(560px, 1fr) auto; }
+#flow-root { container-type: inline-size; }
 
 /* ------------------------------------------------------------------- chrome */
-.flow-nav {
-  display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
-  padding: 12px 24px; background: var(--surface); border-bottom: 1px solid var(--line);
-}
-.flow-nav a { color: var(--muted); font-size: 13px; text-decoration: none; }
-.flow-nav a:hover { color: var(--ink); }
-.flow-nav a[aria-current] { color: var(--accent); font-weight: 600; }
-.flow-nav .brand { color: var(--ink); font-size: 14px; font-weight: 700; letter-spacing: -.2px; }
 .flow-status { margin-left: auto; color: var(--faint); font: 400 11px/1.5 var(--mono); }
 
 .flow-bar {
@@ -27,11 +17,19 @@ body { display: block; background: var(--bg); }
 .flow-bar select { max-width: 220px; }
 .flow-bar .flow-status { margin-left: 0; }
 
-.flow-error {
-  min-height: 0; margin: 10px 20px; padding: 8px 12px; border-radius: var(--radius-sm);
-  background: var(--bad-50); border: 1px solid var(--bad-100); color: var(--bad-700); font-size: 12px;
+.flow-notice, .flow-error {
+  margin: 8px 20px; padding: 8px 12px; border-radius: var(--radius-sm);
+  border: 1px solid var(--line); font-size: 13px; line-height: 1.5;
 }
-.flow-error:empty { display: none; }
+.flow-notice {
+  display: flex; align-items: start; justify-content: space-between; gap: 12px;
+  background: var(--surface); color: var(--ink);
+}
+.flow-error {
+  background: var(--bad-50); border-color: var(--bad-100); color: var(--bad-700);
+}
+.flow-notice p { margin: 0; min-width: 0; max-height: 5em; overflow: auto; overflow-wrap: anywhere; white-space: pre-line; }
+.flow-notice .link { flex: none; color: inherit; text-decoration: underline; }
 
 .flow-workspace {
   display: grid; grid-template-columns: 200px minmax(280px, 1fr) 320px;
@@ -48,9 +46,24 @@ body { display: block; background: var(--bg); }
 .flow-properties label { display: grid; gap: 5px; color: var(--ink-3); font-size: 12px; font-weight: 500; }
 .flow-properties input, .flow-properties select, .flow-properties textarea { width: 100%; min-width: 0; }
 .flow-prop-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--line-3); }
-.flow-prop-title h3 { font-size: 14px; }
+.flow-prop-title h3 { font-size: 15px; }
+.flow-prop-context { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 6px 10px; }
+.flow-prop-context .link { white-space: nowrap; }
+.flow-help { margin: 0; color: var(--muted); line-height: 1.5; font-size: 12px; font-weight: 400; overflow-wrap: anywhere; }
+.flow-settings-fields { display: grid; min-width: 0; gap: 12px; margin: 0; padding: 0; border: 0; }
+.flow-condition {
+  display: grid; gap: 10px; min-width: 0; padding: 12px;
+  border: 1px solid var(--line); background: var(--bg); border-radius: var(--radius-sm);
+}
+.flow-condition h4 { margin: 0; font-size: 13px; font-weight: 600; }
+.flow-settings-section { border-top: 1px solid var(--line-3); padding-top: 9px; }
+.flow-settings-section summary { cursor: pointer; color: var(--ink-2); font-weight: 500; }
+.flow-settings-section[open] > :not(summary) { margin-top: 10px; }
+.flow-delete { flex: none; min-height: 32px; font-weight: 600; }
 .flow-versions { max-height: 160px; padding: 10px; border-radius: var(--radius-sm); background: var(--bg); border: 1px solid var(--line); }
 .flow-connection { display: grid; gap: 8px; padding-top: 8px; }
+.flow-connection-line { display: flex; align-items: start; justify-content: space-between; gap: 8px; font-size: 12px; overflow-wrap: anywhere; }
+.flow-connection-line .link { flex: none; }
 
 /* ------------------------------------------------------------------- canvas */
 .flow-canvas { position: relative; min-width: 0; background: var(--bg); }
@@ -58,7 +71,7 @@ body { display: block; background: var(--bg); }
 .react-flow__attribution { display: none; }
 
 .studio-node {
-  min-width: 170px; max-width: 235px; padding: 12px 14px;
+  min-width: 170px; min-height: 58px; max-width: 235px; padding: 12px 14px;
   border: 1px solid var(--line-2); border-radius: 10px;
   background: var(--surface); color: var(--ink);
   box-shadow: 0 1px 3px rgba(15, 23, 42, .08);
@@ -105,19 +118,19 @@ body { display: block; background: var(--bg); }
 .flow-approval strong { font-size: 13px; }
 .flow-approval p { color: var(--ink-3); font-size: 12px; }
 
-@media (max-width: 1180px) {
+@container (max-width: 1180px) {
   .flow-workspace { grid-template-columns: 180px minmax(240px, 1fr) 300px; }
 }
-@media (max-width: 900px) {
+@container (max-width: 760px) {
   .flow-workspace { grid-template-columns: minmax(0, 1fr); height: auto; }
   .flow-library { flex-flow: row wrap; border-right: 0; border-bottom: 1px solid var(--line); }
   .flow-properties { border-left: 0; border-top: 1px solid var(--line); }
   .flow-canvas { height: 60vh; }
   .flow-debug-grid { grid-template-columns: minmax(0, 1fr); }
 }
-@media (max-width: 760px) {
+@container (max-width: 620px) {
   .flow-canvas .react-flow__minimap { display: none; }
-  .flow-nav { gap: 12px; padding: 10px 16px; }
   .flow-bar { padding: 10px 16px; }
+  .flow-notice { margin-inline: 16px; }
   .flow-debug { padding: 12px 16px 20px; }
 }

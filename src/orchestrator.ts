@@ -12,7 +12,7 @@
 import { randomUUID } from 'node:crypto';
 import { StudioService, PreparedStudioRun } from './studio/service.js';
 import type { StudioSnapshot } from './studio/definitions.js';
-import { hash, StudioError, clone, object, text } from './studio/definitions.js';
+import { hash, StudioError, clone, object, text, identifier, number } from './studio/definitions.js';
 import { executionContext } from './workflow/execution-context.js';
 import {
   ExecutionStatus,
@@ -43,7 +43,7 @@ import {
   renderRateLimiter
 } from './scenarios/rate-limiter.js';
 import {
-  buildRepositoryDeliveryWorkflow, buildRepositoryWorkflow, MAX_REPOSITORY_GOAL, repositoryTools,
+  buildRepositoryDeliveryWorkflow, buildRepositoryWorkflow, MAX_REPOSITORY_GOAL, REPOSITORY_PROJECT_ID, repositoryTools,
   type RepositoryConfig, type RepositoryProject
 } from './scenarios/repository-repair.js';
 import {
@@ -104,7 +104,7 @@ export interface RunSnapshot {
 
 export type EventListener = (event: OrchestratorEvent) => void;
 type RunTask = RateLimiterTask & { repository?: true; studio?: never };
-type StudioTask = { id: string; title: string; prompt: string; difficulty: string; repository?: never; studio: PreparedStudioRun };
+type StudioTask = { id: string; title: string; prompt: string; difficulty: string; repository?: never; studio: PreparedStudioRun; project?: RepositoryProject };
 type RunOptions = { maxIterationsOverride?: number; retryOf?: string; onStart?: (runId: string) => void; requestedBy?: string; resume?: RunSnapshot };
 
 export interface OrchestratorOptions {
@@ -215,7 +215,7 @@ export class Orchestrator {
       const { project, tools } = repositoryTools(options.project);
       this.repository = project;
       tools.forEach(tool => this.tools.register(tool));
-      this.workflow.registerSubworkflow(buildRepositoryDeliveryWorkflow());
+      if (project.id === REPOSITORY_PROJECT_ID) this.workflow.registerSubworkflow(buildRepositoryDeliveryWorkflow());
     }
 
     for (const { profile, brain } of team) {
@@ -430,7 +430,7 @@ Edge cases:
 
   public getSettings() {
     const tasks: RunTask[] = this.getTasks();
-    if (this.repository) tasks.push(this.projectTask(''));
+    if (this.repository?.id === REPOSITORY_PROJECT_ID) tasks.push(this.projectTask(''));
     return {
       maxConcurrentRuns: this.maxConcurrentRuns,
       scheduler: this.scheduler.getPolicy(),
@@ -448,17 +448,48 @@ Edge cases:
 
   public getProject() {
     const reason = !this.repository
-      ? '服务端尚未配置仓库、基线提交和隔离镜像。'
-      : !this.strictLive ? '仓库任务需要严格 Live 模式（--live --no-fallback）。' : undefined;
-    return { project: this.repository, ready: reason === undefined, reason };
+      ? '请先在服务端登记仓库和 Git 基线。'
+      : !this.llmApplied || !this.repository.runnerImage
+        ? '执行前需要配置' + [!this.llmApplied && '模型', !this.repository.runnerImage && 'Docker 验收镜像'].filter(Boolean).join('和') + '。'
+        : undefined;
+    return { project: this.repository, ready: reason === undefined, reason,
+      builtIn: this.repository?.id === REPOSITORY_PROJECT_ID && this.strictLive,
+      workflows: this.studio.workflows.listPublishedRepositoryWorkflows() };
   }
 
   public runProjectTask(goal: string, onStart?: RunOptions['onStart'], requestedBy?: string): Promise<RunSnapshot> {
-    const { project, reason } = this.getProject();
-    if (!project || reason) throw new Error(reason ?? 'No configured repository.');
-    const prompt = goal.trim();
-    if (!prompt || prompt.length > MAX_REPOSITORY_GOAL) throw new Error('Invalid repository task description.');
+    const { project, reason, builtIn } = this.getProject();
+    if (!project || reason) throw new StudioError(503, 'REPOSITORY_UNAVAILABLE', reason ?? '未登记仓库。');
+    if (!builtIn) throw new StudioError(503, 'BUILTIN_UNAVAILABLE', '请选择已发布的仓库工作流，或以严格 Live 模式启用内置限流器流程。');
+    const prompt = this.repositoryGoal(goal);
     return this.runTask(this.projectTask(prompt), { onStart, requestedBy });
+  }
+
+  public async runPublishedProjectTask(goal: string, workflowRef: unknown, options: Pick<RunOptions, 'onStart' | 'requestedBy'> = {}): Promise<RunSnapshot> {
+    const { project, reason } = this.getProject();
+    if (!project || reason) throw new StudioError(503, 'REPOSITORY_UNAVAILABLE', reason ?? '未登记仓库。');
+    const prompt = this.repositoryGoal(goal);
+    object(workflowRef, 'workflowRef', ['id', 'revision']);
+    identifier(workflowRef.id, 'workflowRef.id');
+    number(workflowRef.revision, 'workflowRef.revision', 1, 1000000);
+    const checkPublished = () => {
+      if (!this.studio.workflows.listPublishedRepositoryWorkflows().some(ref => ref.id === workflowRef.id && ref.revision === workflowRef.revision)) {
+        throw new StudioError(409, 'PUBLICATION_UNAVAILABLE', '所选发布版已变更或无法用于仓库任务，请刷新后重新选择。');
+      }
+    };
+    checkPublished();
+    let source: string;
+    try { source = await this.tools.invoke('git_read_baseline', {}); }
+    catch { throw new StudioError(503, 'BASELINE_UNAVAILABLE', '读取 Git 基线失败，请检查登记的仓库、提交和目标文件。'); }
+    checkPublished();
+    const prepared = this.studio.prepare({ kind: 'workflow', workflowRef, input: { goal: prompt, source } });
+    return this.runPreparedStudio(prepared, options, project);
+  }
+
+  private repositoryGoal(goal: string): string {
+    const prompt = goal.trim();
+    if (!prompt || prompt.length > MAX_REPOSITORY_GOAL) throw new StudioError(400, 'INVALID_GOAL', `请输入 1–${MAX_REPOSITORY_GOAL} 字符的任务描述。`);
+    return prompt;
   }
 
   private projectTask(prompt: string): RunTask {
@@ -472,7 +503,7 @@ Edge cases:
 
   private restoredProjectTask(run: RunSnapshot): RunTask | undefined {
     const project = this.repository;
-    if (project && this.strictLive && run.goal &&
+    if (project?.id === REPOSITORY_PROJECT_ID && this.strictLive && project.runnerImage && run.goal &&
       run.project?.id === project.id && run.project.revision === project.revision &&
       run.project.runnerImage === project.runnerImage && run.project.filePath === project.filePath) {
       return this.projectTask(run.goal);
@@ -487,9 +518,12 @@ Edge cases:
   }
 
   public runStudio(body: unknown, options: Pick<RunOptions, 'onStart' | 'requestedBy'> = {}): Promise<RunSnapshot> {
-    const prepared = this.studio.prepare(body);
+    return this.runPreparedStudio(this.studio.prepare(body), options);
+  }
+
+  private runPreparedStudio(prepared: PreparedStudioRun, options: Pick<RunOptions, 'onStart' | 'requestedBy'>, project?: RepositoryProject): Promise<RunSnapshot> {
     return this.executeTask({ id: prepared.workflow.id, title: prepared.title, difficulty: 'custom',
-      prompt: typeof prepared.input.goal === 'string' ? prepared.input.goal : 'Agent/team test', studio: prepared }, options);
+      prompt: typeof prepared.input.goal === 'string' ? prepared.input.goal : 'Agent/team test', studio: prepared, project }, options);
   }
 
   public runTask(task: RunTask, options: RunOptions = {}): Promise<RunSnapshot> {
@@ -526,8 +560,8 @@ Edge cases:
       nodeProgress,
       loopRounds,
       retryOf: options.retryOf,
-      project: task.repository ? this.repository : undefined,
-      goal: task.repository ? task.prompt : undefined,
+      project: task.repository ? this.repository : task.studio ? task.project : undefined,
+      goal: task.repository || (task.studio && task.project) ? task.prompt : undefined,
       retryAvailable: !task.studio,
       definitions: task.studio ? this.studio.safe(task.studio.snapshot) : undefined,
       attempts: task.studio ? [] : undefined,
